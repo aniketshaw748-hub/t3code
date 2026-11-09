@@ -12,7 +12,7 @@ const NOTE_STATUS_COLORS = {
 } as const satisfies Record<"light" | "dark", Record<DeliverableNoteStatus, string>>;
 
 export function useNoteStatusColors(): Readonly<Record<DeliverableNoteStatus, string>> {
-  return NOTE_STATUS_COLORS[useAppearancePreferences().themeAppearance];
+  return NOTE_STATUS_COLORS[useAppearancePreferences().workAppearance];
 }
 
 const SHELF_STATUS: Record<ShelfStatusKind, DeliverableNoteStatus | null> = {

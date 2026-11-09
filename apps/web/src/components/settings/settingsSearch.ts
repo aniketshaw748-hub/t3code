@@ -332,6 +332,12 @@ export const SETTINGS_SEARCH_ITEMS = [
     searchTerms: ["red green blue orange additions deletions changes counts palette colorblind"],
   },
   {
+    id: "work-appearance",
+    title: "Work mode look",
+    to: "/settings/appearance",
+    searchTerms: ["work mode dark light theme review flask black"],
+  },
+  {
     id: "chat-width",
     title: "Chat width",
     to: "/settings/appearance",

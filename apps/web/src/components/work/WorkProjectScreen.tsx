@@ -61,6 +61,7 @@ import {
   useWorkProjectSnapshot,
   useWorkThreads,
 } from "./useWorkData";
+import { useWorkAppearance } from "./useWorkAppearance";
 import { RunFailureBanner } from "./RunFailureBanner";
 import { VersionStrip } from "./VersionStrip";
 import { VideoStage, type SeekRequest } from "./VideoStage";
@@ -103,6 +104,7 @@ export function WorkProjectScreen(props: {
   readonly projectId: ProjectId;
 }) {
   const { environmentId, projectId } = props;
+  useWorkAppearance();
   const project = useProject(scopeProjectRef(environmentId, projectId));
   const snapshot = useWorkProjectSnapshot(environmentId, projectId);
   const thread = useWorkThreads(environmentId, projectId)[0] ?? null;

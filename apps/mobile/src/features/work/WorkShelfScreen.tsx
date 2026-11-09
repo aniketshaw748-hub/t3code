@@ -24,6 +24,7 @@ import {
   useWorkThreads,
 } from "./useWorkData";
 import { ShelfStatusChip } from "./WorkStatus";
+import { WorkTheme } from "./WorkTheme";
 
 export const WORK_KIND_ICON: Record<DeliverableKind, AppSymbolName> = {
   deck: "square.grid.2x2",
@@ -35,6 +36,14 @@ export const WORK_KIND_ICON: Record<DeliverableKind, AppSymbolName> = {
 
 /** Work mode's home: a card per project with its latest frame and one plain status. */
 export function WorkShelfScreen() {
+  return (
+    <WorkTheme>
+      <WorkShelf />
+    </WorkTheme>
+  );
+}
+
+function WorkShelf() {
   const projects = useWorkProjects();
   const navigation = useNavigation();
   const insets = useSafeAreaInsets();

@@ -30,7 +30,7 @@ import {
 import { StackActions, useNavigation, type StaticScreenProps } from "@react-navigation/native";
 import { Image } from "expo-image";
 import { useState } from "react";
-import { Pressable, ScrollView, View } from "react-native";
+import { Pressable, ScrollView, StatusBar, View } from "react-native";
 import { KeyboardAvoidingView } from "react-native-keyboard-controller";
 
 import * as Dialog from "../../components/ui/Dialog";
@@ -54,6 +54,8 @@ import {
   useWorkThreads,
 } from "./useWorkData";
 import { WorkCompareView } from "./WorkCompareView";
+import { WorkTheme } from "./WorkTheme";
+import { useAppearancePreferences } from "../settings/appearance/AppearancePreferencesProvider";
 import { WorkDeckStage } from "./WorkDeckStage";
 import { WorkNoteComposer } from "./WorkNoteComposer";
 import {
@@ -74,12 +76,21 @@ export type WorkProjectParams = {
 
 export function WorkProjectRouteScreen({ route }: StaticScreenProps<WorkProjectParams>) {
   return (
-    <WorkProjectScreen
-      key={`${route.params.environmentId}:${route.params.projectId}`}
-      environmentId={route.params.environmentId}
-      projectId={route.params.projectId}
-    />
+    <WorkTheme>
+      <WorkStatusBar />
+      <WorkProjectScreen
+        key={`${route.params.environmentId}:${route.params.projectId}`}
+        environmentId={route.params.environmentId}
+        projectId={route.params.projectId}
+      />
+    </WorkTheme>
   );
+}
+
+/** Light status bar icons over Work's dark look, for as long as the project is open. */
+function WorkStatusBar() {
+  const { workAppearance } = useAppearancePreferences();
+  return <StatusBar barStyle={workAppearance === "dark" ? "light-content" : "dark-content"} />;
 }
 
 /** One Work project on a phone: the work on top, its versions, then Notes & chat. */

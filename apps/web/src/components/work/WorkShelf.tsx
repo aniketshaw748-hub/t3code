@@ -28,6 +28,7 @@ import {
   useWorkProjectSnapshot,
   useWorkThreads,
 } from "./useWorkData";
+import { useWorkAppearance } from "./useWorkAppearance";
 import { ShelfStatusChip } from "./WorkStatusChip";
 
 const KIND_ICON: Record<DeliverableKind, LucideIcon> = {
@@ -40,6 +41,7 @@ const KIND_ICON: Record<DeliverableKind, LucideIcon> = {
 
 /** Work mode's home: a card per project with its latest frame and one plain status. */
 export function WorkShelf() {
+  useWorkAppearance();
   const projects = useWorkProjects();
   const environmentId = usePrimaryEnvironmentId();
   const start = useStartWorkProject();
