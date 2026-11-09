@@ -126,7 +126,8 @@ it("loads the emitted packaged boot entry and backend cache preload", async () =
         ),
         outDir: NodePath.join(directory, "dist-electron"),
         config: false,
-        cwd: directory,
+        // The package's own dependency list decides what stays external, as in a release build.
+        cwd: NodeURL.fileURLToPath(new URL("..", import.meta.url)),
         tsconfig: false,
         sourcemap: false,
         onSuccess: undefined,
