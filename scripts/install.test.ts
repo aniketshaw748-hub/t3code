@@ -1,4 +1,5 @@
 // @effect-diagnostics nodeBuiltinImport:off - Drives the real shell installer against a local GitHub fixture.
+import { BRAND } from "@t3tools/contracts/brand";
 import * as HostProcess from "@t3tools/shared/HostProcess";
 import * as NodeChildProcess from "node:child_process";
 import * as NodeCrypto from "node:crypto";
@@ -12,6 +13,23 @@ const nightlies = Array.from({ length: 100 }, (_, index) => ({
   tag_name: `v1.2.4-nightly.20261020.${200 - index}`,
 }));
 
+// The installers run standalone, so they repeat the brand values instead of importing them.
+describe("installer brand values", () => {
+  it.each(["install.sh", "install.ps1", "npm-launcher/t3.mjs"])(
+    "%s matches the brand module",
+    async (file) => {
+      const source = await NodeFSP.readFile(NodePath.join(import.meta.dirname, file), "utf8");
+      const value = (name: string) =>
+        new RegExp(String.raw`^(?:const |\$)?${name}\s*=\s*"([^"]*)"`, "m").exec(source)?.[1];
+      const camelCase = !file.endsWith(".sh");
+      expect(value(camelCase ? "brandName" : "brand_name")).toBe(BRAND.displayName);
+      expect(value(camelCase ? "cliName" : "cli_name")).toBe(BRAND.cliName);
+      expect(value(camelCase ? "homeDirName" : "home_dir_name")).toBe(BRAND.homeDirName);
+      expect(value("repo")).toBe(BRAND.repository);
+    },
+  );
+});
+
 describe.skipIf(HostProcess.Platform.defaultValue() !== "linux")("installer home", () => {
   it("installs a relative home from a directory ending in a newline", async () => {
     const temporaryRoot = await NodeFSP.realpath(
@@ -22,7 +40,7 @@ describe.skipIf(HostProcess.Platform.defaultValue() !== "linux")("installer home
     const home = NodePath.join(root, homeName);
     const version = "1.2.3";
     const target = NodePath.join(home, "runtime/versions", version);
-    const launcher = NodePath.join(root, "bin/t3");
+    const launcher = NodePath.join(root, "bin", BRAND.cliName);
     try {
       await NodeFSP.mkdir(target, { recursive: true });
       await NodeFSP.writeFile(NodePath.join(target, ".install-complete"), `${version}\n`);
@@ -46,7 +64,7 @@ describe.skipIf(HostProcess.Platform.defaultValue() !== "linux")("installer home
         },
       );
       expect(status, stdout + stderr).toBe(0);
-      expect(stderr).toContain(`Installed T3 Code ${version}`);
+      expect(stderr).toContain(`Installed ${BRAND.displayName} ${version}`);
       expect(await NodeFSP.readlink(launcher)).toBe(NodePath.join(target, "t3"));
       expect(
         NodeChildProcess.execFileSync(launcher, ["--version"], {
@@ -119,7 +137,7 @@ describe.skipIf(HostProcess.Platform.defaultValue() !== "linux")("installer chan
         },
       );
       expect(code, output).toBe(0);
-      expect(output).toContain(`Installed T3 Code ${version}`);
+      expect(output).toContain(`Installed ${BRAND.displayName} ${version}`);
     } finally {
       server.closeAllConnections();
       await new Promise<void>((resolve) => server.close(() => resolve()));
@@ -224,14 +242,18 @@ describe.skipIf(HostProcess.Platform.defaultValue() !== "linux")("installer chec
               await NodeFSP.readFile(NodePath.join(versions, version, ".install-complete"), "utf8"),
             ).toBe("1.2.3\n");
             expect(
-              NodeChildProcess.execFileSync(NodePath.join(root, "bin/t3"), ["--version"], {
-                encoding: "utf8",
-              }).trim(),
+              NodeChildProcess.execFileSync(
+                NodePath.join(root, "bin", BRAND.cliName),
+                ["--version"],
+                {
+                  encoding: "utf8",
+                },
+              ).trim(),
             ).toBe("t3 v1.2.3");
           } else {
             expect(code).not.toBe(0);
             expect(output).toContain("checksum mismatch");
-            expect(output).not.toContain("Installed T3 Code");
+            expect(output).not.toContain(`Installed ${BRAND.displayName}`);
             expect(await NodeFSP.readdir(versions)).toEqual([]);
           }
         } finally {

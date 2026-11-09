@@ -1,5 +1,6 @@
 // @effect-diagnostics nodeBuiltinImport:off globalTimers:off globalDate:off - Host-side device automation uses Node subprocess and timing APIs directly.
 
+import { BRAND } from "@t3tools/contracts/brand";
 import * as NodeChildProcess from "node:child_process";
 import * as NodePath from "node:path";
 import * as NodeProcess from "node:process";
@@ -8,7 +9,7 @@ import * as Schema from "effect/Schema";
 import type { Snapshot } from "./checks.ts";
 import type { Pose } from "./poses.ts";
 
-export const BUNDLE_ID = "com.t3tools.t3code.dev";
+export const BUNDLE_ID = BRAND.mobile.appIds.development;
 
 export interface RunResult {
   readonly code: number;
