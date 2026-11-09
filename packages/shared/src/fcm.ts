@@ -68,7 +68,7 @@ export interface FcmAssertionInput {
 
 /** RS256 JWT for Google's OAuth2 JWT bearer grant, scoped to FCM sends. */
 export async function signFcmAssertion(
-  subtle: SubtleCrypto,
+  subtle: typeof globalThis.crypto.subtle,
   input: FcmAssertionInput,
 ): Promise<string> {
   const encoder = new TextEncoder();

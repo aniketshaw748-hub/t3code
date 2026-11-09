@@ -101,6 +101,10 @@ import * as Keybindings from "./keybindings.ts";
 import * as ServerRuntimeStartup from "./serverRuntimeStartup.ts";
 import * as ServerOwnership from "./serverOwnership.ts";
 import * as AgentAwarenessRelay from "./relay/AgentAwarenessRelay.ts";
+import { AgentActivityDeliveryTargets } from "./relay/AgentActivityDeliveryTargets.ts";
+import * as RelayAgentActivityTarget from "./relay/RelayAgentActivityTarget.ts";
+import * as DirectPush from "./directPush/DirectPush.ts";
+import * as DirectPushDevices from "./persistence/DirectPushDevices.ts";
 import { hasCloudPublicConfig } from "./cloud/publicConfig.ts";
 import * as ServerSettings from "./serverSettings.ts";
 import * as ManagedLimits from "./policy/managedLimits.ts";
@@ -675,8 +679,24 @@ const layerProviderInstallationRefresh = Layer.effectDiscard(
   }),
 );
 
+const layerDirectPush = DirectPush.layer.pipe(Layer.provide(DirectPushDevices.layer));
+
+const layerAgentAwareness = AgentAwarenessRelay.layer.pipe(
+  Layer.provide(
+    Layer.effect(
+      AgentActivityDeliveryTargets,
+      Effect.gen(function* () {
+        const relay = yield* RelayAgentActivityTarget.make;
+        const directPush = yield* DirectPush.DirectPush;
+        return { targets: [relay, directPush.deliveryTarget] };
+      }),
+    ),
+  ),
+  Layer.provideMerge(layerDirectPush),
+);
+
 const layerRuntimeCoreDependenciesBase = Layer.mergeAll(
-  AgentAwarenessRelay.layer,
+  layerAgentAwareness,
   HeldHooksWaker.layer,
   layerThreadSettlementWorker,
   layerIdleCompactionWorker,

@@ -42,6 +42,13 @@ import * as SqlitePersistence from "../persistence/Sqlite.ts";
 import * as ThreadManagementService from "../orchestration-v2/ThreadManagementService.ts";
 import * as ProjectService from "../project/ProjectService.ts";
 import * as AgentAwarenessRelay from "./AgentAwarenessRelay.ts";
+import {
+  AgentActivityDeliveryTargets,
+  type AgentActivityDeliveryTarget,
+  type AgentActivityPublication,
+  type AgentActivityTargetResolution,
+} from "./AgentActivityDeliveryTargets.ts";
+import * as RelayAgentActivityTarget from "./RelayAgentActivityTarget.ts";
 
 const THREAD_ID = ThreadId.make("relay-thread");
 const SECOND_THREAD_ID = ThreadId.make("relay-thread-2");
@@ -146,6 +153,7 @@ const makeTestRelay = Effect.fnUntraced(function* (
     readonly readShell?: (threadId: ThreadId) => Effect.Effect<OrchestrationV2ThreadShell | null>;
     readonly domainEvents?: Stream.Stream<OrchestrationV2DomainEvent>;
     readonly catchUpThreads?: ReadonlyArray<OrchestrationV2ThreadShell>;
+    readonly extraTargets?: ReadonlyArray<AgentActivityDeliveryTarget>;
   } = {},
 ) {
   const values = new Map<string, Uint8Array>(
@@ -278,14 +286,23 @@ const makeTestRelay = Effect.fnUntraced(function* (
     updatedAt: NOW,
     deletedAt: null,
   };
-  const relay = yield* AgentAwarenessRelay.make.pipe(
+  const serverEnvironment = {
+    getEnvironmentId: Effect.succeed(EnvironmentId.make("relay-environment")),
+    getDescriptor: unused(),
+  };
+  const relayTarget = yield* RelayAgentActivityTarget.make.pipe(
     Effect.provide(EnvironmentKeys.layer),
     Effect.provideService(ServerSecretStore.ServerSecretStore, secrets),
-    Effect.provideService(ThreadManagementService.ThreadManagementService, threads),
-    Effect.provideService(ServerEnvironment.ServerEnvironment, {
-      getEnvironmentId: Effect.succeed(EnvironmentId.make("relay-environment")),
-      getDescriptor: unused(),
+    Effect.provideService(ServerEnvironment.ServerEnvironment, serverEnvironment),
+    Effect.provideService(FetchHttpClient.Fetch, fetch),
+    Effect.provide(NodeCrypto.layer),
+  );
+  const relay = yield* AgentAwarenessRelay.make.pipe(
+    Effect.provideService(AgentActivityDeliveryTargets, {
+      targets: [relayTarget, ...(options.extraTargets ?? [])],
     }),
+    Effect.provideService(ThreadManagementService.ThreadManagementService, threads),
+    Effect.provideService(ServerEnvironment.ServerEnvironment, serverEnvironment),
     Effect.provideService(ProjectService.ProjectService, {
       create: unused,
       bootstrap: unused,
@@ -298,8 +315,6 @@ const makeTestRelay = Effect.fnUntraced(function* (
       listShells: unused,
       getById: () => Effect.succeedSome(project),
     }),
-    Effect.provideService(FetchHttpClient.Fetch, fetch),
-    Effect.provide(NodeCrypto.layer),
   );
   return { relay, secrets, secretReads, currentShell, shellReads, publications, catchUp };
 });
@@ -349,6 +364,61 @@ describe("AgentAwarenessRelay", () => {
         { threadId: SECOND_THREAD_ID, revision: 2 },
         { threadId: THREAD_ID, revision: 2 },
       ]);
+    }),
+  );
+
+  it.effect("publishes to every active delivery target and only to active ones", () =>
+    Effect.gen(function* () {
+      const direct: AgentActivityPublication[] = [];
+      const directState = yield* Ref.make<"off" | "on" | "rekeyed">("off");
+      const directTarget: AgentActivityDeliveryTarget = {
+        name: "direct-push",
+        changes: Stream.empty,
+        resolve: Ref.get(directState).pipe(
+          Effect.map((state): AgentActivityTargetResolution =>
+            state === "off"
+              ? { _tag: "Unavailable" }
+              : {
+                  _tag: "Active",
+                  identity: state,
+                  publish: (publication) => Effect.sync(() => void direct.push(publication)),
+                },
+          ),
+        ),
+      };
+      const { relay, secrets, currentShell, publications } = yield* makeTestRelay({
+        linked: false,
+        extraTargets: [directTarget],
+      });
+
+      yield* relay.publishThread(THREAD_ID);
+      assert.equal(direct.length + publications.length, 0);
+
+      // Direct push alone: the relay stays untouched while the phone gets the state.
+      yield* Ref.set(directState, "on");
+      yield* relay.publishThread(THREAD_ID);
+      assert.equal(publications.length, 0);
+      assert.equal(direct.length, 1);
+      assert.equal(direct[0]?.state?.phase, "running");
+
+      // A new direct configuration republishes unchanged state.
+      yield* Ref.set(directState, "rekeyed");
+      yield* relay.publishThread(THREAD_ID);
+      assert.equal(direct.length, 2);
+
+      // Linking T3 Connect as well: both targets receive the next change.
+      yield* secrets.set(PUBLISH_AGENT_ACTIVITY_SECRET, new TextEncoder().encode("true"));
+      yield* secrets.set(RELAY_URL_SECRET, new TextEncoder().encode("https://relay.example.test"));
+      yield* secrets.set(
+        RELAY_ENVIRONMENT_CREDENTIAL_SECRET,
+        new TextEncoder().encode("credential-1"),
+      );
+      yield* Ref.set(currentShell, shell({ title: "Renamed thread" }));
+      yield* relay.publishThread(THREAD_ID);
+      assert.equal(publications.length, 1);
+      assert.equal(direct.length, 3);
+      assert.equal(direct[2]?.state?.threadTitle, "Renamed thread");
+      assert.equal(publications[0]?.state?.threadTitle, "Renamed thread");
     }),
   );
 
