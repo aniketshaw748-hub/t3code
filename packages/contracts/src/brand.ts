@@ -182,6 +182,14 @@ export const BRAND_GIT_IDENTITY = {
   email: `${BRAND.slug}@users.noreply.github.com`,
 } as const;
 
+/** The one-line command that installs the CLI from this repository's install script. */
+export function brandInstallScriptCommand(shell: "sh" | "powershell"): string {
+  const base = `https://raw.githubusercontent.com/${REPOSITORY}/main/scripts`;
+  return shell === "powershell"
+    ? `irm ${base}/install.ps1 | iex`
+    : `curl -fsSL ${base}/install.sh | sh`;
+}
+
 /** The CLI launcher file name on `platform`. */
 export function brandCliLauncherName(platform: string): string {
   return platform === "win32" ? `${BRAND.cliName}.cmd` : BRAND.cliName;
