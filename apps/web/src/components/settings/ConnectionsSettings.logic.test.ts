@@ -5,8 +5,10 @@ import {
   resolveAccessEnvironmentId,
   resolveTailscaleServeBaseUrl,
   selectQrEndpointOption,
+  tailscalePhoneStep,
   togglePairingScopeSelection,
 } from "./ConnectionsSettings.logic";
+import { createAdvertisedEndpoint } from "@t3tools/shared/advertisedEndpoint";
 
 describe("togglePairingScopeSelection", () => {
   it.each([
@@ -199,5 +201,52 @@ describe("resolveAccessEnvironmentId", () => {
     expect(resolveAccessEnvironmentId({ primaryEnvironmentId, environments, selected })).toBe(
       expected,
     );
+  });
+});
+
+describe("tailscalePhoneStep", () => {
+  const tailscale = {
+    id: "tailscale",
+    label: "Tailscale",
+    kind: "private-network",
+    isAddon: true,
+  } as const;
+  const ip = createAdvertisedEndpoint({
+    provider: tailscale,
+    source: "desktop-addon",
+    id: "tailscale-ip:http://100.116.182.86:3773",
+    label: "Tailscale IP",
+    httpBaseUrl: "http://100.116.182.86:3773",
+    reachability: "private-network",
+  });
+  const https = createAdvertisedEndpoint({
+    provider: tailscale,
+    source: "desktop-addon",
+    id: "tailscale-magicdns:https://kavyaan.tail3ac500.ts.net",
+    label: "Tailscale HTTPS",
+    httpBaseUrl: "https://kavyaan.tail3ac500.ts.net",
+    reachability: "private-network",
+  });
+  const running = {
+    state: "running",
+    magicDnsName: "kavyaan.tail3ac500.ts.net",
+    tailnetIpv4Addresses: ["100.116.182.86"],
+    httpsServeEnabled: true,
+  } as const;
+
+  it("walks install, start and sign-in before exposing the backend", () => {
+    expect(tailscalePhoneStep({ state: "not-installed" }, []).kind).toBe("install");
+    expect(tailscalePhoneStep({ state: "stopped" }, []).kind).toBe("start");
+    expect(tailscalePhoneStep({ state: "needs-login" }, []).kind).toBe("sign-in");
+    expect(tailscalePhoneStep(running, [])).toEqual({ kind: "expose", httpsServeEnabled: true });
+  });
+
+  it("pairs over Tailscale HTTPS when served, else the tailnet IP", () => {
+    expect(tailscalePhoneStep(running, [ip])).toEqual({ kind: "ready", endpoint: ip });
+    expect(tailscalePhoneStep(running, [ip, https])).toEqual({ kind: "ready", endpoint: https });
+    expect(tailscalePhoneStep(running, [ip, { ...https, status: "unavailable" }])).toEqual({
+      kind: "ready",
+      endpoint: ip,
+    });
   });
 });

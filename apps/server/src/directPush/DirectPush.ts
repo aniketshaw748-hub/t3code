@@ -357,6 +357,25 @@ export const make = Effect.gen(function* () {
     ),
   };
 
+  /** A folder resolves to its first `"type": "service_account"` JSON; a file is kept as given. */
+  const findServiceAccountFile = Effect.fn("DirectPush.findServiceAccountFile")(function* (
+    path: string,
+  ) {
+    const info = yield* fileSystem.stat(path).pipe(Effect.option);
+    if (Option.isNone(info) || info.value.type !== "Directory") return path;
+    const names = (yield* fileSystem.readDirectory(path)).filter((name) =>
+      name.toLowerCase().endsWith(".json"),
+    );
+    for (const name of [...names].sort()) {
+      const file = `${path.replace(/[\\/]+$/, "")}/${name}`;
+      const contents = yield* fileSystem.readFileString(file).pipe(Effect.option);
+      if (Option.isSome(contents) && "account" in parseServiceAccountFile(contents.value)) {
+        return file;
+      }
+    }
+    return null;
+  });
+
   const mapError = (operation: string) =>
     Effect.mapError((cause: unknown) => new DirectPushError({ operation, cause }));
 
@@ -368,7 +387,19 @@ export const make = Effect.gen(function* () {
       if (path === null) {
         yield* secrets.remove(DIRECT_PUSH_SERVICE_ACCOUNT_PATH_SECRET);
       } else {
-        yield* secrets.set(DIRECT_PUSH_SERVICE_ACCOUNT_PATH_SECRET, new TextEncoder().encode(path));
+        const file = yield* findServiceAccountFile(path);
+        if (file === null) {
+          const current = yield* status(true);
+          return {
+            ...current,
+            serviceAccount: {
+              status: "invalid" as const,
+              path,
+              reason: "That folder has no Firebase service-account key.",
+            },
+          };
+        }
+        yield* secrets.set(DIRECT_PUSH_SERVICE_ACCOUNT_PATH_SECRET, new TextEncoder().encode(file));
       }
       const next = yield* status(true);
       yield* PubSub.publish(changes, undefined);

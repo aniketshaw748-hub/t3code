@@ -126,6 +126,7 @@ const makeHarness = Effect.fnUntraced(function* (
   );
   return {
     directPush,
+    directory,
     accountPath,
     appConfigPath,
     sent,
@@ -153,7 +154,7 @@ const running = {
 describe("DirectPush", () => {
   it.effect("reports a missing, wrong or valid service account", () =>
     Effect.gen(function* () {
-      const { directPush, accountPath, appConfigPath } = yield* makeHarness();
+      const { directPush, directory, accountPath, appConfigPath } = yield* makeHarness();
       assert.deepStrictEqual((yield* directPush.getStatus).serviceAccount, {
         status: "not-configured",
       });
@@ -167,6 +168,13 @@ describe("DirectPush", () => {
         clientEmail: "push@kavyaan-test.iam.gserviceaccount.com",
       });
       assert.equal((yield* directPush.deliveryTarget.resolve)._tag, "Active");
+      // A folder resolves to the service-account key inside it, skipping google-services.json.
+      yield* directPush.setServiceAccount(null);
+      const fromFolder = yield* directPush.setServiceAccount(directory);
+      assert.equal(fromFolder.serviceAccount.status, "configured");
+      assert.include(fromFolder.serviceAccount, {
+        path: `${directory}/firebase-service-account.json`,
+      });
       assert.equal(
         (yield* directPush.setServiceAccount(null)).serviceAccount.status,
         "not-configured",

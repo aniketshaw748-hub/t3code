@@ -11,6 +11,7 @@ import {
   ensureTailscaleServe,
   parseTailscaleExitNode,
   parseTailscaleServeRoutesTo,
+  parseTailscaleAvailability,
   parseTailscaleSshEnabled,
   parseTailscaleStatus,
   readTailscaleSshEnabled,
@@ -18,6 +19,7 @@ import {
   TailscaleCommandExitError,
   TailscaleCommandSpawnError,
   TailscaleStatusParseError,
+  tailscaleExecutablePath,
 } from "./tailscale.ts";
 
 const encoder = new TextEncoder();
@@ -341,5 +343,45 @@ describe("tailscale", () => {
       yield* ensureTailscaleServe({ localPort: 45_678 }).pipe(Effect.provide(layer));
       assert.deepEqual(killGraces, [500, 500, 500]);
     });
+  });
+});
+
+describe("tailscale availability", () => {
+  it.effect("names the step a user needs from BackendState", () =>
+    Effect.gen(function* () {
+      const status = (backendState: string) =>
+        JSON.stringify({
+          BackendState: backendState,
+          Self: { DNSName: "kavyaan.tail3ac500.ts.net.", TailscaleIPs: ["100.116.182.86"] },
+        });
+      assert.deepStrictEqual(yield* parseTailscaleAvailability(status("Running")), {
+        state: "running",
+        magicDnsName: "kavyaan.tail3ac500.ts.net",
+        tailnetIpv4Addresses: ["100.116.182.86"],
+        httpsServeEnabled: null,
+      });
+      assert.equal((yield* parseTailscaleAvailability(status("NeedsLogin"))).state, "needs-login");
+      assert.equal((yield* parseTailscaleAvailability(status("Stopped"))).state, "stopped");
+      assert.equal(
+        (yield* parseTailscaleAvailability(JSON.stringify({ BackendState: "NoState" }))).state,
+        "not-running",
+      );
+    }),
+  );
+
+  it("finds the installed Windows CLI before PATH has caught up", () => {
+    const env = { ProgramFiles: "D:\\Apps" };
+    assert.equal(
+      tailscaleExecutablePath("win32", env, () => true),
+      "D:\\Apps\\Tailscale\\tailscale.exe",
+    );
+    assert.equal(
+      tailscaleExecutablePath("win32", env, () => false),
+      "tailscale.exe",
+    );
+    assert.equal(
+      tailscaleExecutablePath("darwin", env, () => true),
+      "tailscale",
+    );
   });
 });

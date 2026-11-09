@@ -648,6 +648,12 @@ export const SETTINGS_SEARCH_ITEMS = [
     searchTerms: ["notification sound alert completion input approval desktop"],
   },
   {
+    id: "direct-push",
+    title: "Phone notifications (direct)",
+    to: "/settings/general",
+    searchTerms: ["push fcm firebase phone android mobile notification direct service account"],
+  },
+  {
     id: "in-app-notifications",
     title: "In-app notifications",
     to: "/settings/general",
@@ -1194,6 +1200,15 @@ export const SETTINGS_SEARCH_ITEMS = [
     to: "/settings/access",
     targetId: "connections-environment",
     searchTerms: ["expose backend remote pairing local machine interfaces host restart"],
+    localBackendManagementOnly: true,
+  },
+  {
+    id: "tailscale-phone",
+    title: "Phone over Tailscale",
+    to: "/settings/access",
+    targetId: "connections-environment",
+    searchTerms: ["tailnet phone mobile pair qr remote anywhere magicdns android"],
+    desktopOnly: true,
     localBackendManagementOnly: true,
   },
   {

@@ -1618,6 +1618,19 @@ export function createServerEnvironmentAtoms<R, E>(
       label: "environment-data:server:check-otlp-endpoint",
       tag: WS_METHODS.serverCheckOtlpEndpoint,
     }),
+    directPushStatus: createEnvironmentRpcQueryAtomFamily(runtime, {
+      label: "environment-data:server:direct-push-status",
+      tag: WS_METHODS.directPushGetStatus,
+      staleTimeMs: 0,
+    }),
+    setDirectPushServiceAccount: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:server:direct-push-set-service-account",
+      tag: WS_METHODS.directPushSetServiceAccount,
+    }),
+    sendDirectPushTest: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:server:direct-push-send-test",
+      tag: WS_METHODS.directPushSendTest,
+    }),
     retryResourceTelemetry: createEnvironmentRpcCommand(runtime, {
       label: "environment-data:server:retry-resource-telemetry",
       tag: WS_METHODS.serverRetryResourceTelemetry,
