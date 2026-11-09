@@ -2,11 +2,14 @@ import { useAtomValue } from "@effect/atom-react";
 import type {
   DeliverableKind,
   DeliverableRendition,
-  DeliverableUnitChange,
   DeliverableVersion,
   EnvironmentId,
 } from "@t3tools/contracts";
-import { formatTimecode } from "@t3tools/shared/deliverableNotes";
+import {
+  changeRegion,
+  compareUnitLabel,
+  UNIT_CHANGE_LABEL,
+} from "@t3tools/client-runtime/work/anchors";
 import { AsyncResult } from "effect/reactivity";
 import { useState } from "react";
 
@@ -17,28 +20,6 @@ import { RegionOutline } from "./RegionOutline";
 import { useRendition } from "./useWorkData";
 
 type CompareLayout = "side" | "overlay";
-
-const UNIT_NOUN: Record<DeliverableKind, string> = {
-  deck: "Slide",
-  pdf: "Page",
-  video: "Shot",
-  image: "Image",
-  other: "Part",
-};
-
-function unitLabel(
-  kind: DeliverableKind,
-  change: DeliverableUnitChange,
-  rendition: DeliverableRendition | null,
-) {
-  const index = change.targetIndex ?? change.baseIndex ?? 0;
-  const unit = rendition?.units.find((candidate) => candidate.index === index);
-  const time =
-    kind === "video" && unit?.start !== undefined && unit.end !== undefined
-      ? ` · ${formatTimecode(unit.start)}-${formatTimecode(unit.end)}`
-      : "";
-  return `${UNIT_NOUN[kind]} ${index + 1}${time}`;
-}
 
 /** Two versions side by side or overlaid with a slider, changed slides or shots marked. */
 export function CompareView(props: {
@@ -124,17 +105,12 @@ export function CompareView(props: {
         {shown.map((change) => {
           const before = image(baseRendition, change.baseIndex);
           const after = image(targetRendition, change.targetIndex);
-          const region =
-            change.anchor?.kind === "region"
-              ? change.anchor
-              : change.anchor !== null && change.anchor.region !== undefined
-                ? change.anchor.region
-                : null;
+          const region = changeRegion(change);
           return (
             <li key={`${change.baseIndex}:${change.targetIndex}`} className="flex flex-col gap-2">
               <div className="flex items-center gap-2 text-xs">
                 <span className="font-medium text-work-ink">
-                  {unitLabel(props.kind, change, targetRendition ?? baseRendition)}
+                  {compareUnitLabel(props.kind, change, targetRendition ?? baseRendition)}
                 </span>
                 <span
                   className={cn(
@@ -144,13 +120,7 @@ export function CompareView(props: {
                       : "bg-work-status-fixed/14 text-work-status-fixed",
                   )}
                 >
-                  {change.status === "changed"
-                    ? "Changed"
-                    : change.status === "added"
-                      ? "Added"
-                      : change.status === "removed"
-                        ? "Removed"
-                        : "Unchanged"}
+                  {UNIT_CHANGE_LABEL[change.status]}
                 </span>
               </div>
               {layout === "side" ? (

@@ -9,6 +9,7 @@ import {
   pickCompareVersion,
   type CompareSelection,
 } from "@t3tools/client-runtime/work/compare";
+import { notePinAnchor, notePinLabel, renditionMeta } from "@t3tools/client-runtime/work/anchors";
 import type { NoteCheckTarget } from "@t3tools/client-runtime/work/notes";
 import { primaryDeliverable } from "@t3tools/client-runtime/work/shelf";
 import { historyAvailability, versionStrip } from "@t3tools/client-runtime/work/versions";
@@ -22,7 +23,7 @@ import {
   type ProjectId,
   type UploadChatAttachment,
 } from "@t3tools/contracts";
-import { formatTimecode, formatWholeDeliverableMessage } from "@t3tools/shared/deliverableNotes";
+import { formatWholeDeliverableMessage } from "@t3tools/shared/deliverableNotes";
 import { Link } from "@tanstack/react-router";
 import { ChevronLeftIcon, RotateCcwIcon } from "lucide-react";
 import { useRef, useState } from "react";
@@ -180,31 +181,17 @@ export function WorkProjectScreen(props: {
       item.type === "spend_approval" && item.approvalStatus === "pending" ? [item] : [],
     ) ?? NO_SPEND_APPROVALS;
 
-  const pinLabel =
-    kind === "video"
-      ? formatTimecode(playhead)
-      : (kind === "deck" || kind === "pdf") && selectedSlide !== null
-        ? `${kind === "pdf" ? "Page" : "Slide"} ${selectedSlide + 1}`
-        : drawing !== null
-          ? "the drawing"
-          : null;
+  const pinTarget = {
+    kind,
+    playheadSeconds: playhead,
+    selectedSlide,
+    region: drawing?.region ?? null,
+  };
+  const pinLabel = notePinLabel(pinTarget);
 
   /** A drawing always pins: it marks a place, so it is a note even with "Whole deck" chosen. */
-  const pinnedAnchor = (): DeliverableAnchor | null => {
-    const region = drawing?.region;
-    if ((!pinned && drawing === null) || pinLabel === null) return null;
-    if (kind === "video") {
-      return region === undefined
-        ? { kind: "time", t: playhead }
-        : { kind: "time", t: playhead, region };
-    }
-    if ((kind === "deck" || kind === "pdf") && selectedSlide !== null) {
-      return region === undefined
-        ? { kind: "slide", index: selectedSlide }
-        : { kind: "slide", index: selectedSlide, region };
-    }
-    return region === undefined ? null : { kind: "region", ...region };
-  };
+  const pinnedAnchor = (): DeliverableAnchor | null =>
+    notePinAnchor(pinTarget, pinned || drawing !== null);
 
   const seekTo = (seconds: number) => setSeek({ seconds, nonce: Date.now() });
 
@@ -361,19 +348,7 @@ export function WorkProjectScreen(props: {
       ? highlightNote.anchor
       : (highlightNote?.anchor?.region ?? drawing?.region ?? null);
 
-  const meta =
-    rendition === null
-      ? null
-      : kind === "video"
-        ? [
-            rendition.durationSeconds === null ? null : formatTimecode(rendition.durationSeconds),
-            rendition.height === null ? null : `${rendition.height}p`,
-          ]
-            .filter((part) => part !== null)
-            .join(" · ")
-        : kind === "deck" || kind === "pdf"
-          ? `${rendition.units.length} ${kind === "pdf" ? "pages" : "slides"}`
-          : null;
+  const meta = renditionMeta(kind, rendition);
 
   const canvas = (() => {
     if (snapshot === null) return <CanvasMessage>Loading…</CanvasMessage>;

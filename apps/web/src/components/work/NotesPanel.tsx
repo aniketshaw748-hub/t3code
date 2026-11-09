@@ -7,6 +7,11 @@ import {
   workChatEntries,
   type NoteCheckTarget,
 } from "@t3tools/client-runtime/work/notes";
+import {
+  noteAnchorChip,
+  noteAuthorLabel,
+  plainPreview,
+} from "@t3tools/client-runtime/work/anchors";
 import type {
   Deliverable,
   DeliverableNote,
@@ -14,7 +19,7 @@ import type {
   DeliverableVersionId,
   EnvironmentId,
 } from "@t3tools/contracts";
-import { describeAnchor, formatTimecode } from "@t3tools/shared/deliverableNotes";
+import { describeAnchor } from "@t3tools/shared/deliverableNotes";
 import * as DateTime from "effect/DateTime";
 import { SendIcon, SparklesIcon, Trash2Icon, XIcon } from "lucide-react";
 import { useState, type ReactNode, type RefObject } from "react";
@@ -267,22 +272,8 @@ function NoteCard(props: {
   const { note, display } = props;
   const setStatus = useAtomCommand(workEnvironment.setNoteStatus, "update note");
   const remove = useAtomCommand(workEnvironment.deleteNote, "delete note");
-  const author =
-    note.author.kind === "external"
-      ? (note.author.name ?? note.author.source ?? "Reviewer")
-      : "You";
-  const chip =
-    note.anchor === null
-      ? props.kind === "deck"
-        ? "Whole deck"
-        : props.kind === "video"
-          ? "Whole video"
-          : "Whole file"
-      : note.anchor.kind === "time"
-        ? formatTimecode(note.anchor.t)
-        : note.anchor.kind === "slide"
-          ? `Slide ${note.anchor.index + 1}`
-          : "Area";
+  const author = noteAuthorLabel(note.author);
+  const chip = noteAnchorChip(note.anchor, props.kind);
   const target = { environmentId: props.environmentId, input: { noteId: note.id } };
   return (
     <article
@@ -434,7 +425,7 @@ function WorkChatLog(props: {
             )}
           >
             {/* A plain preview: markdown emphasis and code marks would show as stray characters. */}
-            {entry.role === "user" ? entry.text : entry.text.replace(/[*_`#>]+/g, "")}
+            {entry.role === "user" ? entry.text : plainPreview(entry.text)}
           </p>
         </div>
       ))}

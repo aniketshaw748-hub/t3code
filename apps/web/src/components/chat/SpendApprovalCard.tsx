@@ -3,6 +3,7 @@ import {
   isAtomCommandInterrupted,
   squashAtomCommandFailure,
 } from "@t3tools/client-runtime/state/runtime";
+import { formatSpendAmount, spendApprovalDetails } from "@t3tools/client-runtime/work/anchors";
 import type { EnvironmentId, OrchestrationV2TurnItem } from "@t3tools/contracts";
 import { CheckIcon, CoinsIcon, MinusIcon } from "lucide-react";
 import { useRef, useState } from "react";
@@ -16,9 +17,6 @@ export type SpendApprovalItem = Extract<
   OrchestrationV2TurnItem,
   { readonly type: "spend_approval" }
 >;
-
-const formatAmount = (estimate: SpendApprovalItem["estimate"]) =>
-  `${Number.isInteger(estimate.amount) ? estimate.amount : estimate.amount.toFixed(2)} ${estimate.unit}`;
 
 const ANSWERED_LABEL: Record<Exclude<SpendApprovalItem["approvalStatus"], "pending">, string> = {
   approved: "Approved",
@@ -45,7 +43,7 @@ export function SpendApprovalCard(props: {
         icon={<Icon className="size-3.5 text-icon-muted" aria-hidden />}
         label={
           <>
-            {item.description} · {formatAmount(item.estimate)} ·{" "}
+            {item.description} · {formatSpendAmount(item.estimate)} ·{" "}
             {item.approvalStatus === "pending"
               ? "Waiting for an answer in the original thread"
               : ANSWERED_LABEL[item.approvalStatus]}
@@ -89,11 +87,7 @@ function PendingSpendApproval(props: {
       setError(failure instanceof Error ? failure.message : "Could not record the answer.");
     }
   };
-  const details = [
-    ...(item.service === undefined ? [] : [["Service", item.service] as const]),
-    ...(item.model === undefined ? [] : [["Model", item.model] as const]),
-    ...Object.entries(item.settings ?? {}),
-  ];
+  const details = spendApprovalDetails(item);
   return (
     <section
       data-v2-item-type={item.type}
@@ -106,7 +100,7 @@ function PendingSpendApproval(props: {
           <p className="text-sm font-medium wrap-anywhere text-foreground">{item.description}</p>
           <p className="text-sm text-muted-foreground">
             Costs about{" "}
-            <span className="font-medium text-foreground">{formatAmount(item.estimate)}</span>
+            <span className="font-medium text-foreground">{formatSpendAmount(item.estimate)}</span>
           </p>
         </div>
       </div>
