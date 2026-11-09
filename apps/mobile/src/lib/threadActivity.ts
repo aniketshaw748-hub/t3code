@@ -562,6 +562,8 @@ function itemIcon(item: OrchestrationV2TurnItem): ThreadFeedActivity["icon"] {
       return "zap";
     case "secret_request":
       return "lock";
+    case "spend_approval":
+      return "zap";
     case "link_request":
       return "globe";
   }
@@ -623,6 +625,8 @@ function itemSummary(
       return "Thread created";
     case "secret_request":
       return item.label;
+    case "spend_approval":
+      return `Approve spend: ${item.description}`;
     case "link_request":
       return `Link ${item.label ?? item.url ?? "an environment"}`;
     case "dynamic_tool": {
@@ -685,6 +689,8 @@ function itemPreview(item: OrchestrationV2TurnItem): string | null {
     case "secret_request":
     case "link_request":
       return item.reason || null;
+    case "spend_approval":
+      return `${item.estimate.amount} ${item.estimate.unit} (${item.approvalStatus})`;
     case "subagent":
       return item.result ?? item.progress ?? item.prompt;
     case "dynamic_tool":

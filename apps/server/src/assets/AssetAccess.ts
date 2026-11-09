@@ -165,6 +165,14 @@ const AssetClaimsSchema = Schema.Union([
   }),
   Schema.Struct({
     version: Schema.Literal(1),
+    kind: Schema.Literal("deliverable-file"),
+    /** Relative to the deliverable store; its files are immutable, named by content hash. */
+    relativePath: Schema.String,
+    mimeType: Schema.String,
+    expiresAt: Schema.Number,
+  }),
+  Schema.Struct({
+    version: Schema.Literal(1),
     kind: Schema.Literal(SOURCE_CONTROL_MEDIA_ASSET),
     /** A host's `fetchUrl`, narrowed at mint time; the signature is what keeps it there. */
     url: Schema.String,
@@ -875,6 +883,24 @@ export const issueAssetUrl = Effect.fn("AssetAccess.issueAssetUrl")(function* (i
   };
 });
 
+/** A URL for a rendition or stored version file; the caller already checked access to it. */
+export const issueDeliverableFileUrl = Effect.fn("AssetAccess.issueDeliverableFileUrl")(
+  function* (input: { readonly relativePath: string; readonly mimeType: string }) {
+    const expiresAt = (yield* Clock.currentTimeMillis) + ASSET_TOKEN_TTL_MS;
+    const claims: AssetClaims = {
+      version: 1,
+      kind: "deliverable-file",
+      relativePath: input.relativePath,
+      mimeType: input.mimeType,
+      expiresAt,
+    };
+    const encodedPayload = base64UrlEncode(encodeAssetClaims(claims));
+    const signature = yield* (yield* AssetSigner.AssetSigner).sign(encodedPayload);
+    const fileName = input.relativePath.slice(input.relativePath.lastIndexOf("/") + 1);
+    return `${ASSET_ROUTE_PREFIX}/${encodedPayload}.${signature}/${encodeURIComponent(fileName)}`;
+  },
+);
+
 export const resolveAsset = Effect.fn("AssetAccess.resolveAsset")(function* (
   token: string,
   relativePath: string,
@@ -921,6 +947,21 @@ export const resolveAsset = Effect.fn("AssetAccess.resolveAsset")(function* (
           ...(claims.mimeType !== undefined ? { mimeType: claims.mimeType } : {}),
           ...(claims.renderIntent === "mcp-app" ? { renderIntent: "mcp-app" as const } : {}),
         } satisfies ResolvedAsset)
+      : null;
+  }
+
+  if (claims.kind === "deliverable-file") {
+    const segments = claims.relativePath.split("/");
+    if (segments.some((segment) => segment === "" || segment === "." || segment === "..")) {
+      return null;
+    }
+    const config = yield* ServerConfig.ServerConfig;
+    const path = yield* Path.Path;
+    const filePath = path.join(config.stateDir, "deliverables", ...segments);
+    const fileSystem = yield* FileSystem.FileSystem;
+    const exists = yield* fileSystem.exists(filePath).pipe(Effect.orElseSucceed(() => false));
+    return exists
+      ? ({ kind: "file", path: filePath, mimeType: claims.mimeType } satisfies ResolvedAsset)
       : null;
   }
 

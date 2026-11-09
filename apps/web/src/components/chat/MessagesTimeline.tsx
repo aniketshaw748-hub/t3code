@@ -24,6 +24,7 @@ import { resolveWorkGroupScrollAnchor } from "@t3tools/client-runtime/work-log/s
 import type { WorkflowOpening } from "@t3tools/client-runtime/state/subagentRuntime";
 import { observeResize } from "~/lib/observeResize";
 import { useStableCallback } from "~/hooks/useStableCallback";
+import { ToolCallVisibilityOverride } from "./toolCallVisibilityOverride";
 
 const NOOP_USE_ARTIFACT_TEMPLATE = () => {};
 const EMPTY_PENDING_APPROVALS: ReadonlyArray<PendingApproval> = [];
@@ -574,7 +575,8 @@ const ConversationTimeline = memo(function ConversationTimeline({
     }
   }
 
-  const preferredToolCallVisibility = useClientSettings((settings) => settings.toolCallVisibility);
+  const settingsToolCallVisibility = useClientSettings((settings) => settings.toolCallVisibility);
+  const preferredToolCallVisibility = use(ToolCallVisibilityOverride) ?? settingsToolCallVisibility;
   const toolCallVisibility =
     findActive && preferredToolCallVisibility === "zen" ? "hideAll" : preferredToolCallVisibility;
   const revealedMessageId = citationRequest?.citation.messageId ?? null;

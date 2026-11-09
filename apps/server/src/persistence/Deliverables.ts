@@ -1,0 +1,445 @@
+import {
+  Deliverable,
+  DeliverableAnchor,
+  DeliverableId,
+  DeliverableKind,
+  DeliverableRenditionStatus,
+  DeliverableSelfCheckResult,
+  DeliverableVersion,
+  DeliverableVersionId,
+  DeliverableVersionSource,
+  ProjectId,
+} from "@t3tools/contracts";
+import * as NodeSqliteClient from "@t3tools/shared/nodeSqliteClient";
+import * as Context from "effect/Context";
+import type * as DateTime from "effect/DateTime";
+import * as Effect from "effect/Effect";
+import * as Layer from "effect/Layer";
+import * as Option from "effect/Option";
+import * as Schema from "effect/Schema";
+import * as SqlClient from "effect/sql/SqlClient";
+import * as SqlSchema from "effect/sql/SqlSchema";
+
+import {
+  type PersistenceDecodeError,
+  type PersistenceSqlError,
+  toPersistenceDecodeError,
+  toPersistenceSqlError,
+} from "./Errors.ts";
+
+export type DeliverableRepositoryError = PersistenceSqlError | PersistenceDecodeError;
+
+const json = <S extends Schema.Top>(schema: S) => Schema.fromJsonString(Schema.toCodecJson(schema));
+
+const DeliverableRow = Schema.Struct({
+  ...Deliverable.fields,
+  createdAt: Schema.DateTimeUtcFromString,
+  updatedAt: Schema.DateTimeUtcFromString,
+});
+
+export const StoredDeliverableVersion = Schema.Struct({
+  ...DeliverableVersion.fields,
+  /** Git blob id of the deliverable file in the snapshot, for cheap change detection. */
+  sourceBlobOid: Schema.NullOr(Schema.String),
+});
+export type StoredDeliverableVersion = typeof StoredDeliverableVersion.Type;
+
+const VersionRow = Schema.Struct({
+  ...StoredDeliverableVersion.fields,
+  source: json(DeliverableVersionSource),
+  expectedChanges: json(Schema.Array(DeliverableAnchor)),
+  selfCheck: Schema.NullOr(json(DeliverableSelfCheckResult)),
+  createdAt: Schema.DateTimeUtcFromString,
+});
+
+/** What a renderer produced for one content hash, kept as opaque JSON the service owns. */
+export const StoredRendition = Schema.Struct({
+  contentSha256: Schema.String,
+  kind: DeliverableKind,
+  status: DeliverableRenditionStatus,
+  renderer: Schema.NullOr(Schema.String),
+  detail: Schema.NullOr(Schema.String),
+  data: Schema.NullOr(Schema.Unknown),
+  updatedAt: Schema.DateTimeUtc,
+});
+export type StoredRendition = typeof StoredRendition.Type;
+
+const RenditionRow = Schema.Struct({
+  ...StoredRendition.fields,
+  data: Schema.NullOr(Schema.fromJsonString(Schema.Unknown)),
+  updatedAt: Schema.DateTimeUtcFromString,
+});
+
+export interface NewDeliverableVersion {
+  readonly version: StoredDeliverableVersion;
+  /** Moves the deliverable's current pointer to the new version in the same transaction. */
+  readonly updatedAt: DateTime.Utc;
+}
+
+export class DeliverableRepository extends Context.Service<
+  DeliverableRepository,
+  {
+    readonly listDeliverables: (
+      projectId: ProjectId,
+    ) => Effect.Effect<ReadonlyArray<Deliverable>, DeliverableRepositoryError>;
+    readonly getDeliverable: (
+      id: DeliverableId,
+    ) => Effect.Effect<Option.Option<Deliverable>, DeliverableRepositoryError>;
+    readonly findDeliverableByPath: (input: {
+      readonly projectId: ProjectId;
+      readonly path: string;
+    }) => Effect.Effect<Option.Option<Deliverable>, DeliverableRepositoryError>;
+    readonly insertDeliverable: (
+      deliverable: Deliverable,
+    ) => Effect.Effect<void, DeliverableRepositoryError>;
+    readonly setCurrentVersion: (input: {
+      readonly deliverableId: DeliverableId;
+      readonly versionId: DeliverableVersionId;
+      readonly updatedAt: DateTime.Utc;
+      readonly restore?: {
+        readonly restoreId: string;
+        readonly action: "undo" | "redo" | "restore";
+        readonly fromVersionId: DeliverableVersionId | null;
+      };
+    }) => Effect.Effect<void, DeliverableRepositoryError>;
+    readonly listVersions: (
+      deliverableId: DeliverableId,
+    ) => Effect.Effect<ReadonlyArray<StoredDeliverableVersion>, DeliverableRepositoryError>;
+    readonly getVersion: (
+      versionId: DeliverableVersionId,
+    ) => Effect.Effect<Option.Option<StoredDeliverableVersion>, DeliverableRepositoryError>;
+    readonly insertVersion: (
+      input: NewDeliverableVersion,
+    ) => Effect.Effect<void, DeliverableRepositoryError>;
+    /** Versions whose content has no finished rendition, oldest first. */
+    readonly listUnrendered: Effect.Effect<
+      ReadonlyArray<DeliverableVersionId>,
+      DeliverableRepositoryError
+    >;
+    /** Undo, redo and restore actions in the project after `since`, oldest first. */
+    readonly listRestoresSince: (input: {
+      readonly projectId: ProjectId;
+      readonly since: DateTime.Utc;
+    }) => Effect.Effect<
+      ReadonlyArray<{
+        readonly action: "undo" | "redo" | "restore";
+        readonly path: string;
+        readonly ordinal: number;
+      }>,
+      DeliverableRepositoryError
+    >;
+    readonly setSelfCheck: (input: {
+      readonly versionId: DeliverableVersionId;
+      readonly result: DeliverableSelfCheckResult;
+    }) => Effect.Effect<void, DeliverableRepositoryError>;
+    readonly getRendition: (input: {
+      readonly contentSha256: string;
+      readonly kind: DeliverableKind;
+    }) => Effect.Effect<Option.Option<StoredRendition>, DeliverableRepositoryError>;
+    readonly putRendition: (
+      rendition: StoredRendition,
+    ) => Effect.Effect<void, DeliverableRepositoryError>;
+    /** Content hashes already stored for these Git blob ids. */
+    readonly lookupBlobs: (
+      gitBlobOids: ReadonlyArray<string>,
+    ) => Effect.Effect<ReadonlyMap<string, string>, DeliverableRepositoryError>;
+    readonly recordBlob: (input: {
+      readonly gitBlobOid: string;
+      readonly contentSha256: string;
+      readonly sizeBytes: number;
+    }) => Effect.Effect<void, DeliverableRepositoryError>;
+  }
+>()("t3/persistence/Deliverables/DeliverableRepository") {}
+
+const make = Effect.gen(function* () {
+  const sql = yield* SqlClient.SqlClient;
+
+  const sqlError = (operation: string) => (cause: unknown) =>
+    Schema.isSchemaError(cause)
+      ? toPersistenceDecodeError(operation)(cause)
+      : toPersistenceSqlError(operation)(cause);
+
+  const deliverableColumns = sql`
+    d.deliverable_id AS "id",
+    d.project_id AS "projectId",
+    d.kind AS "kind",
+    d.path AS "path",
+    d.title AS "title",
+    d.current_version_id AS "currentVersionId",
+    (SELECT COUNT(*) FROM deliverable_versions v WHERE v.deliverable_id = d.deliverable_id)
+      AS "versionCount",
+    d.created_at AS "createdAt",
+    d.updated_at AS "updatedAt"
+  `;
+
+  const findDeliverables = SqlSchema.findAll({
+    Request: Schema.Struct({
+      projectId: Schema.optional(ProjectId),
+      id: Schema.optional(DeliverableId),
+      path: Schema.optional(Schema.String),
+    }),
+    Result: DeliverableRow,
+    execute: (request) => sql`
+      SELECT ${deliverableColumns}
+      FROM deliverables d
+      WHERE ${sql.and([
+        ...(request.projectId === undefined ? [] : [sql`d.project_id = ${request.projectId}`]),
+        ...(request.id === undefined ? [] : [sql`d.deliverable_id = ${request.id}`]),
+        ...(request.path === undefined ? [] : [sql`d.path = ${request.path}`]),
+      ])}
+      ORDER BY d.updated_at DESC, d.deliverable_id ASC
+    `,
+  });
+
+  const findVersions = SqlSchema.findAll({
+    Request: Schema.Struct({
+      deliverableId: Schema.optional(DeliverableId),
+      versionId: Schema.optional(DeliverableVersionId),
+    }),
+    Result: VersionRow,
+    execute: (request) => sql`
+      SELECT
+        v.version_id AS "id",
+        v.deliverable_id AS "deliverableId",
+        v.ordinal AS "ordinal",
+        v.parent_version_id AS "parentVersionId",
+        v.content_sha256 AS "contentSha256",
+        v.size_bytes AS "sizeBytes",
+        v.source_blob_oid AS "sourceBlobOid",
+        v.commit_oid AS "commitOid",
+        v.version_ref AS "ref",
+        v.source_json AS "source",
+        v.summary AS "summary",
+        v.expected_changes_json AS "expectedChanges",
+        COALESCE(r.status, 'pending') AS "renditionStatus",
+        v.self_check_json AS "selfCheck",
+        v.created_at AS "createdAt"
+      FROM deliverable_versions v
+      JOIN deliverables d ON d.deliverable_id = v.deliverable_id
+      LEFT JOIN deliverable_renditions r
+        ON r.content_sha256 = v.content_sha256 AND r.kind = d.kind
+      WHERE ${sql.and([
+        ...(request.deliverableId === undefined
+          ? []
+          : [sql`v.deliverable_id = ${request.deliverableId}`]),
+        ...(request.versionId === undefined ? [] : [sql`v.version_id = ${request.versionId}`]),
+      ])}
+      ORDER BY v.ordinal ASC
+    `,
+  });
+
+  const findRendition = SqlSchema.findOneOption({
+    Request: Schema.Struct({ contentSha256: Schema.String, kind: DeliverableKind }),
+    Result: RenditionRow,
+    execute: ({ contentSha256, kind }) => sql`
+      SELECT
+        content_sha256 AS "contentSha256",
+        kind,
+        status,
+        renderer,
+        detail,
+        rendition_json AS "data",
+        updated_at AS "updatedAt"
+      FROM deliverable_renditions
+      WHERE content_sha256 = ${contentSha256} AND kind = ${kind}
+    `,
+  });
+
+  const encodeVersion = Schema.encodeEffect(VersionRow);
+  const encodeDeliverable = Schema.encodeEffect(DeliverableRow);
+  const encodeRendition = Schema.encodeEffect(RenditionRow);
+  const encodeSelfCheck = Schema.encodeEffect(json(DeliverableSelfCheckResult));
+  const encodeUtc = Schema.encodeEffect(Schema.DateTimeUtcFromString);
+
+  const first = <A>(rows: ReadonlyArray<A>) => Option.fromNullishOr(rows[0]);
+
+  return DeliverableRepository.of({
+    listDeliverables: Effect.fn("DeliverableRepository.listDeliverables")(function* (projectId) {
+      return yield* findDeliverables({ projectId }).pipe(
+        NodeSqliteClient.readOnly,
+        Effect.mapError(sqlError("listDeliverables")),
+      );
+    }),
+    getDeliverable: Effect.fn("DeliverableRepository.getDeliverable")(function* (id) {
+      return first(
+        yield* findDeliverables({ id }).pipe(
+          NodeSqliteClient.readOnly,
+          Effect.mapError(sqlError("getDeliverable")),
+        ),
+      );
+    }),
+    findDeliverableByPath: Effect.fn("DeliverableRepository.findDeliverableByPath")(
+      function* (input) {
+        return first(
+          yield* findDeliverables(input).pipe(
+            NodeSqliteClient.readOnly,
+            Effect.mapError(sqlError("findDeliverableByPath")),
+          ),
+        );
+      },
+    ),
+    insertDeliverable: Effect.fn("DeliverableRepository.insertDeliverable")(
+      function* (input) {
+        const row = yield* encodeDeliverable(input);
+        yield* sql`
+        INSERT INTO deliverables (
+          deliverable_id, project_id, path, kind, title, current_version_id, created_at, updated_at
+        ) VALUES (
+          ${row.id}, ${row.projectId}, ${row.path}, ${row.kind}, ${row.title},
+          ${row.currentVersionId}, ${row.createdAt}, ${row.updatedAt}
+        )
+      `;
+      },
+      Effect.mapError(sqlError("insertDeliverable")),
+    ),
+    setCurrentVersion: Effect.fn("DeliverableRepository.setCurrentVersion")(
+      function* (input) {
+        const updatedAt = yield* encodeUtc(input.updatedAt);
+        yield* Effect.gen(function* () {
+          yield* sql`
+          UPDATE deliverables
+          SET current_version_id = ${input.versionId}, updated_at = ${updatedAt}
+          WHERE deliverable_id = ${input.deliverableId}
+        `;
+          if (input.restore !== undefined) {
+            yield* sql`
+            INSERT INTO deliverable_restores (
+              restore_id, deliverable_id, action, from_version_id, to_version_id, created_at
+            ) VALUES (
+              ${input.restore.restoreId}, ${input.deliverableId}, ${input.restore.action},
+              ${input.restore.fromVersionId}, ${input.versionId}, ${updatedAt}
+            )
+          `;
+          }
+        }).pipe(sql.withTransaction);
+      },
+      Effect.mapError(sqlError("setCurrentVersion")),
+    ),
+    listVersions: Effect.fn("DeliverableRepository.listVersions")(function* (deliverableId) {
+      return yield* findVersions({ deliverableId }).pipe(
+        NodeSqliteClient.readOnly,
+        Effect.mapError(sqlError("listVersions")),
+      );
+    }),
+    getVersion: Effect.fn("DeliverableRepository.getVersion")(function* (versionId) {
+      return first(
+        yield* findVersions({ versionId }).pipe(
+          NodeSqliteClient.readOnly,
+          Effect.mapError(sqlError("getVersion")),
+        ),
+      );
+    }),
+    insertVersion: Effect.fn("DeliverableRepository.insertVersion")(
+      function* (input) {
+        const row = yield* encodeVersion(input.version);
+        const updatedAt = yield* encodeUtc(input.updatedAt);
+        yield* Effect.gen(function* () {
+          yield* sql`
+          INSERT INTO deliverable_versions (
+            version_id, deliverable_id, ordinal, parent_version_id, content_sha256, size_bytes,
+            source_blob_oid, commit_oid, version_ref, source_json, summary, expected_changes_json,
+            self_check_json, created_at
+          ) VALUES (
+            ${row.id}, ${row.deliverableId}, ${row.ordinal}, ${row.parentVersionId},
+            ${row.contentSha256}, ${row.sizeBytes}, ${row.sourceBlobOid}, ${row.commitOid},
+            ${row.ref}, ${row.source}, ${row.summary}, ${row.expectedChanges}, ${row.selfCheck},
+            ${row.createdAt}
+          )
+        `;
+          yield* sql`
+          UPDATE deliverables
+          SET current_version_id = ${row.id}, updated_at = ${updatedAt}
+          WHERE deliverable_id = ${row.deliverableId}
+        `;
+        }).pipe(sql.withTransaction);
+      },
+      Effect.mapError(sqlError("insertVersion")),
+    ),
+    listUnrendered: sql<{ readonly id: DeliverableVersionId }>`
+      SELECT v.version_id AS "id"
+      FROM deliverable_versions v
+      JOIN deliverables d ON d.deliverable_id = v.deliverable_id
+      LEFT JOIN deliverable_renditions r
+        ON r.content_sha256 = v.content_sha256 AND r.kind = d.kind
+      WHERE r.status IS NULL OR r.status IN ('pending', 'rendering')
+      ORDER BY v.created_at ASC
+    `.pipe(
+      NodeSqliteClient.readOnly,
+      Effect.map((rows) => rows.map((row) => row.id)),
+      Effect.mapError(sqlError("listUnrendered")),
+      Effect.withSpan("DeliverableRepository.listUnrendered"),
+    ),
+    listRestoresSince: Effect.fn("DeliverableRepository.listRestoresSince")(
+      function* (input) {
+        const since = yield* encodeUtc(input.since);
+        return yield* sql<{
+          readonly action: "undo" | "redo" | "restore";
+          readonly path: string;
+          readonly ordinal: number;
+        }>`
+        SELECT r.action AS "action", d.path AS "path", v.ordinal AS "ordinal"
+        FROM deliverable_restores r
+        JOIN deliverables d ON d.deliverable_id = r.deliverable_id
+        JOIN deliverable_versions v ON v.version_id = r.to_version_id
+        WHERE d.project_id = ${input.projectId} AND r.created_at > ${since}
+        ORDER BY r.created_at ASC
+      `.pipe(NodeSqliteClient.readOnly);
+      },
+      Effect.mapError(sqlError("listRestoresSince")),
+    ),
+    setSelfCheck: Effect.fn("DeliverableRepository.setSelfCheck")(
+      function* (input) {
+        const encoded = yield* encodeSelfCheck(input.result);
+        yield* sql`
+        UPDATE deliverable_versions SET self_check_json = ${encoded}
+        WHERE version_id = ${input.versionId}
+      `;
+      },
+      Effect.mapError(sqlError("setSelfCheck")),
+    ),
+    getRendition: Effect.fn("DeliverableRepository.getRendition")(function* (input) {
+      return yield* findRendition(input).pipe(
+        NodeSqliteClient.readOnly,
+        Effect.mapError(sqlError("getRendition")),
+      );
+    }),
+    putRendition: Effect.fn("DeliverableRepository.putRendition")(
+      function* (input) {
+        const row = yield* encodeRendition(input);
+        yield* sql`
+        INSERT INTO deliverable_renditions (
+          content_sha256, kind, status, renderer, detail, rendition_json, updated_at
+        ) VALUES (
+          ${row.contentSha256}, ${row.kind}, ${row.status}, ${row.renderer}, ${row.detail},
+          ${row.data}, ${row.updatedAt}
+        )
+        ON CONFLICT (content_sha256, kind) DO UPDATE SET
+          status = excluded.status,
+          renderer = excluded.renderer,
+          detail = excluded.detail,
+          rendition_json = excluded.rendition_json,
+          updated_at = excluded.updated_at
+      `;
+      },
+      Effect.mapError(sqlError("putRendition")),
+    ),
+    lookupBlobs: Effect.fn("DeliverableRepository.lookupBlobs")(function* (gitBlobOids) {
+      if (gitBlobOids.length === 0) return new Map<string, string>();
+      const rows = yield* sql<{ readonly oid: string; readonly sha: string }>`
+        SELECT git_blob_oid AS "oid", content_sha256 AS "sha"
+        FROM deliverable_blob_index
+        WHERE ${sql.in("git_blob_oid", gitBlobOids)}
+      `.pipe(NodeSqliteClient.readOnly, Effect.mapError(sqlError("lookupBlobs")));
+      return new Map(rows.map((row) => [row.oid, row.sha]));
+    }),
+    recordBlob: Effect.fn("DeliverableRepository.recordBlob")(function* (input) {
+      yield* sql`
+        INSERT INTO deliverable_blob_index (git_blob_oid, content_sha256, size_bytes)
+        VALUES (${input.gitBlobOid}, ${input.contentSha256}, ${input.sizeBytes})
+        ON CONFLICT (git_blob_oid) DO NOTHING
+      `.pipe(Effect.mapError(sqlError("recordBlob")));
+    }),
+  });
+});
+
+export const layer = Layer.effect(DeliverableRepository, make);

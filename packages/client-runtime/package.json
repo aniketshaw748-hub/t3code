@@ -538,6 +538,34 @@
     "./provider-instance-ids": {
       "types": "./src/providerInstanceIds.ts",
       "default": "./src/providerInstanceIds.ts"
+    },
+    "./work/environment": {
+      "types": "./src/work/workEnvironment.ts",
+      "default": "./src/work/workEnvironment.ts"
+    },
+    "./work/notes": {
+      "types": "./src/work/workNotes.ts",
+      "default": "./src/work/workNotes.ts"
+    },
+    "./work/markers": {
+      "types": "./src/work/workMarkers.ts",
+      "default": "./src/work/workMarkers.ts"
+    },
+    "./work/versions": {
+      "types": "./src/work/workVersions.ts",
+      "default": "./src/work/workVersions.ts"
+    },
+    "./work/compare": {
+      "types": "./src/work/workCompare.ts",
+      "default": "./src/work/workCompare.ts"
+    },
+    "./work/shelf": {
+      "types": "./src/work/workShelf.ts",
+      "default": "./src/work/workShelf.ts"
+    },
+    "./work/starters": {
+      "types": "./src/work/workStarters.ts",
+      "default": "./src/work/workStarters.ts"
     }
   },
   "scripts": {

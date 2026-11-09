@@ -624,6 +624,7 @@ function commandThreadId(command: OrchestrationV2ServerCommand): ThreadId {
     case "thread.created.record":
       return command.parentThreadId;
     case "secret_request.record":
+    case "spend_approval.record":
     case "link_request.record":
       return command.threadId;
     case "thread.fork":
@@ -9153,6 +9154,91 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
     },
   );
 
+  /** A settled card never reopens, so a late `pending` retry cannot undo an answer. */
+  const dispatchSpendApprovalRecord = Effect.fn("orchestrationV2.dispatch.spendApprovalRecord")(
+    function* (
+      command: Extract<OrchestrationV2InternalCommand, { readonly type: "spend_approval.record" }>,
+      events: Ref.Ref<Array<OrchestrationV2DomainEvent>>,
+    ) {
+      const projection = yield* projectionStore
+        .getThreadRecords(
+          command.threadId,
+          ["runs", "nodes", "turnItems", "attempts", "providerTurns"],
+          { turnItemTypes: ["spend_approval"], messageRoles: [] },
+        )
+        .pipe(
+          Effect.mapError(
+            (cause) => new OrchestratorProjectionError({ threadId: command.threadId, cause }),
+          ),
+        );
+      const run = projection.runs.find((candidate) => candidate.id === command.runId);
+      if (run === undefined || run.rootNodeId !== command.nodeId) {
+        return yield* new OrchestratorDispatchError({
+          commandId: command.commandId,
+          commandType: command.type,
+          cause: `Node ${command.nodeId} is not the root of run ${command.runId}.`,
+        });
+      }
+      const existing = projection.turnItems.find((item) => item.id === command.turnItemId);
+      if (
+        existing !== undefined &&
+        (existing.type !== "spend_approval" || existing.runId !== command.runId)
+      ) {
+        return yield* new OrchestratorDispatchError({
+          commandId: command.commandId,
+          commandType: command.type,
+          cause: `Turn item ${command.turnItemId} is not a spend approval of run ${command.runId}.`,
+        });
+      }
+      const now = yield* DateTime.now;
+      const unchanged =
+        existing?.type === "spend_approval" &&
+        (existing.approvalStatus !== "pending" || command.approvalStatus === "pending");
+      const pending = command.approvalStatus === "pending";
+      const turnItem: OrchestrationV2TurnItem = unchanged
+        ? existing
+        : {
+            id: command.turnItemId,
+            threadId: command.threadId,
+            runId: command.runId,
+            nodeId: command.nodeId,
+            providerThreadId: run.providerThreadId,
+            providerTurnId: providerTurnForRun(projection, run)?.id ?? null,
+            nativeItemRef: null,
+            parentItemId: null,
+            ordinal: existing?.ordinal ?? (yield* nextTurnItemOrdinal(projection)),
+            status: pending
+              ? "waiting"
+              : command.approvalStatus === "approved"
+                ? "completed"
+                : "cancelled",
+            title: command.description,
+            startedAt: existing?.startedAt ?? now,
+            completedAt: pending ? null : now,
+            updatedAt: now,
+            type: "spend_approval",
+            description: command.description,
+            estimate: command.estimate,
+            ...(command.service === undefined ? {} : { service: command.service }),
+            ...(command.model === undefined ? {} : { model: command.model }),
+            ...(command.settings === undefined ? {} : { settings: command.settings }),
+            approvalStatus: command.approvalStatus,
+          };
+      yield* emit(
+        events,
+        command,
+      )({
+        type: "turn-item.updated",
+        threadId: command.threadId,
+        runId: command.runId,
+        nodeId: command.nodeId,
+        providerInstanceId: run.providerInstanceId,
+        occurredAt: now,
+        payload: turnItem,
+      });
+    },
+  );
+
   /**
    * Records or updates the card for a link an agent asked the user to make.
    * The pairing code goes straight to the link and never through orchestration.
@@ -13805,6 +13891,9 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
         break;
       case "secret_request.record":
         yield* dispatchSecretRequestRecord(command, events);
+        break;
+      case "spend_approval.record":
+        yield* dispatchSpendApprovalRecord(command, events);
         break;
       case "link_request.record":
         yield* dispatchLinkRequestRecord(command, events, effects);

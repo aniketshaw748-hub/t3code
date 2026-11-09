@@ -56,6 +56,7 @@ import {
   OrchestrationGetTurnDiffResult,
 } from "./checkpointDiff.ts";
 import { ModelSelection } from "./modelSelection.ts";
+import { SpendApprovalEstimate } from "./spendApproval.ts";
 import {
   ThreadLinkedPullRequest,
   ThreadPullRequestLink,
@@ -1567,6 +1568,25 @@ const OrchestrationV2SecretRequestFields = {
   secretStatus: OrchestrationV2SecretRequestStatus,
 } as const;
 
+export const OrchestrationV2SpendApprovalStatus = Schema.Literals([
+  "pending",
+  "approved",
+  "declined",
+  "cancelled",
+]);
+export type OrchestrationV2SpendApprovalStatus = typeof OrchestrationV2SpendApprovalStatus.Type;
+
+/** An agent asked before a paid generation step; the card holds what it would spend. */
+const OrchestrationV2SpendApprovalFields = {
+  type: Schema.Literal("spend_approval"),
+  description: TrimmedNonEmptyString,
+  estimate: SpendApprovalEstimate,
+  service: Schema.optional(Schema.String),
+  model: Schema.optional(Schema.String),
+  settings: Schema.optional(Schema.Record(Schema.String, Schema.String)),
+  approvalStatus: OrchestrationV2SpendApprovalStatus,
+} as const;
+
 export const OrchestrationV2LinkRequestStatus = Schema.Literals([
   "pending",
   "linked",
@@ -1796,6 +1816,10 @@ export const OrchestrationV2TurnItem = Schema.Union([
   Schema.Struct({
     ...OrchestrationV2TurnItemBaseFields,
     ...OrchestrationV2SecretRequestFields,
+  }),
+  Schema.Struct({
+    ...OrchestrationV2TurnItemBaseFields,
+    ...OrchestrationV2SpendApprovalFields,
   }),
   Schema.Struct({
     ...OrchestrationV2TurnItemBaseFields,
@@ -2626,6 +2650,10 @@ export const OrchestrationV2TurnItemJson = Schema.Union([
   Schema.Struct({
     ...OrchestrationV2TurnItemJsonBaseFields,
     ...OrchestrationV2SecretRequestFields,
+  }),
+  Schema.Struct({
+    ...OrchestrationV2TurnItemJsonBaseFields,
+    ...OrchestrationV2SpendApprovalFields,
   }),
   Schema.Struct({
     ...OrchestrationV2TurnItemJsonBaseFields,
@@ -3550,6 +3578,21 @@ const OrchestrationV2InternalCommand = Schema.Union([
     placeholder: Schema.optional(Schema.String),
     delivery: Schema.optional(OrchestrationV2SecretRequestDelivery),
     secretStatus: OrchestrationV2SecretRequestStatus,
+  }),
+  /** Internal so only the answering service can mark a spend approved. */
+  Schema.Struct({
+    type: Schema.Literal("spend_approval.record"),
+    commandId: CommandId,
+    threadId: ThreadId,
+    runId: RunId,
+    nodeId: NodeId,
+    turnItemId: TurnItemId,
+    description: TrimmedNonEmptyString,
+    estimate: SpendApprovalEstimate,
+    service: Schema.optional(Schema.String),
+    model: Schema.optional(Schema.String),
+    settings: Schema.optional(Schema.Record(Schema.String, Schema.String)),
+    approvalStatus: OrchestrationV2SpendApprovalStatus,
   }),
   /**
    * Records or updates a link an agent asked the user to make. Internal so no
