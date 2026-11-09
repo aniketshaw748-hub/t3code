@@ -20,6 +20,7 @@ import type {
   DesktopAppActivationRequest,
   DesktopAppActivationResponse,
 } from "./desktopAppActivation.ts";
+import type { DesktopBubbleBridge, DesktopBubbleThreadTarget } from "./desktopBubble.ts";
 
 export interface ContextMenuItem<T extends string = string> {
   id: T;
@@ -1152,6 +1153,9 @@ export interface DesktopBridge {
     complete: (response: DesktopAppActivationResponse) => Promise<void>;
     onRequest: (listener: (request: DesktopAppActivationRequest) => void) => () => void;
   };
+  bubble: DesktopBubbleBridge;
+  /** The floating bubble asked the main window to open a thread. */
+  onBubbleOpenThread: (listener: (target: DesktopBubbleThreadTarget) => void) => () => void;
   preview: DesktopPreviewBridge;
 }
 

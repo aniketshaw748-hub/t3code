@@ -26,6 +26,9 @@ const DesktopSettingsPatch = Schema.Struct({
     ),
   ),
   mainWindowMaximized: Schema.optionalKey(Schema.Boolean),
+  bubblePosition: Schema.optionalKey(
+    Schema.NullOr(Schema.Struct({ x: Schema.Number, y: Schema.Number })),
+  ),
   serverExposureMode: Schema.optionalKey(Schema.Literals(["local-only", "network-accessible"])),
   tailscaleServeEnabled: Schema.optionalKey(Schema.Boolean),
   tailscaleServePort: Schema.optionalKey(Schema.Number),
@@ -183,6 +186,7 @@ describe("DesktopSettings", () => {
           localEnvironmentEnabled: true,
           mainWindowBounds: { x: 120, y: 80, width: 1280, height: 900 },
           mainWindowMaximized: false,
+          bubblePosition: null,
           serverExposureMode: "network-accessible",
           tailscaleServeEnabled: true,
           tailscaleServePort: 8443,
@@ -228,6 +232,7 @@ describe("DesktopSettings", () => {
         const settings = yield* DesktopAppSettings.DesktopAppSettings;
 
         yield* settings.setMainWindowBounds({ x: -1200, y: 40, width: 400, height: 360 }, true);
+        yield* settings.setBubblePosition({ x: -64, y: 300 });
         yield* settings.setServerExposureMode("network-accessible");
 
         const persisted = yield* decodeDesktopSettingsPatch(
@@ -236,6 +241,7 @@ describe("DesktopSettings", () => {
         assert.deepEqual(persisted, {
           mainWindowBounds: { x: -1200, y: 40, width: 400, height: 360 },
           mainWindowMaximized: true,
+          bubblePosition: { x: -64, y: 300 },
           serverExposureMode: "network-accessible",
         } satisfies typeof DesktopSettingsPatch.Type);
 
@@ -245,6 +251,7 @@ describe("DesktopSettings", () => {
         }).pipe(Effect.provide(DesktopAppSettings.layer));
         assert.deepEqual(restored.mainWindowBounds, persisted.mainWindowBounds);
         assert.isTrue(restored.mainWindowMaximized);
+        assert.deepEqual(restored.bubblePosition, { x: -64, y: 300 });
       }),
     ),
   );
@@ -314,6 +321,7 @@ describe("DesktopSettings", () => {
           localEnvironmentEnabled: true,
           mainWindowBounds: null,
           mainWindowMaximized: false,
+          bubblePosition: null,
           serverExposureMode: "local-only",
           tailscaleServeEnabled: false,
           tailscaleServePort: 443,
@@ -343,6 +351,7 @@ describe("DesktopSettings", () => {
           localEnvironmentEnabled: true,
           mainWindowBounds: null,
           mainWindowMaximized: false,
+          bubblePosition: null,
           serverExposureMode: "local-only",
           tailscaleServeEnabled: false,
           tailscaleServePort: 443,

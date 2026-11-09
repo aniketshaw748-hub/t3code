@@ -43,6 +43,7 @@ import * as DesktopClerk from "./app/DesktopClerk.ts";
 import * as DesktopCliCommand from "./app/DesktopCliCommand.ts";
 import * as DesktopApplicationMenu from "./window/DesktopApplicationMenu.ts";
 import * as DesktopAssets from "./app/DesktopAssets.ts";
+import * as DesktopBubble from "./bubble/DesktopBubble.ts";
 import * as DesktopBackendConfiguration from "./backend/DesktopBackendConfiguration.ts";
 import * as DesktopBackendPool from "./backend/DesktopBackendPool.ts";
 import * as DesktopLocalEnvironmentAuth from "./backend/DesktopLocalEnvironmentAuth.ts";
@@ -175,6 +176,7 @@ const layerDesktopPreview = PreviewManager.layer.pipe(
 );
 
 const layerDesktopWindow = DesktopWindow.layer.pipe(
+  Layer.provideMerge(DesktopBubble.layer.pipe(Layer.provideMerge(layerDesktopFoundation))),
   Layer.provideMerge(layerDesktopServerExposure),
   Layer.provideMerge(layerDesktopPreview),
 );

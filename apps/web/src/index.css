@@ -230,6 +230,8 @@ html[data-mobile-composer-route-transition="true"]::view-transition-old(t3-mobil
   --animate-stash-pulse-row: stash-pulse-row 1400ms;
   --animate-stash-pulse-row-alt: stash-pulse-row-alt 1400ms;
   --animate-stash-pulse-count: stash-pulse-count 1400ms step-start;
+  /* Two finite nudges when the desktop bubble starts waiting on the user. */
+  --animate-bubble-nudge: bubble-nudge 640ms ease-out 2;
   --color-warning-foreground: var(--warning-foreground);
   --color-warning: var(--warning);
   --color-warning-surface: var(--warning-surface);
@@ -309,6 +311,15 @@ html[data-mobile-composer-route-transition="true"]::view-transition-old(t3-mobil
     }
     100% {
       opacity: 1;
+    }
+  }
+  @keyframes bubble-nudge {
+    from,
+    to {
+      scale: 1;
+    }
+    40% {
+      scale: 1.09;
     }
   }
   @keyframes stash-pulse-row {
@@ -2581,4 +2592,11 @@ code {
 [data-workspace-area]:focus-visible {
   outline: 2px solid var(--ring);
   outline-offset: -2px;
+}
+
+/* The desktop bubble window is transparent: only its disc and panels paint, and the boot
+   script's inline background must not fill the window. */
+html[data-surface="bubble"],
+html[data-surface="bubble"] body {
+  background: transparent !important;
 }

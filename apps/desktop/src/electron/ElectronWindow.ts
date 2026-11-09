@@ -123,6 +123,7 @@ export class ElectronWindow extends Context.Service<
     readonly reveal: (window: Electron.BrowserWindow) => Effect.Effect<void>;
     readonly sendAll: (channel: string, ...args: readonly unknown[]) => Effect.Effect<void>;
     readonly destroyAll: Effect.Effect<void>;
+    /** Skips auxiliary windows, which own their appearance. */
     readonly syncAllAppearance: <E, R>(
       sync: (window: Electron.BrowserWindow) => Effect.Effect<void, E, R>,
     ) => Effect.Effect<void, E, R>;
@@ -386,7 +387,7 @@ export const make = Effect.gen(function* () {
     ) {
       const windows = yield* listWindows;
       for (const window of windows) {
-        if (yield* isWindowDestroyed(window)) {
+        if (auxiliaryWindows.has(window) || (yield* isWindowDestroyed(window))) {
           continue;
         }
         yield* sync(window);
