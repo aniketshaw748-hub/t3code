@@ -1,3 +1,4 @@
+import { BRAND } from "@t3tools/contracts/brand";
 import { installPermissionUpdateNotice } from "./features/connection/permissionUpdateNotice";
 import { installComposerAttachmentUploads } from "./state/composer-attachment-uploads";
 import { installThreadOutboxDelivery } from "./state/threadOutboxDelivery";
@@ -125,9 +126,9 @@ function getAppStateFromPath(path: string, options: Parameters<typeof getStateFr
 const appLinking = {
   prefixes: [
     Linking.createURL("/"),
-    "t3code://",
-    "t3code-dev://",
-    "t3code-preview://",
+    `${BRAND.urlSchemes.production}://`,
+    `${BRAND.urlSchemes.development}://`,
+    `${BRAND.urlSchemes.preview}://`,
     DEFAULT_HOSTED_APP_URL,
   ],
   config: { initialRouteName: "Home" },

@@ -45,7 +45,13 @@ export const startup = Promise.resolve().then(() => globalThis.onStarted(Shared(
       publicDir: NodeURL.fileURLToPath(new URL("../public", import.meta.url)),
       logLevel: "silent",
       resolve: {
-        alias: { react: NodePath.dirname(NodeURL.fileURLToPath(import.meta.resolve("react"))) },
+        alias: {
+          react: NodePath.dirname(NodeURL.fileURLToPath(import.meta.resolve("react"))),
+          // bootError.ts reads the brand; the temp root has no workspace packages.
+          "@t3tools/contracts/brand": NodeURL.fileURLToPath(
+            import.meta.resolve("@t3tools/contracts/brand"),
+          ),
+        },
       },
       experimental: { bundledDev: true },
       plugins: [

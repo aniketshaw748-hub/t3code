@@ -20,6 +20,7 @@ import {
 
 import { loadRepoEnv } from "../../scripts/lib/public-config";
 import { thirdPartyLicensesPlugin } from "../../scripts/lib/third-party-licenses";
+import { brandPlugin } from "./vite/brand";
 import { tailwindPlugins } from "./vite/tailwind";
 import { warmBundledDevPlugin } from "./vite/warmBundledDev";
 
@@ -283,6 +284,7 @@ export default defineConfig(() => {
       react({ compiler: true }),
       tailwindPlugins(bundledDev),
       warmBundledDevPlugin(),
+      brandPlugin(),
     ],
     optimizeDeps: {
       include: [

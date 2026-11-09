@@ -1,3 +1,5 @@
+import { BRAND } from "@t3tools/contracts/brand";
+
 import { AndroidIcon, AppleIcon } from "../Icons";
 import { Button } from "../ui/button";
 import { Popover, PopoverPopup, PopoverTitle, PopoverTrigger } from "../ui/popover";
@@ -5,22 +7,19 @@ import { QRCodeSvg } from "../ui/qr-code";
 import { SettingsRow } from "./settingsLayout";
 import { searchableSetting } from "./settingsSearch";
 
-const stores = [
-  {
-    label: "iPhone and iPad",
-    store: "App Store",
-    url: "https://apps.apple.com/us/app/t3-code-remote-claude-more/id6787819824",
-    Icon: AppleIcon,
-  },
-  {
-    label: "Android",
-    store: "Google Play",
-    url: "https://play.google.com/store/apps/details?id=com.t3tools.t3code",
-    Icon: AndroidIcon,
-  },
-];
+const PLATFORM_PRESENTATION = {
+  ios: { label: "iPhone and iPad", Icon: AppleIcon },
+  android: { label: "Android", Icon: AndroidIcon },
+} as const;
+
+const stores = BRAND.links.mobileApps.map((app) => ({
+  ...PLATFORM_PRESENTATION[app.platform],
+  store: app.store,
+  url: app.url,
+}));
 
 export function MobileAppSettingsRow() {
+  if (stores.length === 0) return null;
   return (
     <SettingsRow
       {...searchableSetting("mobile-app")}

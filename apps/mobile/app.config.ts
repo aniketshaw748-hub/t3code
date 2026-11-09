@@ -1,5 +1,6 @@
 import type { ExpoConfig } from "expo/config";
 
+import { BRAND } from "@t3tools/contracts/brand";
 import { BRAND_ASSET_PATHS } from "../../scripts/lib/brand-assets.ts";
 import { loadRepoEnv } from "../../scripts/lib/public-config.ts";
 
@@ -26,7 +27,9 @@ const observeEndpointUrl = repoEnv.T3CODE_RELAY_URL?.trim()
   : "https://observe.invalid";
 
 const fromRepoRoot = (relativePath: string) => `../../${relativePath}`;
-const androidAdaptiveForeground = "./assets/android-icon-foreground.png";
+const androidAdaptiveForeground = fromRepoRoot(BRAND_ASSET_PATHS.androidForegroundPng);
+const androidMonochromeIcon = fromRepoRoot(BRAND_ASSET_PATHS.androidMonochromePng);
+const androidNotificationIcon = fromRepoRoot(BRAND_ASSET_PATHS.androidNotificationPng);
 
 if (
   isIosPersonalTeamBuild &&
@@ -40,66 +43,66 @@ if (
 
 const DEVELOPMENT_ASSETS = {
   appIcon: fromRepoRoot(BRAND_ASSET_PATHS.developmentIosIconPng),
-  iosIcon: fromRepoRoot(BRAND_ASSET_PATHS.developmentIconComposerProject),
+  iosIcon: fromRepoRoot(BRAND_ASSET_PATHS.developmentIosIconPng),
   splashIcon: fromRepoRoot(BRAND_ASSET_PATHS.developmentIosIconPng),
   androidAdaptiveForeground,
   androidAdaptiveBackgroundColor: "#347FF8",
-  androidAdaptiveBackgroundImage: "./assets/android-icon-background-dev.png",
-  androidSplashIcon: "./assets/android-splash-icon-dev.png",
-  androidMonochromeIcon: "./assets/android-icon-mark.png",
-  androidNotificationIcon: "./assets/android-notification-icon.png",
+  androidAdaptiveBackgroundImage: undefined,
+  androidSplashIcon: fromRepoRoot(BRAND_ASSET_PATHS.androidDevelopmentSplashPng),
+  androidMonochromeIcon,
+  androidNotificationIcon,
   androidNotificationColor: "#00639B",
 } as const;
 
 const PREVIEW_ASSETS = {
   appIcon: fromRepoRoot(BRAND_ASSET_PATHS.nightlyIosIconPng),
-  iosIcon: fromRepoRoot(BRAND_ASSET_PATHS.nightlyIconComposerProject),
+  iosIcon: fromRepoRoot(BRAND_ASSET_PATHS.nightlyIosIconPng),
   splashIcon: fromRepoRoot(BRAND_ASSET_PATHS.nightlyIosIconPng),
   androidAdaptiveForeground,
   androidAdaptiveBackgroundColor: "#111533",
-  androidAdaptiveBackgroundImage: "./assets/android-icon-background-nightly.png",
-  androidSplashIcon: "./assets/android-splash-icon-nightly.png",
-  androidMonochromeIcon: "./assets/android-icon-mark.png",
-  androidNotificationIcon: "./assets/android-notification-icon.png",
+  androidAdaptiveBackgroundImage: undefined,
+  androidSplashIcon: fromRepoRoot(BRAND_ASSET_PATHS.androidNightlySplashPng),
+  androidMonochromeIcon,
+  androidNotificationIcon,
   androidNotificationColor: "#7565C7",
 } as const;
 
 const RELEASE_ASSETS = {
   appIcon: fromRepoRoot(BRAND_ASSET_PATHS.productionIosIconPng),
-  iosIcon: fromRepoRoot(BRAND_ASSET_PATHS.productionIconComposerProject),
+  iosIcon: fromRepoRoot(BRAND_ASSET_PATHS.productionIosIconPng),
   splashIcon: fromRepoRoot(BRAND_ASSET_PATHS.productionIosIconPng),
   androidAdaptiveForeground,
   androidAdaptiveBackgroundColor: "#000000",
   androidAdaptiveBackgroundImage: undefined,
-  androidSplashIcon: "./assets/android-splash-icon-prod.png",
-  androidMonochromeIcon: "./assets/android-icon-mark.png",
-  androidNotificationIcon: "./assets/android-notification-icon.png",
+  androidSplashIcon: fromRepoRoot(BRAND_ASSET_PATHS.androidProductionSplashPng),
+  androidMonochromeIcon,
+  androidNotificationIcon,
   androidNotificationColor: "#FFFFFF",
 } as const;
 
 const VARIANT_CONFIG = {
   development: {
-    appName: "T3 Code Dev",
-    scheme: "t3code-dev",
-    iosBundleIdentifier: "com.t3tools.t3code.dev",
-    androidPackage: "com.t3tools.t3code.dev",
-    relyingParty: "clerk.t3.codes",
+    appName: `${BRAND.displayName} Dev`,
+    scheme: BRAND.urlSchemes.development,
+    iosBundleIdentifier: BRAND.mobile.appIds.development,
+    androidPackage: BRAND.mobile.appIds.development,
+    relyingParty: BRAND.hosted.clerkDomain,
     assets: DEVELOPMENT_ASSETS,
   },
   preview: {
-    appName: "T3 Code Preview",
-    scheme: "t3code-preview",
-    iosBundleIdentifier: "com.t3tools.t3code.preview",
-    androidPackage: "com.t3tools.t3code.preview",
-    relyingParty: "clerk.t3.codes",
+    appName: `${BRAND.displayName} Preview`,
+    scheme: BRAND.urlSchemes.preview,
+    iosBundleIdentifier: BRAND.mobile.appIds.preview,
+    androidPackage: BRAND.mobile.appIds.preview,
+    relyingParty: BRAND.hosted.clerkDomain,
     assets: PREVIEW_ASSETS,
   },
   production: {
-    appName: "T3 Code",
-    scheme: "t3code",
-    iosBundleIdentifier: "com.t3tools.t3code",
-    androidPackage: "com.t3tools.t3code",
-    relyingParty: "clerk.t3.codes",
+    appName: BRAND.displayName,
+    scheme: BRAND.urlSchemes.production,
+    iosBundleIdentifier: BRAND.mobile.appIds.production,
+    androidPackage: BRAND.mobile.appIds.production,
+    relyingParty: BRAND.hosted.clerkDomain,
     assets: RELEASE_ASSETS,
   },
 } as const;
@@ -118,8 +121,9 @@ function resolveAppVariant(value: string | undefined): AppVariant {
 }
 
 const variant = VARIANT_CONFIG[APP_VARIANT];
-// Copied thread links open the app. app.t3.codes/.well-known lists every variant's identifiers.
-const HOSTED_APP_HOST = "app.t3.codes";
+// Copied thread links open the app when the hosted app's .well-known lists every variant's identifiers.
+const HOSTED_APP_HOST = new URL(BRAND.hosted.appUrl).host;
+const easProjectId = BRAND.mobile.easProjectId;
 const iosBundleIdentifier = isIosPersonalTeamBuild
   ? personalTeamBundleIdentifier!
   : variant.iosBundleIdentifier;
@@ -143,7 +147,7 @@ const widgetsPlugin: NonNullable<ExpoConfig["plugins"]>[number] = [
       {
         name: "SubscriptionUsage",
         displayName: "Subscription usage",
-        description: "Subscription quotas from your connected T3 Code environments.",
+        description: `Subscription quotas from your connected ${BRAND.displayName} environments.`,
         ios: {
           configuration: {
             title: "Subscription usage",
@@ -193,7 +197,7 @@ const widgetsPlugin: NonNullable<ExpoConfig["plugins"]>[number] = [
       {
         name: "AgentActivity",
         displayName: "Agent Activity",
-        description: "Shows the current state of active T3 Code agents.",
+        description: `Shows the current state of active ${BRAND.displayName} agents.`,
         android: null,
         ios: { supportedFamilies: ["systemSmall", "systemMedium", "accessoryRectangular"] },
       },
@@ -229,7 +233,7 @@ const sharingPlugin: NonNullable<ExpoConfig["plugins"]>[number] = [
 
 const config: ExpoConfig = {
   name: variant.appName,
-  slug: "t3-code",
+  slug: BRAND.slug,
   platforms: ["ios", "android"],
   scheme: variant.scheme,
   version: repoEnv.T3CODE_MOBILE_VERSION ?? "2.2.0",
@@ -241,8 +245,9 @@ const config: ExpoConfig = {
   icon: variant.assets.appIcon,
   userInterfaceStyle: "automatic",
   updates: {
-    enabled: repoEnv.T3CODE_MOBILE_UPDATES_ENABLED !== "0",
-    url: "https://u.expo.dev/d763fcb8-d37c-41ea-a773-b54a0ab4a454",
+    // OTA updates need the brand's own EAS project.
+    enabled: easProjectId !== undefined && repoEnv.T3CODE_MOBILE_UPDATES_ENABLED !== "0",
+    ...(easProjectId ? { url: `https://u.expo.dev/${easProjectId}` } : {}),
     checkAutomatically: "ON_LOAD",
     fallbackToCacheTimeout: 0,
   },
@@ -252,7 +257,7 @@ const config: ExpoConfig = {
     requireFullScreen: process.env.T3_SHOWCASE_CAPTURE_BUILD === "1",
     bundleIdentifier: iosBundleIdentifier,
     // Avoid Personal Team fallback: it cannot sign App Groups, Apple sign-in or push entitlements.
-    appleTeamId: "ARK85ZXQ4Z",
+    ...(BRAND.mobile.appleTeamId ? { appleTeamId: BRAND.mobile.appleTeamId } : {}),
     associatedDomains: [
       `applinks:${variant.relyingParty}`,
       `webcredentials:${variant.relyingParty}`,
@@ -270,9 +275,8 @@ const config: ExpoConfig = {
       NSAppTransportSecurity: {
         NSAllowsArbitraryLoads: true,
       },
-      NSLocalNetworkUsageDescription:
-        "Allow T3 Code to connect to T3 Code servers on your local network or tailnet.",
-      NSPhotoLibraryAddUsageDescription: "Allow T3 Code to save images to your photo library.",
+      NSLocalNetworkUsageDescription: `Allow ${BRAND.displayName} to connect to ${BRAND.displayName} servers on your local network or tailnet.`,
+      NSPhotoLibraryAddUsageDescription: `Allow ${BRAND.displayName} to save images to your photo library.`,
       // System picture in picture needs background audio to start and survive outside the app.
       UIBackgroundModes: ["audio"],
       ITSAppUsesNonExemptEncryption: false,
@@ -379,7 +383,7 @@ const config: ExpoConfig = {
     [
       "expo-audio",
       {
-        microphonePermission: "Allow T3 Code to use your microphone for voice input.",
+        microphonePermission: `Allow ${BRAND.displayName} to use your microphone for voice input.`,
         recordAudioAndroid: true,
         enableBackgroundPlayback: false,
         enableBackgroundRecording: false,
@@ -388,7 +392,7 @@ const config: ExpoConfig = {
     [
       "expo-camera",
       {
-        cameraPermission: "Allow T3 Code to access your camera so you can scan pairing QR codes.",
+        cameraPermission: `Allow ${BRAND.displayName} to access your camera so you can scan pairing QR codes.`,
         microphonePermission: false,
         barcodeScannerEnabled: true,
         recordAudioAndroid: false,
@@ -399,7 +403,7 @@ const config: ExpoConfig = {
       {
         photosPermission: false,
         // `false` makes this plugin add RECORD_AUDIO to blockedPermissions, breaking Android dictation.
-        microphonePermission: "Allow T3 Code to use your microphone for voice input.",
+        microphonePermission: `Allow ${BRAND.displayName} to use your microphone for voice input.`,
       },
     ],
     [
@@ -480,11 +484,11 @@ const config: ExpoConfig = {
       tracesToken: repoEnv.EXPO_PUBLIC_OTLP_TRACES_TOKEN ?? null,
     },
     eas: {
-      projectId: "d763fcb8-d37c-41ea-a773-b54a0ab4a454",
+      ...(easProjectId ? { projectId: easProjectId } : {}),
       observe: { endpointUrl: observeEndpointUrl },
     },
   },
-  owner: "pingdotgg",
+  ...(BRAND.mobile.easOwner ? { owner: BRAND.mobile.easOwner } : {}),
   experiments: {
     // Metro only runs babel-plugin-react-compiler when this is set; see src/reactCompilerCoverage.test.ts.
     reactCompiler: true,

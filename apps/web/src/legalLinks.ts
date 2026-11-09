@@ -1,1 +1,3 @@
-export const PRIVACY_POLICY_URL = "https://t3.codes/privacy-policy";
+import { BRAND } from "@t3tools/contracts/brand";
+
+export const PRIVACY_POLICY_URL = BRAND.links.privacyPolicy;
