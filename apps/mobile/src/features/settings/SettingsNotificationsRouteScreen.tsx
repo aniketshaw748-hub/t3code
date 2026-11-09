@@ -45,6 +45,7 @@ import { makePermissionStatusAtom } from "../../lib/permissionStatusAtom";
 import { runtime } from "../../lib/runtime";
 import { mobilePreferencesAtom, updateMobilePreferencesAtom } from "../../state/preferences";
 import { useSavedRemoteConnections } from "../../state/use-remote-environment-registry";
+import { DirectPushNotificationsSection } from "./DirectPushNotificationsSection";
 import { SettingsRow } from "./components/SettingsRow";
 import { SettingsSection } from "./components/SettingsSection";
 import { SettingsSwitchRow } from "./components/SettingsSwitchRow";
@@ -112,9 +113,9 @@ function useDeviceRegistered(): boolean {
 export function SettingsNotificationsRouteScreen() {
   const unavailableReason = !isPushConfigured()
     ? "Push notifications aren't configured for this build. It was made without a Firebase config, so agent notifications and activity updates can't reach this device."
-    : !hasCloudPublicConfig()
-      ? "Notifications require T3 Connect in this app build."
-      : null;
+    : null;
+  if (!unavailableReason && !hasCloudPublicConfig())
+    return <DirectSettingsNotificationsRouteScreen />;
   if (unavailableReason) {
     return (
       <SettingsScreen title="Notifications">
@@ -129,6 +130,24 @@ export function SettingsNotificationsRouteScreen() {
   }
 
   return <ConfiguredSettingsNotificationsRouteScreen />;
+}
+
+/** Builds without T3 Connect: paired computers send notifications themselves. */
+function DirectSettingsNotificationsRouteScreen() {
+  const insets = useSafeAreaInsets();
+  return (
+    <SettingsScreen title="Notifications">
+      <ScrollView
+        contentInsetAdjustmentBehavior="automatic"
+        showsVerticalScrollIndicator={false}
+        className="flex-1"
+        contentContainerClassName="gap-6 px-5 pt-4"
+        contentContainerStyle={{ paddingBottom: Math.max(insets.bottom, 18) + 18 }}
+      >
+        <DirectPushNotificationsSection />
+      </ScrollView>
+    </SettingsScreen>
+  );
 }
 
 function ConfiguredSettingsNotificationsRouteScreen() {
@@ -488,6 +507,7 @@ function ConfiguredSettingsNotificationsRouteScreen() {
             />
           ) : null}
         </SettingsSection>
+        {isLoaded && !isSignedIn ? <DirectPushNotificationsSection /> : null}
       </ScrollView>
     </SettingsScreen>
   );

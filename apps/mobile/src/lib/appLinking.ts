@@ -1,4 +1,9 @@
+import { BRAND } from "@t3tools/contracts/brand";
 import type { NavigationState, PartialState } from "@react-navigation/native";
+
+const BARE_SCHEME_LINK = new RegExp(
+  `^(?:${[BRAND.urlSchemes.production, BRAND.urlSchemes.preview, BRAND.urlSchemes.development].join("|")}):/*$`,
+);
 
 /**
  * The Expo dev client launches the app via
@@ -12,7 +17,7 @@ export function shouldHandleAppLink(url: string, cloudConfigured: boolean): bool
   return (
     !route.includes("expo-development-client") &&
     !route.includes("://expo-sharing") &&
-    !/^t3code(-dev|-preview)?:\/*$/.test(url) &&
+    !BARE_SCHEME_LINK.test(url) &&
     (cloudConfigured || !CLOUD_ONLY_LINK_PATH.test(route))
   );
 }

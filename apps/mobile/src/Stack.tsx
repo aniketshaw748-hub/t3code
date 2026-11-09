@@ -71,6 +71,7 @@ import {
 import { McpAppFullscreenScreen } from "./features/threads/McpAppFullscreenScreen";
 import { ConnectionsRouteScreen } from "./features/connection/ConnectionsRouteScreen";
 import { ConnectionsNewRouteScreen } from "./features/connection/ConnectionsNewRouteScreen";
+import { PAIRING_FORM_LINKING } from "./features/connection/pairing";
 import { AddProjectDestinationRoute } from "./features/projects/AddProjectDestinationRoute";
 import { AddProjectLocalRoute } from "./features/projects/AddProjectLocalRoute";
 import { WorkProjectRouteScreen } from "./features/work/WorkProjectScreen";
@@ -731,7 +732,7 @@ const RootStackConfig = createWorkspaceStackNavigator({
     }),
     ConnectionsNew: createNativeStackScreen({
       screen: ConnectionsNewRouteScreen,
-      linking: "connections/new",
+      linking: PAIRING_FORM_LINKING,
       options: sheetRoute({ title: "Add Environment", detent: 0.55, maxDetent: 0.7 }),
     }),
     NotFound: createNativeStackScreen({

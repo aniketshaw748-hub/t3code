@@ -116,6 +116,10 @@ export function androidActivityData(aggregate: RelayAgentActivityAggregateState 
       ? `${hero.status}: ${clean(hero.threadTitle)} · ${clean(hero.projectTitle)}`
       : "",
     ...Object.fromEntries(lines.map((line, index) => [`activity_line_${index}`, line])),
+    // Phase and thread path per row, so the phone can bubble each running thread.
+    ...Object.fromEntries(
+      rows.map((row, index) => [`activity_thread_${index}`, `${row.phase}\t${row.deepLink}`]),
+    ),
     activity_path: rows[0]?.deepLink ?? "/",
     activity_expires_at: String(expiresAt),
   };

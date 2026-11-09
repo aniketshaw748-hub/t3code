@@ -73,6 +73,7 @@ import {
   type FoundationHotModule,
 } from "./lib/foundation-fast-refresh";
 import { useMobileNavigationTheme } from "./lib/useMobileNavigationTheme";
+import { BubbleThreadNavigation } from "./features/threads/BubbleThreadNavigation";
 import { installUiRuntimeMemoryWarningGc } from "./lib/useUiRuntimeMemoryWarningGc";
 import { SubscriptionUsageCoordinator } from "./widgets/SubscriptionUsageCoordinator";
 import { installSubscriptionUsageRefresh } from "./widgets/useSubscriptionUsage";
@@ -214,19 +215,20 @@ function SplashScreenCoordinator() {
   return null;
 }
 
-export default function App() {
+/** `bubblePath` is set when an Android thread bubble mounts the app for one thread. */
+export default function App(props: { readonly bubblePath?: string }) {
   return (
     <RegistryContext.Provider value={appAtomRegistry}>
       <CloudAuthProvider>
         <AppearancePreferencesProvider>
-          <AppContent />
+          <AppContent bubblePath={props.bubblePath} />
         </AppearancePreferencesProvider>
       </CloudAuthProvider>
     </RegistryContext.Provider>
   );
 }
 
-function AppContent() {
+function AppContent({ bubblePath }: { readonly bubblePath: string | undefined }) {
   const { themeAppearance } = useAppearancePreferences();
   const navigationTheme = useMobileNavigationTheme();
 
@@ -241,13 +243,17 @@ function AppContent() {
             {/* native-stack needs the theme's dark flag to select dark native headers. */}
             <GlobalVoiceInputControl>
               <NativeLayoutMetricsProvider>
-                <Navigation
-                  ref={attachRootNavigation}
-                  linking={appLinking}
-                  onReady={handleNavigationReady}
-                  theme={navigationTheme}
-                  onStateChange={handleNavigationStateChange}
-                />
+                {bubblePath ? (
+                  <BubbleThreadNavigation path={bubblePath} />
+                ) : (
+                  <Navigation
+                    ref={attachRootNavigation}
+                    linking={appLinking}
+                    onReady={handleNavigationReady}
+                    theme={navigationTheme}
+                    onStateChange={handleNavigationStateChange}
+                  />
+                )}
                 <Dialog.Host />
                 <ThreadArrangementHost />
                 <ProjectChipIconRasterizer />

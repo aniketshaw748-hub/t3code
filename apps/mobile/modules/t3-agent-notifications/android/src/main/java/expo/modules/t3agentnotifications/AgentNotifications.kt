@@ -82,6 +82,7 @@ object AgentNotifications {
   @Synchronized
   fun clear(context: Context) {
     cancelActivity(context)
+    AgentBubbles.clear(context)
     context.getSharedPreferences(STORE, Context.MODE_PRIVATE).edit().clear().apply()
     val manager = manager(context)
     manager.activeNotifications.filter {
@@ -237,6 +238,12 @@ object AgentNotifications {
       return
     }
     prefs.edit().putLong("lastUpdate", updatedAt).putString("lastTerminal", terminal).apply()
+    AgentBubbles.update(
+      context,
+      prefs.getString("scheme", "t3code") ?: "t3code",
+      prefs.getBoolean("ongoing", false),
+      data
+    )
     val active = data["active"] == "true"
     // Use absolute state expiry: a replay must not extend a finished card or
     // make an abandoned host look active indefinitely. Older relays omit it.
@@ -342,6 +349,23 @@ object AgentNotifications {
   }
 
   private fun manager(context: Context) = context.getSystemService(NotificationManager::class.java)
+
+  /** What could stop agent notifications showing, for the app's notification settings. */
+  fun state(context: Context): Map<String, Any> {
+    val manager = manager(context)
+    fun blocked(channel: String) = Build.VERSION.SDK_INT >= 26 &&
+      manager.getNotificationChannel(channel)?.importance == NotificationManager.IMPORTANCE_NONE
+    return mapOf(
+      "notificationsEnabled" to NotificationManagerCompat.from(context).areNotificationsEnabled(),
+      "alertsBlocked" to blocked(ALERT_CHANNEL),
+      "activityBlocked" to blocked(ACTIVITY_CHANNEL),
+      "bubblesSupported" to (Build.VERSION.SDK_INT >= 30),
+      "bubblesBlocked" to AgentBubbles.bubblesBlocked(manager),
+      "registeredUserId" to (
+        context.getSharedPreferences(STORE, Context.MODE_PRIVATE).getString("userId", null) ?: ""
+        )
+    )
+  }
 
   private fun channels(context: Context) {
     if (Build.VERSION.SDK_INT >= 26) {
