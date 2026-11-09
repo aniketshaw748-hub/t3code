@@ -56,6 +56,8 @@ export function NotesPanel(props: {
   readonly environmentId: EnvironmentId;
   readonly deliverable: Deliverable | null;
   readonly notes: ReadonlyArray<DeliverableNote>;
+  /** Notes on every deliverable: the messages that sent them show as note cards, not chat. */
+  readonly projectNotes: ReadonlyArray<DeliverableNote>;
   readonly versions: ReadonlyArray<DeliverableVersion>;
   readonly thread: EnvironmentThreadShell | null;
   readonly spendApprovals: ReadonlyArray<SpendApprovalItem>;
@@ -78,7 +80,7 @@ export function NotesPanel(props: {
   const sorted = sortNotes(props.notes);
   const summary = notesSummary(props.notes);
   const noteMessageIds = new Set(
-    props.notes.flatMap((note) => (note.sentMessageId === null ? [] : [note.sentMessageId])),
+    props.projectNotes.flatMap((note) => (note.sentMessageId === null ? [] : [note.sentMessageId])),
   );
   const unsent = props.notes.filter(
     (note) => note.status === "open" && note.sentMessageId === null,

@@ -59,6 +59,7 @@ import { VersionStrip } from "./VersionStrip";
 import { VideoStage, type SeekRequest } from "./VideoStage";
 import { WhatChanged } from "./WhatChanged";
 
+const NO_NOTES: ReadonlyArray<DeliverableNote> = [];
 const NO_SPEND_APPROVALS: ReadonlyArray<SpendApprovalItem> = [];
 
 function snapshotAttachment(dataUrl: string): UploadChatAttachment {
@@ -586,6 +587,7 @@ export function WorkProjectScreen(props: {
             environmentId={environmentId}
             deliverable={deliverable}
             notes={notes}
+            projectNotes={snapshot?.notes ?? NO_NOTES}
             versions={versions}
             thread={thread}
             spendApprovals={spendApprovals}
