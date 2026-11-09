@@ -7,7 +7,7 @@ import {
   nextVersionOrdinal,
   redoTarget,
   undoTarget,
-} from "./versionGraph.ts";
+} from "./deliverableVersionGraph.ts";
 
 const id = (ordinal: number) => DeliverableVersionId.make(`v${ordinal}`);
 const version = (ordinal: number, parent: number | null): GraphVersion => ({

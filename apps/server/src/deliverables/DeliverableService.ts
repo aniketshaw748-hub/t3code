@@ -21,6 +21,12 @@ import {
   type ProjectId,
   type ThreadId,
 } from "@t3tools/contracts";
+import {
+  buildVersionGraph,
+  nextVersionOrdinal,
+  redoTarget,
+  undoTarget,
+} from "@t3tools/shared/deliverableVersionGraph";
 import * as KeyedLock from "@t3tools/shared/KeyedLock";
 import { makeDrainableWorker } from "@t3tools/shared/DrainableWorker";
 import * as Context from "effect/Context";
@@ -47,7 +53,6 @@ import {
   samplesFromBytes,
   type UnitSignature,
 } from "./perceptualDiff.ts";
-import { buildVersionGraph, nextVersionOrdinal, redoTarget, undoTarget } from "./versionGraph.ts";
 
 const fail = (reason: DeliverableFailureReason) => (cause?: unknown) =>
   new DeliverableError({ reason, ...(cause === undefined ? {} : { cause }) });

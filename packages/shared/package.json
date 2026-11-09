@@ -11,6 +11,10 @@
       "types": "./src/deliverableAnchor.ts",
       "import": "./src/deliverableAnchor.ts"
     },
+    "./deliverableVersionGraph": {
+      "types": "./src/deliverableVersionGraph.ts",
+      "import": "./src/deliverableVersionGraph.ts"
+    },
     "./deliverableNotes": {
       "types": "./src/deliverableNotes.ts",
       "import": "./src/deliverableNotes.ts"
