@@ -7,6 +7,10 @@
       "types": "./src/changedFileKind.ts",
       "import": "./src/changedFileKind.ts"
     },
+    "./deliverableAnchor": {
+      "types": "./src/deliverableAnchor.ts",
+      "import": "./src/deliverableAnchor.ts"
+    },
     "./authScopeOptions": {
       "types": "./src/authScopeOptions.ts",
       "import": "./src/authScopeOptions.ts"
