@@ -150,8 +150,10 @@ export const DeliverableVersion = Schema.Struct({
   commitOid: TrimmedNonEmptyString,
   ref: TrimmedNonEmptyString,
   source: DeliverableVersionSource,
-  /** One line from the turn that made it. */
+  /** One plain-text line from the turn that made it. */
   summary: Schema.NullOr(Schema.String),
+  /** The text the summary was taken from, when it says more than the summary does. */
+  summaryDetail: Schema.optional(Schema.String),
   expectedChanges: Schema.Array(DeliverableAnchor),
   renditionStatus: DeliverableRenditionStatus,
   selfCheck: Schema.NullOr(DeliverableSelfCheckResult),

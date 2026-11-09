@@ -2,7 +2,6 @@ import { useAtomValue } from "@effect/atom-react";
 import {
   changeRegion,
   compareUnitLabel,
-  plainPreview,
   UNIT_CHANGE_LABEL,
 } from "@t3tools/client-runtime/work/anchors";
 import type {
@@ -72,7 +71,7 @@ export function WorkCompareView(props: {
           {value === null ? "" : ` · ${value.headline}`}
         </Text>
         {value?.summary ? (
-          <Text className="text-sm text-foreground-muted">{plainPreview(value.summary)}</Text>
+          <Text className="text-sm text-foreground-muted">{value.summary}</Text>
         ) : null}
         {AsyncResult.isFailure(comparison) ? (
           <Text className="text-sm text-foreground-muted">

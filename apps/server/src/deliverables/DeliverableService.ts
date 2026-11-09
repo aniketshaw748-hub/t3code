@@ -50,6 +50,7 @@ import * as DeliverableNotes from "./DeliverableNotes.ts";
 import * as DeliverableRenderers from "./DeliverableRenderers.ts";
 import * as DeliverableSelfCheck from "./DeliverableSelfCheck.ts";
 import { strayVersionTarget } from "./strayVersions.ts";
+import { versionSummary, versionSummarySource } from "./versionSummary.ts";
 import * as WorkProjectEvents from "./WorkProjectEvents.ts";
 import {
   compareSequences,
@@ -75,17 +76,6 @@ const MIME_BY_EXTENSION: Readonly<Record<string, string>> = {
 const mimeFor = (name: string) =>
   MIME_BY_EXTENSION[name.slice(name.lastIndexOf(".") + 1).toLowerCase()] ??
   "application/octet-stream";
-
-/** The first line of the agent's reply, short enough for a version row. */
-function versionSummary(reply: string | null): string | null {
-  if (reply === null) return null;
-  const line = reply
-    .split("\n")
-    .map((candidate) => candidate.replace(/^[#>*\-\s]+/, "").trim())
-    .find((candidate) => candidate.length > 0);
-  if (line === undefined) return null;
-  return line.length > 200 ? `${line.slice(0, 199)}…` : line;
-}
 
 function comparisonHeadline(
   kind: DeliverableKind,
@@ -205,10 +195,18 @@ const make = Effect.gen(function* () {
       ),
     );
 
+  /** The stored summary column keeps the agent's text; clients get one plain line beside it. */
   const publicVersion = ({
     sourceBlobOid: _sourceBlobOid,
+    summaryDetail: _summaryDetail,
+    summary: source,
     ...version
-  }: DeliverableRepository.StoredDeliverableVersion): DeliverableVersion => version;
+  }: DeliverableRepository.StoredDeliverableVersion): DeliverableVersion => {
+    const summary = versionSummary(source);
+    return source === null || source === summary
+      ? { ...version, summary }
+      : { ...version, summary, summaryDetail: source };
+  };
 
   /** Records one version of `relativePath` from a snapshot commit, unless it matches the current one. */
   const recordVersion = Effect.fn("DeliverableService.recordVersion")(function* (input: {
@@ -336,10 +334,13 @@ const make = Effect.gen(function* () {
             ...(input.runId === undefined ? {} : { runId: input.runId }),
           },
           title: input.title,
-          summary: input.summary === undefined ? null : versionSummary(input.summary),
+          summary: versionSummarySource(input.summary),
           expectedChanges: input.expectedChanges ?? [],
         }).pipe(Effect.ensuring(capture.release));
-        return { ...result, version: publicVersion(result.version) };
+        const version = publicVersion(result.version);
+        // A copy registered by name is checked like one a turn left behind.
+        if (result.created) yield* markStrays(input.projectId, [version]);
+        return { ...result, deliverable: yield* loadDeliverable(result.deliverable.id), version };
       }),
     );
   });
@@ -406,7 +407,7 @@ const make = Effect.gen(function* () {
                 runId: checkpoint.runId!,
                 checkpointId: checkpoint.id,
               },
-              summary: versionSummary(turn.reply),
+              summary: versionSummarySource(turn.reply),
               expectedChanges: [],
             }).pipe(
               Effect.tap((result) =>
@@ -620,7 +621,7 @@ const make = Effect.gen(function* () {
           added: count("added"),
           removed: count("removed"),
         },
-        summary: target.summary,
+        summary: versionSummary(target.summary),
         headline: comparisonHeadline(kind, units),
       } satisfies DeliverableComparison,
       targetUnits: targetOut?.units ?? [],

@@ -36,6 +36,9 @@ import * as DeliverableContext from "./DeliverableContext.ts";
 import * as DeliverableGit from "./DeliverableGit.ts";
 import * as DeliverableRenderers from "./DeliverableRenderers.ts";
 import * as DeliverableSelfCheck from "./DeliverableSelfCheck.ts";
+
+const TURN_REPLY =
+  "## **Made the title slide bolder** in [the deck](C:/work/deck.pptx)\n\nDetails follow.";
 import * as DeliverableNotes from "./DeliverableNotes.ts";
 import * as DeliverableService from "./DeliverableService.ts";
 import * as WorkProjectEvents from "./WorkProjectEvents.ts";
@@ -110,7 +113,7 @@ const layerContext = (root: string) =>
         Effect.succeed({
           projectId,
           cwd: root,
-          reply: "## Made the title slide bolder\n\nDetails follow.",
+          reply: TURN_REPLY,
           parentCheckpointRef: null,
         }),
       projectBusy: () => Effect.sync(() => busy.value),
@@ -206,7 +209,8 @@ it.live(
         const [v2] = yield* turn(2, "Title\nAgenda v2\nClose", "export const v = 2;\n");
         assert.isDefined(v1);
         assert.isDefined(v2);
-        assert.equal(v1.summary, "Made the title slide bolder");
+        assert.equal(v1.summary, "Made the title slide bolder in the deck");
+        assert.equal(v1.summaryDetail, TURN_REPLY);
         // An unchanged deck records nothing, even when the turn touched other files.
         assert.deepEqual(yield* turn(3, "Title\nAgenda v2\nClose", "export const v = 3;\n"), []);
         yield* repo.write("src/slides.ts", "export const v = 2;\n");
@@ -232,7 +236,7 @@ it.live(
           comparison.units.map((unit) => unit.status),
           ["unchanged", "changed", "unchanged"],
         );
-        assert.equal(comparison.summary, "Made the title slide bolder");
+        assert.equal(comparison.summary, "Made the title slide bolder in the deck");
         assert.equal(comparison.headline, "1 slide changed");
 
         const { versions } = yield* deliverables.versions(v1.deliverableId);
@@ -504,6 +508,18 @@ it.live("offers a revision saved under a new name as the next version, and adopt
         .resolveStray({ deliverableId: copy.deliverableId, adopt: true })
         .pipe(Effect.flip);
       assert.equal(again.reason, "not_stray");
+
+      // A copy the agent registers by name through the MCP tool is offered the same way.
+      yield* repo.write("brief/brief.pptx", "Brief");
+      const brief = (yield* deliverables.registerVersion({ projectId, path: "brief/brief.pptx" }))
+        .deliverable;
+      assert.isNull(brief.strayVersionOf);
+      yield* repo.write("brief/brief-v2.pptx", "Brief, tighter");
+      const registered = yield* deliverables.registerVersion({
+        projectId,
+        path: "brief/brief-v2.pptx",
+      });
+      assert.equal(registered.deliverable.strayVersionOf, brief.id);
     }),
   ),
 );

@@ -23,6 +23,20 @@ interface WhatChangedProps {
   readonly onCompare: () => void;
 }
 
+/** The version's one-line summary, with the agent's full words a click away. */
+function VersionSummary({ version }: { readonly version: DeliverableVersion }) {
+  if (!version.summary) return null;
+  if (version.summaryDetail === undefined) {
+    return <p className="text-sm text-work-muted">{version.summary}</p>;
+  }
+  return (
+    <details className="text-sm text-work-muted">
+      <summary className="cursor-pointer">{version.summary}</summary>
+      <p className="mt-1 text-xs whitespace-pre-line">{version.summaryDetail}</p>
+    </details>
+  );
+}
+
 /** The viewed version against the one it was made from, in plain words, with each change listed. */
 export function WhatChanged(props: WhatChangedProps) {
   if (props.parent === null) {
@@ -31,9 +45,7 @@ export function WhatChanged(props: WhatChangedProps) {
         <p className="text-sm font-medium text-work-ink">
           V{props.version.ordinal} is the first version
         </p>
-        {props.version.summary ? (
-          <p className="text-sm text-work-muted">{props.version.summary}</p>
-        ) : null}
+        <VersionSummary version={props.version} />
       </div>
     );
   }
@@ -57,9 +69,7 @@ function Comparison(props: WhatChangedProps & { readonly parent: DeliverableVers
           V{props.parent.ordinal} → V{props.version.ordinal}
           {comparison === null ? "" : ` · ${comparison.headline}`}
         </p>
-        {props.version.summary ? (
-          <p className="text-sm text-work-muted">{props.version.summary}</p>
-        ) : null}
+        <VersionSummary version={props.version} />
       </div>
       {changed.length > 0 ? (
         <ul className="flex flex-col gap-1">

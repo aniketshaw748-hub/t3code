@@ -33,6 +33,7 @@ import * as DeliverableNoteRepository from "../persistence/DeliverableNotes.ts";
 import * as DeliverableRepository from "../persistence/Deliverables.ts";
 import * as DeliverableBlobStore from "./DeliverableBlobStore.ts";
 import { adoptRunNotes, settleRunNotes } from "./noteLifecycle.ts";
+import { versionSummary } from "./versionSummary.ts";
 import * as WorkProjectEvents from "./WorkProjectEvents.ts";
 
 const fail = (reason: DeliverableNoteFailureReason) => (cause?: unknown) =>
@@ -299,7 +300,10 @@ const make = Effect.gen(function* () {
     const versions = yield* Effect.forEach(list, (deliverable) =>
       deliverables.listVersions(deliverable.id).pipe(persistence),
     );
-    return versions.flat().filter((version) => version.source.runId === runId);
+    return versions
+      .flat()
+      .filter((version) => version.source.runId === runId)
+      .map((version) => ({ ...version, summary: versionSummary(version.summary) }));
   });
 
   const settleRun: DeliverableNotes["Service"]["settleRun"] = Effect.fn(

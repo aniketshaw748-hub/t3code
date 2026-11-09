@@ -3,12 +3,7 @@ import {
   isAtomCommandInterrupted,
   squashAtomCommandFailure,
 } from "@t3tools/client-runtime/state/runtime";
-import {
-  notePinAnchor,
-  notePinLabel,
-  plainPreview,
-  renditionMeta,
-} from "@t3tools/client-runtime/work/anchors";
+import { notePinAnchor, notePinLabel, renditionMeta } from "@t3tools/client-runtime/work/anchors";
 import {
   defaultCompareSelection,
   orderedCompare,
@@ -104,6 +99,7 @@ function WorkProjectScreen(props: WorkProjectParams) {
   const [selectedSlide, setSelectedSlide] = useState<number | null>(null);
   const [highlighted, setHighlighted] = useState<DeliverableNoteId | null>(null);
   const [pinned, setPinned] = useState(true);
+  const [summaryOpen, setSummaryOpen] = useState(false);
   const [sending, setSending] = useState(false);
   const [historyPending, setHistoryPending] = useState(false);
 
@@ -425,9 +421,18 @@ function WorkProjectScreen(props: WorkProjectParams) {
               }
             />
             {viewed?.summary && comparePair === null ? (
-              <Text className="text-xs text-foreground-muted">
-                V{viewed.ordinal}: {plainPreview(viewed.summary)}
-              </Text>
+              <Pressable
+                accessibilityRole="button"
+                disabled={viewed.summaryDetail === undefined}
+                onPress={() => setSummaryOpen((open) => !open)}
+              >
+                <Text className="text-xs text-foreground-muted">
+                  V{viewed.ordinal}:{" "}
+                  {summaryOpen && viewed.summaryDetail !== undefined
+                    ? viewed.summaryDetail
+                    : viewed.summary}
+                </Text>
+              </Pressable>
             ) : null}
             {viewingOld && viewed !== null ? (
               <View className="flex-row flex-wrap items-center gap-2 rounded-xl bg-subtle px-3 py-2">
