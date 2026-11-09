@@ -64,7 +64,7 @@ export function WorkShelf() {
           </span>
         </WorkspacePageHeader>
         <div className="min-h-0 flex-1 overflow-y-auto scrollbar-gutter-both">
-          <div className="mx-auto flex w-full max-w-6xl flex-col gap-8 px-5 pt-4 pb-12 sm:px-8">
+          <div className="flex w-full flex-col gap-8 pt-4 pr-(--workspace-gutter-end) pb-12 pl-(--workspace-gutter-start)">
             <section aria-label="Start a project" className="flex flex-wrap items-center gap-2">
               {WORK_STARTERS.map((starter) => {
                 const Icon = KIND_ICON[starter.kind];

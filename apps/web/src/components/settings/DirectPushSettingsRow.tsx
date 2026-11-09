@@ -173,38 +173,40 @@ export function DirectPushSettingsRow() {
               </Button>
             ) : null}
           </div>
-        ) : canEdit ? (
-          <div className="flex flex-wrap items-center gap-2">
-            {pickFolder ? (
-              <Button
-                size="sm"
-                variant="secondary"
-                disabled={pending !== null}
-                onClick={() =>
-                  void pickFolder().then((folder) => (folder ? save(folder) : undefined))
-                }
-              >
-                Choose folder…
-              </Button>
-            ) : null}
-            <div className="w-64">
-              <Input
-                size="sm"
-                placeholder="Path to the service-account JSON"
-                value={draft}
-                onChange={(event) => setDraft(event.currentTarget.value)}
-              />
-            </div>
-            <Button
-              size="sm"
-              disabled={pending !== null || draft.trim() === ""}
-              onClick={() => void save(draft.trim())}
-            >
-              Save
-            </Button>
-          </div>
         ) : null
       }
-    />
+    >
+      {!configured && canEdit ? (
+        <div className="mt-3 flex flex-wrap items-center gap-2">
+          {pickFolder ? (
+            <Button
+              size="sm"
+              variant="secondary"
+              disabled={pending !== null}
+              onClick={() =>
+                void pickFolder().then((folder) => (folder ? save(folder) : undefined))
+              }
+            >
+              Choose folder…
+            </Button>
+          ) : null}
+          <div className="w-64">
+            <Input
+              size="sm"
+              placeholder="Path to the service-account JSON"
+              value={draft}
+              onChange={(event) => setDraft(event.currentTarget.value)}
+            />
+          </div>
+          <Button
+            size="sm"
+            disabled={pending !== null || draft.trim() === ""}
+            onClick={() => void save(draft.trim())}
+          >
+            Save
+          </Button>
+        </div>
+      ) : null}
+    </SettingsRow>
   );
 }

@@ -78,6 +78,7 @@ function BubbleUi({ sinceMs }: { readonly sinceMs: number }) {
   const hoverTimer = useRef<number | null>(null);
   const gesture = useRef<PointerGesture | null>(null);
   const size = bubbleWindowSize(mode, threads.length);
+  const zoom = window.desktopBridge?.getWindowZoomFactor() ?? 1;
 
   const clearHoverTimer = () => {
     if (hoverTimer.current !== null) window.clearTimeout(hoverTimer.current);
@@ -224,10 +225,13 @@ function BubbleUi({ sinceMs }: { readonly sinceMs: number }) {
     <div
       className={cn(
         // gap-2 is BUBBLE_GAP, which the window size counts on.
-        "flex h-dvh w-dvw gap-2 select-none",
+        "flex gap-2 select-none",
         host.vertical === "end" ? "flex-col-reverse" : "flex-col",
         host.horizontal === "end" ? "items-end" : "items-start",
       )}
+      // The window is sized in screen pixels, but the page shares the app's zoom (Chromium
+      // zooms per origin), so lay out unzoomed: one CSS pixel per window pixel.
+      style={{ zoom: 1 / zoom, width: `${100 * zoom}dvw`, height: `${100 * zoom}dvh` }}
       onKeyDown={onKeyDown}
     >
       <BubbleDisc

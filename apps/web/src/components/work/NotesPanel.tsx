@@ -351,9 +351,11 @@ function NoteCard(props: {
                 (note.sentRunId === null ? "Sent. Waiting for the agent…" : "Working on it…")}
             </p>
             {display.check !== null ? (
-              <InlineButton className="self-start" onClick={() => props.onCheck(display.check!)}>
-                {checkLinkLabel(display.check)}
-              </InlineButton>
+              <p className="text-meta">
+                <InlineButton onClick={() => props.onCheck(display.check!)}>
+                  {checkLinkLabel(display.check)}
+                </InlineButton>
+              </p>
             ) : null}
           </div>
         </div>
@@ -449,7 +451,7 @@ function WorkChatLog(props: {
           )}
           <p
             className={cn(
-              "min-w-0 text-meta whitespace-pre-line",
+              "min-w-0 text-body whitespace-pre-line",
               entry.role === "user"
                 ? "line-clamp-3 text-foreground"
                 : "line-clamp-4 text-muted-foreground",
