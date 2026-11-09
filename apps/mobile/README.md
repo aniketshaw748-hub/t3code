@@ -124,6 +124,23 @@ node ../../scripts/mobile-native-static-check.ts
 
 The native lint task runs SwiftLint for Swift plus ktlint and detekt for Kotlin. Missing native tools are reported as warnings and skipped locally. CI installs the default toolset from `apps/mobile/Brewfile` before running the native checks.
 
+## Local Android release APK
+
+`assembleRelease` embeds the JS bundle, so the APK runs without Metro. It signs with the keystore
+named by these Gradle properties or environment variables (see `plugins/withAndroidReleaseSigning.cjs`)
+and falls back to the debug keystore when they are unset. Keep the keystore and its password outside the repo.
+
+```bash
+export T3CODE_ANDROID_KEYSTORE_FILE=/path/to/release.jks
+export T3CODE_ANDROID_KEYSTORE_PASSWORD=...
+export T3CODE_ANDROID_KEY_ALIAS=...
+# T3CODE_ANDROID_KEY_PASSWORD defaults to the keystore password.
+APP_VARIANT=production vp exec expo prebuild --clean --platform android --no-install
+cd android && APP_VARIANT=production ./gradlew app:assembleRelease -PreactNativeArchitectures=arm64-v8a
+```
+
+Builds without `T3CODE_ANDROID_GOOGLE_SERVICES_FILE` have no push; Settings > Notifications says so.
+
 ## EAS Builds
 
 Preview and production variants use Expo fingerprinting so OTA updates only reach binaries with matching native dependencies, config plugins, and patches. CI uses the `preview:dev` profile to reuse a compatible native build when possible.
