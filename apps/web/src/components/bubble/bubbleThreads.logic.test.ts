@@ -102,9 +102,21 @@ describe("selectBubbleThreads", () => {
         latestRunCompletedAt: at("2026-06-20T10:07:00.000Z"),
         lastError: "Provider exited\nwith code 1",
       }),
+      shell("signed-out", {
+        latestRunId: RunId.make("run-signed-out"),
+        status: "failed",
+        latestRunCompletedAt: at("2026-06-20T10:06:00.000Z"),
+        lastError: "OAuth token has expired",
+        lastErrorClass: "provider_error",
+      }),
     ]);
     expect(threads.map((thread) => [thread.threadId, thread.tone, thread.nowLine])).toEqual([
       ["failed", "failed", "Provider exited"],
+      [
+        "signed-out",
+        "failed",
+        "The agent's sign-in expired or was refused. Sign in again in Settings, then retry.",
+      ],
       ["shown-in-window", "done", "Finished"],
     ]);
   });

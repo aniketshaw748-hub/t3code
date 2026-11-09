@@ -1,4 +1,5 @@
 import type { EnvironmentThreadShell } from "@t3tools/client-runtime/state/shell";
+import type { WorkRunFailure } from "@t3tools/client-runtime/work/shelf";
 import {
   checkLinkLabel,
   noteDisplay,
@@ -21,7 +22,14 @@ import type {
 } from "@t3tools/contracts";
 import { describeAnchor } from "@t3tools/shared/deliverableNotes";
 import * as DateTime from "effect/DateTime";
-import { SendIcon, SparklesIcon, Trash2Icon, XIcon } from "lucide-react";
+import {
+  CircleAlertIcon,
+  RotateCcwIcon,
+  SendIcon,
+  SparklesIcon,
+  Trash2Icon,
+  XIcon,
+} from "lucide-react";
 import { useState, type ReactNode, type RefObject } from "react";
 
 import { cn } from "../../lib/utils";
@@ -65,6 +73,9 @@ export function NotesPanel(props: {
   readonly projectNotes: ReadonlyArray<DeliverableNote>;
   readonly versions: ReadonlyArray<DeliverableVersion>;
   readonly thread: EnvironmentThreadShell | null;
+  /** How the agent's last run ended early, and the notes it left unfixed. */
+  readonly failure: WorkRunFailure | null;
+  readonly failedNotes: ReadonlyArray<DeliverableNote>;
   readonly spendApprovals: ReadonlyArray<SpendApprovalItem>;
   /** What a pinned note would point at right now: `0:42`, `Slide 3`, or null when nothing is. */
   readonly pinLabel: string | null;
@@ -203,6 +214,7 @@ export function NotesPanel(props: {
                 note={note}
                 kind={props.deliverable?.kind ?? "other"}
                 display={noteDisplay(note, ordinalOf)}
+                failure={props.failedNotes.includes(note) ? props.failure : null}
                 canOperate={props.canOperate}
                 sending={props.sending}
                 onSend={() => props.onSendNotes([note])}
@@ -263,6 +275,8 @@ function NoteCard(props: {
   readonly note: DeliverableNote;
   readonly kind: Deliverable["kind"];
   readonly display: ReturnType<typeof noteDisplay>;
+  /** Set when the run working on this note stopped before fixing it. */
+  readonly failure: WorkRunFailure | null;
   readonly canOperate: boolean;
   readonly sending: boolean;
   readonly onSend: () => void;
@@ -311,6 +325,15 @@ function NoteCard(props: {
           <NoteSnapshot environmentId={props.environmentId} url={note.snapshotUrl} />
         </button>
       ) : null}
+      {props.failure !== null ? (
+        <p className="flex min-w-0 items-start gap-1.5 text-xs text-work-ink">
+          <CircleAlertIcon className="mt-px size-3.5 shrink-0 text-work-status-open" aria-hidden />
+          <span>
+            <span className="font-medium">{props.failure.title}.</span> The agent stopped before
+            fixing this.
+          </span>
+        </p>
+      ) : null}
       {note.reply !== null || display.status === "fixing" ? (
         <div className="flex min-w-0 gap-2 rounded-lg bg-work-raised p-2">
           <Avatar agent>
@@ -337,8 +360,12 @@ function NoteCard(props: {
         <footer className="flex flex-wrap items-center gap-1">
           {note.status === "open" ? (
             <Button size="xs" variant="outline" disabled={props.sending} onClick={props.onSend}>
-              <SendIcon />
-              {note.sentMessageId === null ? "Send to agent" : "Send again"}
+              {props.failure !== null ? <RotateCcwIcon /> : <SendIcon />}
+              {props.failure !== null
+                ? "Retry"
+                : note.sentMessageId === null
+                  ? "Send to agent"
+                  : "Send again"}
             </Button>
           ) : null}
           {note.status === "fixed" ? (

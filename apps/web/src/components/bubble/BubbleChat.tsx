@@ -13,7 +13,15 @@ import type {
   DesktopBubbleThreadTarget,
   OrchestrationV2ProjectedTurnItem,
 } from "@t3tools/contracts";
-import { ArrowUpIcon, ChevronRightIcon, ExternalLinkIcon, XIcon } from "lucide-react";
+import { workRunFailure, workRunFailureDetail } from "@t3tools/client-runtime/work/shelf";
+import {
+  ArrowUpIcon,
+  ChevronRightIcon,
+  CircleAlertIcon,
+  ExternalLinkIcon,
+  RotateCcwIcon,
+  XIcon,
+} from "lucide-react";
 import { type KeyboardEvent, useState } from "react";
 
 import { useAssetUrlState } from "~/assets/assetUrls";
@@ -191,8 +199,11 @@ export function BubbleChat(props: {
   const lastMessage = messages.at(-1);
   const scrollKey = `${messages.length}:${lastMessage?.text.length ?? 0}:${report.current ?? ""}`;
 
-  const send = async () => {
-    const text = draft.trim();
+  const failure = running ? null : workRunFailure(shell?.source);
+  const lastRequest = messages.findLast((message) => message.type === "user_message")?.text.trim();
+
+  const send = async (retryText?: string) => {
+    const text = retryText ?? draft.trim();
     if (text.length === 0 || shell === null || sending) return;
     setSending(true);
     setSendError(null);
@@ -213,7 +224,7 @@ export function BubbleChat(props: {
     });
     setSending(false);
     if (result._tag === "Success") {
-      setDraft("");
+      if (retryText === undefined) setDraft("");
     } else if (!isAtomCommandInterrupted(result)) {
       const failure = squashAtomCommandFailure(result);
       setSendError(failure instanceof Error ? failure.message : "Could not send the message.");
@@ -320,6 +331,25 @@ export function BubbleChat(props: {
               </span>
             ) : null}
           </p>
+        ) : null}
+        {failure !== null ? (
+          <div role="alert" className="flex min-w-0 items-start gap-1.5 text-2xs text-foreground">
+            <CircleAlertIcon className="mt-px size-3.5 shrink-0 text-destructive" aria-hidden />
+            <p className="min-w-0 flex-1">
+              <span className="font-medium">{failure.title}.</span> {workRunFailureDetail(failure)}
+            </p>
+            {lastRequest ? (
+              <Button
+                size="xs"
+                variant="outline"
+                disabled={sending}
+                onClick={() => void send(lastRequest)}
+              >
+                <RotateCcwIcon />
+                Retry
+              </Button>
+            ) : null}
+          </div>
         ) : null}
         {/* Remounts as the reply grows, keeping the newest line in view like a chat. */}
         <div key={scrollKey} ref={scrollIntoView} aria-hidden className="h-px shrink-0" />

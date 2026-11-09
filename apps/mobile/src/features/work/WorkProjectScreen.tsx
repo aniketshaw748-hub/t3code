@@ -11,7 +11,11 @@ import {
   type CompareSelection,
 } from "@t3tools/client-runtime/work/compare";
 import { noteDisplay, sortNotes, type NoteCheckTarget } from "@t3tools/client-runtime/work/notes";
-import { primaryDeliverable } from "@t3tools/client-runtime/work/shelf";
+import {
+  notesFromFailedRun,
+  primaryDeliverable,
+  workRunFailure,
+} from "@t3tools/client-runtime/work/shelf";
 import { historyAvailability, versionStrip } from "@t3tools/client-runtime/work/versions";
 import {
   AuthOrchestrationOperateScope,
@@ -43,6 +47,7 @@ import {
   useAgentProgress,
   usePendingSpendApprovals,
   useRendition,
+  useThreadMessages,
   useWorkAssetUrl,
   useWorkPendingRequests,
   useWorkProjectSnapshot,
@@ -56,6 +61,7 @@ import {
   NoteCard,
   NotesSummary,
   PendingRequestsCard,
+  RunFailureCard,
   SpendApprovalCard,
 } from "./WorkNotes";
 import { WorkVersionStrip } from "./WorkVersionStrip";
@@ -123,6 +129,13 @@ function WorkProjectScreen(props: WorkProjectParams) {
     versions.find((version) => version.id === currentVersionId) ??
     null;
   const notes = (snapshot?.notes ?? []).filter((note) => note.deliverableId === deliverable?.id);
+  const failure = workRunFailure(thread?.source);
+  const failedNotes = notesFromFailedRun(notes, failure);
+  // Read only after a failure, so a healthy project opens no message subscription for it.
+  const failedRequest =
+    useThreadMessages(
+      failure === null || thread === null ? null : scopeThreadRef(environmentId, thread.id),
+    ).findLast((message) => message.role === "user")?.text ?? null;
   const rendition = useRendition(
     environmentId,
     viewed?.id ?? null,
@@ -219,6 +232,18 @@ function WorkProjectScreen(props: WorkProjectParams) {
     await sendNotesNow([created.value]);
     return true;
   };
+
+  /** Sends the failed run's notes again, or else the message that started it. */
+  const retry =
+    failedNotes.length > 0
+      ? () => void sendNotesNow(failedNotes)
+      : failedRequest !== null && failedRequest.trim().length > 0
+        ? async () => {
+            setSending(true);
+            await sendMessage({ environmentId, projectId, thread, text: failedRequest });
+            setSending(false);
+          }
+        : null;
 
   const moveHistory = async (
     action: "undo" | "redo" | { readonly restore: DeliverableVersionId },
@@ -465,6 +490,15 @@ function WorkProjectScreen(props: WorkProjectParams) {
           <Text className="text-xs font-t3-medium text-foreground-muted">
             {notes.length === 0 ? "Notes & chat" : `Notes & chat · ${notes.length}`}
           </Text>
+          {failure === null ? null : (
+            <RunFailureCard
+              failure={failure}
+              canOperate={canOperate}
+              retrying={sending}
+              onRetry={retry === null ? null : () => void retry()}
+              onOpenChat={openChat}
+            />
+          )}
           <NotesSummary notes={notes} />
           {spendApprovals.map((item) => (
             <SpendApprovalCard key={item.id} environmentId={environmentId} item={item} />
@@ -502,6 +536,7 @@ function WorkProjectScreen(props: WorkProjectParams) {
               note={note}
               kind={kind}
               display={noteDisplay(note, (versionId) => ordinalById.get(versionId))}
+              failure={failedNotes.includes(note) ? failure : null}
               highlighted={note.id === highlighted}
               canOperate={canOperate}
               sending={sending}

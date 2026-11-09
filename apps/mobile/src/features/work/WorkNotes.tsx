@@ -27,6 +27,7 @@ import {
   type NoteCheckTarget,
   type NoteDisplay,
 } from "@t3tools/client-runtime/work/notes";
+import { type WorkRunFailure, workRunFailureDetail } from "@t3tools/client-runtime/work/shelf";
 import type { DeliverableKind, DeliverableNote, EnvironmentId, ThreadId } from "@t3tools/contracts";
 import { describeAnchor } from "@t3tools/shared/deliverableNotes";
 import * as DateTime from "effect/DateTime";
@@ -96,7 +97,7 @@ function SmallButton(props: {
   readonly onPress: () => void;
   readonly tone?: "contrast" | "outline" | "ghost";
   readonly disabled?: boolean;
-  readonly icon?: "arrow.up" | "trash" | "checkmark";
+  readonly icon?: "arrow.up" | "arrow.clockwise" | "trash" | "checkmark";
   readonly accessibilityLabel?: string;
 }) {
   const tone = props.tone ?? "outline";
@@ -136,6 +137,43 @@ function SmallButton(props: {
   );
 }
 
+/** The agent's last run ended early: what happened in plain words, and a way to try again. */
+export function RunFailureCard(props: {
+  readonly failure: WorkRunFailure;
+  readonly canOperate: boolean;
+  readonly retrying: boolean;
+  /** Null when there is nothing to send again. */
+  readonly onRetry: (() => void) | null;
+  readonly onOpenChat: () => void;
+}) {
+  return (
+    <View
+      accessibilityRole="alert"
+      className="gap-2.5 rounded-2xl border border-border bg-subtle p-3"
+    >
+      <View className="flex-row items-start gap-2">
+        <SymbolView name="exclamationmark.circle" size={16} tintColorClassName="accent-icon" />
+        <Text className="shrink text-sm">
+          <Text className="text-sm font-t3-medium">{props.failure.title}.</Text>{" "}
+          {workRunFailureDetail(props.failure)}
+        </Text>
+      </View>
+      <View className="flex-row flex-wrap items-center gap-2">
+        {props.canOperate && props.onRetry !== null ? (
+          <SmallButton
+            tone="contrast"
+            icon="arrow.clockwise"
+            label="Retry"
+            disabled={props.retrying}
+            onPress={props.onRetry}
+          />
+        ) : null}
+        <SmallButton tone="ghost" label="Details" onPress={props.onOpenChat} />
+      </View>
+    </View>
+  );
+}
+
 /**
  * One note as a small thread with the agent: the note, its timecode chip and status, the
  * agent's compact reply with a link that seeks to the fix, and the actions its status allows.
@@ -145,6 +183,8 @@ export function NoteCard(props: {
   readonly note: DeliverableNote;
   readonly kind: DeliverableKind;
   readonly display: NoteDisplay;
+  /** Set when the run working on this note stopped before fixing it. */
+  readonly failure: WorkRunFailure | null;
   readonly highlighted: boolean;
   readonly canOperate: boolean;
   readonly sending: boolean;
@@ -204,6 +244,15 @@ export function NoteCard(props: {
       <View className="flex-row">
         <NoteStatusTag status={display.status} label={display.label} />
       </View>
+      {props.failure === null ? null : (
+        <View className="flex-row items-start gap-1.5">
+          <SymbolView name="exclamationmark.circle" size={14} tintColorClassName="accent-icon" />
+          <Text className="shrink text-xs">
+            <Text className="text-xs font-t3-medium">{props.failure.title}.</Text> The agent stopped
+            before fixing this.
+          </Text>
+        </View>
+      )}
       {note.reply !== null || display.status === "fixing" ? (
         <View className="flex-row gap-2 rounded-xl bg-subtle p-2.5">
           <Avatar agent />
@@ -231,8 +280,14 @@ export function NoteCard(props: {
         <View className="flex-row flex-wrap items-center gap-2">
           {note.status === "open" ? (
             <SmallButton
-              icon="arrow.up"
-              label={note.sentMessageId === null ? "Send to agent" : "Send again"}
+              icon={props.failure === null ? "arrow.up" : "arrow.clockwise"}
+              label={
+                props.failure !== null
+                  ? "Retry"
+                  : note.sentMessageId === null
+                    ? "Send to agent"
+                    : "Send again"
+              }
               disabled={props.sending}
               onPress={props.onSend}
             />

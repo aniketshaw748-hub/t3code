@@ -19,6 +19,7 @@ const SHELF_STATUS: Record<ShelfStatusKind, DeliverableNoteStatus | null> = {
   waiting: "open",
   rendering: "fixing",
   drafting: "fixing",
+  failed: "open",
   "notes-back": "fixed",
   "in-review": "fixed",
   final: "resolved",

@@ -47,6 +47,7 @@ const SHELF_DOT: Record<ShelfStatusKind, string> = {
   waiting: "bg-work-status-open",
   rendering: "bg-work-status-fixing",
   drafting: "bg-work-status-fixing",
+  failed: "bg-destructive",
   "notes-back": "bg-work-status-fixed",
   "in-review": "bg-work-status-fixed",
   final: "bg-work-status-resolved",

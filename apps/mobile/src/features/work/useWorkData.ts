@@ -114,6 +114,18 @@ export function useLatestAgentText(threadRef: ScopedThreadRef | null): string | 
   );
 }
 
+const NO_MESSAGES: EnvironmentThread["projection"]["messages"] = [];
+
+/** The thread's messages; the selector re-renders readers only when the message list changes. */
+export function useThreadMessages(
+  threadRef: ScopedThreadRef | null,
+): EnvironmentThread["projection"]["messages"] {
+  return useAtomValue(
+    threadRef === null ? NO_THREAD_ATOM : environmentThreadDetails.threadAtom(threadRef),
+    (thread) => thread?.projection.messages ?? NO_MESSAGES,
+  );
+}
+
 /** What the running agent says it is on, read so readers re-render only when that changes. */
 export function useAgentProgress(threadRef: ScopedThreadRef | null): AgentProgress {
   const key = useAtomValue(

@@ -1,7 +1,9 @@
 import type {
   Deliverable,
+  DeliverableNote,
   DeliverableVersionId,
   OrchestrationV2ThreadShell,
+  RunId,
   WorkProjectSnapshot,
 } from "@t3tools/contracts";
 
@@ -11,6 +13,7 @@ export type ShelfStatusKind =
   | "waiting"
   | "rendering"
   | "drafting"
+  | "failed"
   | "notes-back"
   | "in-review"
   | "final"
@@ -23,10 +26,105 @@ export interface ShelfStatus {
   readonly label: string;
 }
 
-type ShelfThread = Pick<
+type FailureThread = Pick<
   OrchestrationV2ThreadShell,
-  "status" | "activeRunId" | "pendingRuntimeRequest"
+  "status" | "latestRunId" | "lastError" | "lastErrorClass" | "lastErrorCode" | "usageLimitResetAt"
 >;
+
+type ShelfThread = Pick<OrchestrationV2ThreadShell, "activeRunId" | "pendingRuntimeRequest"> &
+  Partial<FailureThread> &
+  Pick<OrchestrationV2ThreadShell, "status">;
+
+/** Why the agent's last run ended early, in plain words, for Work mode to show where it landed. */
+export interface WorkRunFailure {
+  readonly runId: RunId | null;
+  readonly kind: "usage_limit" | "sign_in" | "connection" | "error" | "stopped";
+  /** The chip and banner heading: `Usage limit reached`. */
+  readonly title: string;
+  /** One sentence saying what happened and what to do. */
+  readonly detail: string;
+  /** When a usage limit lifts, for the client to format. */
+  readonly resetAt: string | null;
+}
+
+const SIGN_IN_ERROR =
+  /\b(?:auth(?:entic\w*|ori[sz]\w*)?|log(?:ged)? ?in|sign(?:ed)? ?in|unauthori[sz]ed|forbidden|401|403|expired|credentials?|api key)\b/i;
+
+/** The failure of the thread's latest run, or null while it runs or after it finished well. */
+export function workRunFailure(
+  thread: Partial<FailureThread> | null | undefined,
+): WorkRunFailure | null {
+  if (thread === null || thread === undefined) return null;
+  const runId = thread.latestRunId ?? null;
+  if (thread.status === "interrupted" || thread.status === "cancelled") {
+    return {
+      runId,
+      kind: "stopped",
+      title: "Stopped before it finished",
+      detail: "The agent's run was stopped before it saved its work.",
+      resetAt: null,
+    };
+  }
+  if (thread.status !== "failed") return null;
+  const failureClass = thread.lastErrorClass ?? null;
+  const said = `${thread.lastErrorCode ?? ""} ${thread.lastError ?? ""}`;
+  if (failureClass === "usage_limit") {
+    return {
+      runId,
+      kind: "usage_limit",
+      title: "Usage limit reached",
+      detail: "The agent stopped because the provider's usage limit was reached.",
+      resetAt: thread.usageLimitResetAt ?? null,
+    };
+  }
+  if (failureClass === "permission_error" || SIGN_IN_ERROR.test(said)) {
+    return {
+      runId,
+      kind: "sign_in",
+      title: "Sign-in needed",
+      detail: "The agent's sign-in expired or was refused. Sign in again in Settings, then retry.",
+      resetAt: null,
+    };
+  }
+  if (failureClass === "transport_error") {
+    return {
+      runId,
+      kind: "connection",
+      title: "Connection lost",
+      detail: "The connection to the agent dropped before it finished.",
+      resetAt: null,
+    };
+  }
+  return {
+    runId,
+    kind: "error",
+    title: "The agent hit an error",
+    detail: "The agent stopped with an error before it finished.",
+    resetAt: null,
+  };
+}
+
+/** The failure's sentence, with when a usage limit lifts in the reader's own clock. */
+export function workRunFailureDetail(failure: WorkRunFailure): string {
+  const reset = failure.resetAt === null ? Number.NaN : Date.parse(failure.resetAt);
+  if (!Number.isFinite(reset)) return failure.detail;
+  const when = new Intl.DateTimeFormat(undefined, {
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  }).format(reset);
+  return `${failure.detail} It resets ${when}.`;
+}
+
+/** Open notes the failed run was working on: sending them again is the retry. */
+export function notesFromFailedRun<N extends Pick<DeliverableNote, "status" | "sentRunId">>(
+  notes: ReadonlyArray<N>,
+  failure: WorkRunFailure | null,
+): ReadonlyArray<N> {
+  if (failure === null || failure.runId === null) return [];
+  return notes.filter((note) => note.status === "open" && note.sentRunId === failure.runId);
+}
 
 /** The deliverable a project card shows: the one changed last. */
 export function primaryDeliverable(deliverables: ReadonlyArray<Deliverable>): Deliverable | null {
@@ -47,7 +145,8 @@ export function posterFor(
 
 /**
  * One status per project card, most pressing first: a question or spend waiting on the user,
- * a render in progress, the agent drafting, review notes back, in review, final, or ready.
+ * a render in progress, the agent drafting, its last run failing, review notes back, in review,
+ * final, or ready.
  */
 export function shelfStatus(input: {
   readonly snapshot: WorkProjectSnapshot | null;
@@ -80,6 +179,9 @@ export function shelfStatus(input: {
       label: progress.step === null ? "Drafting" : `Drafting · ${progress.step.toLowerCase()}`,
     };
   }
+  // The most recently updated thread is the Work thread; its last run is the one that counts.
+  const failure = workRunFailure(threads[0]);
+  if (failure !== null) return { kind: "failed", label: failure.title };
   if (snapshot === null || deliverable === null || current === undefined) {
     return { kind: "empty", label: "Not started" };
   }

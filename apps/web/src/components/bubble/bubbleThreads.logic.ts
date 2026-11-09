@@ -3,6 +3,7 @@ import {
   type EnvironmentThreadShell,
   resolveThreadWorkingStartedAt,
 } from "@t3tools/client-runtime/state/models";
+import { workRunFailure } from "@t3tools/client-runtime/work/shelf";
 import type { EnvironmentId, ThreadId } from "@t3tools/contracts";
 import * as DateTime from "effect/DateTime";
 
@@ -69,6 +70,16 @@ function latestAssistantLine(
   if (message === null || message.role !== "assistant") return null;
   if (afterMs !== null && DateTime.toEpochMillis(message.updatedAt) < afterMs) return null;
   return plainLine(message.text, { max: NOW_LINE_MAX, pick });
+}
+
+/** Why the run failed in plain words; an unclassified error keeps its own first line. */
+function failedLine(thread: EnvironmentThreadShell): string {
+  const failure = workRunFailure(thread.source);
+  if (failure !== null && failure.kind !== "error") return failure.detail;
+  return (
+    plainLine(thread.runtime?.lastError ?? "", { max: NOW_LINE_MAX, pick: "first" }) ??
+    "The run failed"
+  );
 }
 
 function classify(
@@ -151,9 +162,7 @@ function classify(
         ? {
             tone: "failed",
             statusLabel: "Failed",
-            nowLine:
-              plainLine(thread.runtime?.lastError ?? "", { max: NOW_LINE_MAX, pick: "first" }) ??
-              "The run failed",
+            nowLine: failedLine(thread),
             workingSince: null,
           }
         : null;

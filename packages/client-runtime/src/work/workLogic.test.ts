@@ -22,7 +22,7 @@ import {
   sortNotes,
   workChatEntries,
 } from "./workNotes.ts";
-import { shelfStatus } from "./workShelf.ts";
+import { notesFromFailedRun, shelfStatus, workRunFailure } from "./workShelf.ts";
 import { historyAvailability, versionStrip } from "./workVersions.ts";
 
 const v = (ordinal: number, parent: number | null): DeliverableVersion => ({
@@ -299,9 +299,105 @@ describe("shelfStatus", () => {
       }),
       "In review · V1",
     ],
+    [
+      "the last run failed",
+      [{ ...idle, status: "failed" as const, lastErrorClass: "usage_limit" as const }],
+      null,
+      snapshot(),
+      "Usage limit reached",
+    ],
     ["idle with a current version", [], null, snapshot(), "V2"],
   ])("shows %s", (_name, threads, agentText, value, label) => {
     expect(shelfStatus({ snapshot: value, threads, agentText }).label).toBe(label);
+  });
+});
+
+describe("workRunFailure", () => {
+  const failed = {
+    status: "failed" as const,
+    latestRunId: RunId.make("run-1"),
+    lastError: null,
+    lastErrorClass: null,
+    lastErrorCode: null,
+    usageLimitResetAt: null,
+  };
+
+  it.each([
+    [
+      "a usage limit",
+      {
+        ...failed,
+        lastErrorClass: "usage_limit" as const,
+        usageLimitResetAt: "2026-11-09T15:00:00.000Z",
+      },
+      "usage_limit",
+      "Usage limit reached",
+    ],
+    [
+      "a refused permission",
+      { ...failed, lastErrorClass: "permission_error" as const },
+      "sign_in",
+      "Sign-in needed",
+    ],
+    [
+      "an expired login the provider only describes",
+      {
+        ...failed,
+        lastErrorClass: "provider_error" as const,
+        lastError: "OAuth token has expired. Please run /login",
+      },
+      "sign_in",
+      "Sign-in needed",
+    ],
+    [
+      "a dropped connection",
+      { ...failed, lastErrorClass: "transport_error" as const },
+      "connection",
+      "Connection lost",
+    ],
+    [
+      "a crash",
+      { ...failed, lastError: "Process exited with code 1" },
+      "error",
+      "The agent hit an error",
+    ],
+    [
+      "an interrupted run",
+      { ...failed, status: "interrupted" as const },
+      "stopped",
+      "Stopped before it finished",
+    ],
+  ])("names %s in plain words", (_name, thread, kind, title) => {
+    const failure = workRunFailure(thread);
+    expect(failure?.kind).toBe(kind);
+    expect(failure?.title).toBe(title);
+    expect(failure?.runId).toBe("run-1");
+  });
+
+  it("keeps the reset time of a usage limit", () => {
+    expect(
+      workRunFailure({
+        ...failed,
+        lastErrorClass: "usage_limit",
+        usageLimitResetAt: "2026-11-09T15:00:00.000Z",
+      })?.resetAt,
+    ).toBe("2026-11-09T15:00:00.000Z");
+  });
+
+  it.each([["running"], ["completed"], ["idle"]] as const)("says nothing while %s", (status) => {
+    expect(workRunFailure({ ...failed, status })).toBeNull();
+  });
+
+  it("finds the notes the failed run was fixing", () => {
+    const failure = workRunFailure(failed);
+    const notes = [
+      { id: "a", status: "open" as const, sentRunId: RunId.make("run-1") },
+      { id: "b", status: "open" as const, sentRunId: RunId.make("run-0") },
+      { id: "c", status: "fixed" as const, sentRunId: RunId.make("run-1") },
+      { id: "d", status: "open" as const, sentRunId: null },
+    ];
+    expect(notesFromFailedRun(notes, failure).map((note) => note.id)).toEqual(["a"]);
+    expect(notesFromFailedRun(notes, null)).toEqual([]);
   });
 });
 

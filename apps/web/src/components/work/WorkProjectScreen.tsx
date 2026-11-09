@@ -11,7 +11,11 @@ import {
 } from "@t3tools/client-runtime/work/compare";
 import { notePinAnchor, notePinLabel, renditionMeta } from "@t3tools/client-runtime/work/anchors";
 import type { NoteCheckTarget } from "@t3tools/client-runtime/work/notes";
-import { primaryDeliverable } from "@t3tools/client-runtime/work/shelf";
+import {
+  notesFromFailedRun,
+  primaryDeliverable,
+  workRunFailure,
+} from "@t3tools/client-runtime/work/shelf";
 import { historyAvailability, versionStrip } from "@t3tools/client-runtime/work/versions";
 import {
   AuthOrchestrationOperateScope,
@@ -52,10 +56,12 @@ import {
   isThreadBusy,
   useAgentProgress,
   useRendition,
+  useThreadMessages,
   useWorkAssetUrl,
   useWorkProjectSnapshot,
   useWorkThreads,
 } from "./useWorkData";
+import { RunFailureBanner } from "./RunFailureBanner";
 import { VersionStrip } from "./VersionStrip";
 import { VideoStage, type SeekRequest } from "./VideoStage";
 import { WhatChanged } from "./WhatChanged";
@@ -155,6 +161,13 @@ export function WorkProjectScreen(props: {
     versions.find((version) => version.id === currentVersionId) ??
     null;
   const notes = (snapshot?.notes ?? []).filter((note) => note.deliverableId === deliverable?.id);
+  const failure = workRunFailure(thread?.source);
+  const failedNotes = notesFromFailedRun(notes, failure);
+  // Read only after a failure, so a healthy project opens no message subscription for it.
+  const failedRequest =
+    useThreadMessages(
+      failure === null || thread === null ? null : scopeThreadRef(environmentId, thread.id),
+    ).findLast((message) => message.role === "user")?.text ?? null;
   const rendition = useRendition(
     environmentId,
     viewed?.id ?? null,
@@ -295,6 +308,18 @@ export function WorkProjectScreen(props: {
       snapshotDataUrl === null ? undefined : [snapshotAttachment(snapshotDataUrl)],
     );
   };
+
+  /** Sends the failed run's notes again, or else the message that started it. */
+  const retry =
+    failedNotes.length > 0
+      ? () => void sendNotesNow(failedNotes)
+      : failedRequest !== null && failedRequest.trim().length > 0
+        ? async () => {
+            setSending(true);
+            await sendMessage({ environmentId, projectId, thread, text: failedRequest });
+            setSending(false);
+          }
+        : null;
 
   const moveHistory = async (
     action: "undo" | "redo" | { readonly restore: DeliverableVersionId },
@@ -522,6 +547,15 @@ export function WorkProjectScreen(props: {
         <div className="flex min-h-0 flex-1 flex-col lg:flex-row">
           <section aria-label="Work" className="flex min-h-0 min-w-0 flex-1 flex-col">
             <div className="flex min-h-0 flex-1 flex-col gap-3 p-4">
+              {failure !== null ? (
+                <RunFailureBanner
+                  failure={failure}
+                  canOperate={canOperate}
+                  retrying={sending}
+                  onRetry={retry === null ? null : () => void retry()}
+                  onShowChat={() => setTab("chat")}
+                />
+              ) : null}
               {deliverable !== null && strayOriginal !== null ? (
                 <StrayFileBanner
                   environmentId={environmentId}
@@ -565,6 +599,8 @@ export function WorkProjectScreen(props: {
             projectNotes={snapshot?.notes ?? NO_NOTES}
             versions={versions}
             thread={thread}
+            failure={failure}
+            failedNotes={failedNotes}
             spendApprovals={spendApprovals}
             pinLabel={pinLabel}
             composer={{
