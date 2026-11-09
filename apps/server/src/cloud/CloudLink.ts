@@ -1,3 +1,4 @@
+import { BRAND } from "@t3tools/contracts/brand";
 import {
   AuthStandardClientScopes,
   EnvironmentAuthenticatedPrincipal,
@@ -88,6 +89,7 @@ import {
   encodeConfirmedOriginJson,
   encodeEndpointRuntimeConfigJson,
   HOLD_WEBHOOKS_WHILE_OFFLINE_SECRET,
+  isAgentActivityPublishingEnabledValue,
   PUBLISH_AGENT_ACTIVITY_SECRET,
   readRelayConnection,
   RELAY_ENVIRONMENT_CREDENTIAL_SECRET,
@@ -189,7 +191,7 @@ export class CloudLinkAuthorizationMissingError extends Schema.TaggedError<Cloud
   {},
 ) {
   override get message(): string {
-    return "Run `t3 connect link` to authorize this environment.";
+    return `Run \`${BRAND.cliName} connect link\` to authorize this environment.`;
   }
 }
 
@@ -1297,9 +1299,9 @@ const make = Effect.gen(function* () {
       relayUrl: Option.isSome(relayUrl) ? bytesToString(relayUrl.value) : null,
       relayIssuer: Option.isSome(relayIssuer) ? bytesToString(relayIssuer.value) : null,
       managedTunnelActive: Option.isSome(endpointRuntimeConfig),
-      publishAgentActivity: Option.isSome(publishAgentActivity)
-        ? bytesToString(publishAgentActivity.value) === "true"
-        : false,
+      publishAgentActivity: isAgentActivityPublishingEnabledValue(
+        Option.isSome(publishAgentActivity) ? bytesToString(publishAgentActivity.value) : null,
+      ),
       holdWebhooksWhileOffline:
         Option.isSome(holdWebhooks) && bytesToString(holdWebhooks.value) === "true",
       ...(Option.isSome(currentReachability) ? { reachability: currentReachability.value } : {}),

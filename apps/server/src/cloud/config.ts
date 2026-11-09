@@ -1,3 +1,4 @@
+import { BRAND } from "@t3tools/contracts/brand";
 import {
   RelayManagedEndpointOrigin,
   RelayManagedEndpointRuntimeConfig,
@@ -40,8 +41,9 @@ export const decodeConfirmedOrigin = Schema.decodeUnknownOption(
   Schema.fromJsonString(ManagedEndpointConfirmedOrigin),
 );
 
+/** An unset preference takes the brand default; the user's toggle stores "true" or "false". */
 export function isAgentActivityPublishingEnabledValue(value: string | null): boolean {
-  return value === "true";
+  return value === null ? BRAND.defaults.publishAgentActivity : value === "true";
 }
 
 /**
