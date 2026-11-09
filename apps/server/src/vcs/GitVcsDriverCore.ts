@@ -42,6 +42,7 @@ import { resolveProjectFileBackedSetting } from "@t3tools/shared/projectSettings
 import { gitCommandDuration, gitCommandsTotal, withMetrics } from "../observability/Metrics.ts";
 import * as GitVcsDriver from "./GitVcsDriver.ts";
 import { removeEmptyDirectory, type RemoveEmptyDirectoryError } from "./removeEmptyDirectory.ts";
+import { HIDDEN_REFS_ROOT } from "./hiddenRefs.ts";
 import { explicitBareRepositoryEnv, gitConfigEnv } from "./VcsProcess.ts";
 import { removeLinkedWorktree } from "./worktreeRemoval.ts";
 import { resolveWorktreesDirectory } from "../worktreesDirectory.ts";
@@ -4506,7 +4507,7 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
         yield* executeGit(
           "GitVcsDriver.refreshCheckedOutBranch.keepPrevious",
           input.cwd,
-          ["update-ref", "refs/t3code/pre-refresh", headCommit],
+          ["update-ref", `${HIDDEN_REFS_ROOT}/pre-refresh`, headCommit],
           { fallbackErrorDetail: "git failed to record the previous checkout commit" },
         );
       }
