@@ -4,6 +4,7 @@ import {
   changeRegion,
   compareUnitLabel,
   noteAnchorChip,
+  plainPreview,
   notePinAnchor,
   notePinLabel,
   renditionMeta,
@@ -79,6 +80,12 @@ describe("renditionMeta and spendApprovalDetails", () => {
       renditionMeta("deck", { durationSeconds: null, height: null, units: [{}, {}] as never }),
     ).toBe("2 slides");
     expect(renditionMeta("image", { durationSeconds: null, height: 10, units: [] })).toBeNull();
+  });
+
+  it("drops markdown marks from agent text shown as a preview", () => {
+    expect(plainPreview("Done. Check **0:06-0:07** in `film.mp4`.")).toBe(
+      "Done. Check 0:06-0:07 in film.mp4.",
+    );
   });
 
   it("lists service and model before the request's own settings", () => {

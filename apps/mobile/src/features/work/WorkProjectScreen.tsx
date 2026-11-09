@@ -3,7 +3,12 @@ import {
   isAtomCommandInterrupted,
   squashAtomCommandFailure,
 } from "@t3tools/client-runtime/state/runtime";
-import { notePinAnchor, notePinLabel, renditionMeta } from "@t3tools/client-runtime/work/anchors";
+import {
+  notePinAnchor,
+  notePinLabel,
+  plainPreview,
+  renditionMeta,
+} from "@t3tools/client-runtime/work/anchors";
 import {
   defaultCompareSelection,
   orderedCompare,
@@ -421,7 +426,7 @@ function WorkProjectScreen(props: WorkProjectParams) {
             />
             {viewed?.summary && comparePair === null ? (
               <Text className="text-xs text-foreground-muted">
-                V{viewed.ordinal}: {viewed.summary}
+                V{viewed.ordinal}: {plainPreview(viewed.summary)}
               </Text>
             ) : null}
             {viewingOld && viewed !== null ? (

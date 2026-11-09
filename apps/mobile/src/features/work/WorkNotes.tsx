@@ -17,6 +17,7 @@ import {
   formatSpendAmount,
   noteAnchorChip,
   noteAuthorLabel,
+  plainPreview,
   spendApprovalDetails,
   type SpendApprovalTurnItem,
 } from "@t3tools/client-runtime/work/anchors";
@@ -179,7 +180,7 @@ export function NoteCard(props: {
         <View className="flex-1" />
         <Pressable
           accessibilityRole="button"
-          accessibilityLabel={`Go to ${describeAnchor(note.anchor, props.kind)}`}
+          accessibilityLabel={`Show where this note points: ${describeAnchor(note.anchor, props.kind)}`}
           onPress={props.onFocus}
           hitSlop={6}
           className="rounded-md border border-border bg-subtle px-1.5 py-0.5 active:opacity-70"
@@ -208,7 +209,7 @@ export function NoteCard(props: {
           <Avatar agent />
           <View className="min-w-0 flex-1 gap-1">
             <Text numberOfLines={3} className="text-xs">
-              {note.reply ??
+              {(note.reply === null ? null : plainPreview(note.reply)) ??
                 (note.sentRunId === null ? "Sent. Waiting for the agent…" : "Working on it…")}
             </Text>
             {display.check !== null ? (
@@ -270,8 +271,7 @@ export function AgentLine(props: {
   const latest = useLatestAgentText(scopeThreadRef(props.environmentId, props.thread.id));
   const working = isThreadBusy(props.thread);
   if (latest === null && !working) return null;
-  // Markdown marks would show as stray characters in a plain preview.
-  const text = (latest ?? "").replace(/[*_`#>]+/g, "").trim();
+  const text = plainPreview(latest ?? "");
   return (
     <View className="flex-row gap-2 px-1">
       <Avatar agent />
