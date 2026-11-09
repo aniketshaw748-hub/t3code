@@ -32,9 +32,7 @@ export function BrandMark(props: { readonly compact?: boolean; readonly stageLab
             {BRAND.displayName}
           </Text>
           <View className="rounded-full bg-subtle px-2 py-1">
-            <Text className="text-3xs font-t3-bold tracking-[1.1px] uppercase text-foreground-muted">
-              {stageLabel}
-            </Text>
+            <Text className="text-3xs font-t3-bold text-foreground-muted">{stageLabel}</Text>
           </View>
         </View>
         {!compact ? (

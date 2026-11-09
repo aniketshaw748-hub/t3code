@@ -108,6 +108,7 @@ const reactionGroups = (groups: ReadonlyArray<Json> | undefined) =>
 const remark = ({ author, reactionGroups: groups, ...raw }: Json) => ({
   body: "",
   lastEditedAt: null,
+  isMinimized: false,
   url: "https://github.com/acme/web/pull/1#discussion",
   ...raw,
   author: actor(author),
@@ -129,6 +130,7 @@ const reviewCommit = ({ commit: { authors, ...commit } }: Json) => ({
   commit: {
     messageHeadline: "",
     committedDate: "",
+    statusCheckRollup: null,
     ...commit,
     authors: {
       nodes: nodesIn(authors).map((author) => ({
@@ -159,6 +161,7 @@ const withReviewDefaults = (raw: string): string => {
       viewerCanUpdate: true,
       viewerDidAuthor: false,
       reviewDismissals: { pageInfo: LAST_PAGE, nodes: [] },
+      reviewRequestEvents: { nodes: [] },
       ...rest,
       author: actor(author),
       reactionGroups: reactionGroups(groups),
@@ -172,6 +175,7 @@ const withReviewDefaults = (raw: string): string => {
       latestReviews: {
         nodes: nodesIn(latestReviews).map((node) => ({
           state: "COMMENTED",
+          isMinimized: false,
           ...node,
           author: actor(node["author"]),
         })),
@@ -186,6 +190,7 @@ const withReviewDefaults = (raw: string): string => {
           isOutdated: false,
           line: null,
           diffSide: "RIGHT",
+          firstComment: { nodes: [] },
           ...thread,
           comments: threadCommentsOf(thread["comments"]),
         })),
@@ -233,7 +238,16 @@ function listJson(entries: ReadonlyArray<Record<string, unknown>>): string {
                       ),
                     },
                   }),
-              ...(latestReviews === undefined ? {} : { latestReviews: { nodes: latestReviews } }),
+              ...(latestReviews === undefined
+                ? {}
+                : {
+                    latestReviews: {
+                      nodes: (latestReviews as ReadonlyArray<Json>).map((review) => ({
+                        isMinimized: false,
+                        ...review,
+                      })),
+                    },
+                  }),
               ...(checks === undefined
                 ? {}
                 : { commits: { nodes: [{ commit: { statusCheckRollup: { state: checks } } }] } }),
@@ -283,6 +297,13 @@ describe("pull request list decoding", () => {
             reviewDecision: null,
             latestReviews: [{ author: user("octocat"), state: "COMMENTED" }],
           },
+          {
+            reviewDecision: null,
+            latestReviews: [
+              { author: user("octocat"), state: "APPROVED" },
+              { author: user("drive-by"), state: "CHANGES_REQUESTED", isMinimized: true },
+            ],
+          },
         ]),
       ),
     );
@@ -291,6 +312,7 @@ describe("pull request list decoding", () => {
       "changes-requested",
       "approved",
       null,
+      "approved",
     ]);
   });
 
@@ -469,6 +491,7 @@ describe("pull request detail decoding", () => {
                 (comment) => ({
                   lastEditedAt: null,
                   url: "https://github.com/c",
+                  isMinimized: false,
                   author: null,
                   ...comment,
                 }),
@@ -480,6 +503,7 @@ describe("pull request detail decoding", () => {
                 (review) => ({
                   lastEditedAt: null,
                   url: "https://github.com/r",
+                  isMinimized: false,
                   author: null,
                   submittedAt: null,
                   ...review,
@@ -560,6 +584,8 @@ describe("pull request detail decoding", () => {
     expect(detail.checks.map((check) => [check.name, check.status])).toEqual([
       ["Prepare PR size config", "pending"],
     ]);
+    expect(detail.checks[0]?.startedAt).toBe("2026-08-11T17:01:04Z");
+    expect(detail.checks[0]?.completedAt).toBeUndefined();
     expect(detail.checksState).toBe("pending");
   });
 
@@ -621,6 +647,29 @@ describe("pull request detail decoding", () => {
     expect(detail.comments.map((comment) => comment.id)).toEqual(["c1", "r5"]);
   });
 
+  it("leaves out the comments and reviews a maintainer hid", () => {
+    const detail = expectSuccess(
+      activity({
+        comments: [
+          { id: "c1", body: "kept", createdAt: "2026-07-04T00:00:00Z" },
+          { id: "c2", body: "spam", createdAt: "2026-07-05T00:00:00Z", isMinimized: true },
+        ],
+        reviews: [
+          {
+            id: "r1",
+            body: "spam",
+            state: "CHANGES_REQUESTED",
+            submittedAt: "2026-07-03T00:00:00Z",
+            isMinimized: true,
+          },
+          { id: "r2", body: "", state: "APPROVED", submittedAt: "2026-07-06T00:00:00Z" },
+        ],
+      }),
+    );
+
+    expect(detail.comments.map((comment) => comment.id)).toEqual(["c1", "r2"]);
+  });
+
   it.each(["APPROVED", "CHANGES_REQUESTED", "DISMISSED"])(
     "keeps a bodyless %s review, which is the event itself",
     (state) => {
@@ -638,6 +687,104 @@ describe("pull request detail decoding", () => {
 });
 
 describe("review thread decoding", () => {
+  it("keeps snippets, commit checks and team review events through generated selections", () => {
+    const result = expectSuccess(
+      decodeReviewThreadsJson(
+        JSON.stringify({
+          data: {
+            repository: {
+              pullRequest: {
+                reviewThreads: {
+                  nodes: [
+                    {
+                      id: "thread-1",
+                      path: "src/a.ts",
+                      line: 3,
+                      firstComment: {
+                        nodes: [{ diffHunk: "@@ -1,2 +1,3 @@\n one\n two\n+three" }],
+                      },
+                      comments: {
+                        nodes: [
+                          {
+                            id: "comment-1",
+                            body: "check this",
+                            createdAt: "2026-10-16T00:00:00Z",
+                          },
+                        ],
+                      },
+                    },
+                  ],
+                },
+                commits: {
+                  nodes: [
+                    {
+                      commit: {
+                        oid: "abc123",
+                        committedDate: "2026-10-16T00:00:00Z",
+                        statusCheckRollup: {
+                          state: "SUCCESS",
+                          contexts: {
+                            totalCount: 3,
+                            checkRunCountsByState: [{ state: "SUCCESS", count: 2 }],
+                            statusContextCountsByState: [{ state: "SUCCESS", count: 1 }],
+                          },
+                        },
+                      },
+                    },
+                  ],
+                },
+                reviewRequestEvents: {
+                  nodes: [
+                    {
+                      __typename: "ReviewRequestedEvent",
+                      createdAt: "2026-10-16T02:00:00Z",
+                      actor: {
+                        __typename: "User",
+                        login: "maria",
+                        avatarUrl: "https://avatars/maria",
+                      },
+                      requestedReviewer: {
+                        __typename: "Team",
+                        combinedSlug: "acme/reviewers",
+                        teamName: "Reviewers",
+                        teamAvatarUrl: null,
+                      },
+                    },
+                    {
+                      __typename: "ReviewRequestedEvent",
+                      createdAt: "2026-10-16T01:00:00Z",
+                      actor: null,
+                      requestedReviewer: {
+                        __typename: "User",
+                        login: "octocat",
+                        name: null,
+                        avatarUrl: "https://avatars/octocat",
+                      },
+                    },
+                  ],
+                },
+              },
+            },
+          },
+        }),
+      ),
+    );
+    expect(result.threads[0]?.thread.snippet).toEqual([
+      { kind: "context", line: 1, text: "one" },
+      { kind: "context", line: 2, text: "two" },
+      { kind: "added", line: 3, text: "three" },
+    ]);
+    expect(result.commits[0]?.checks).toEqual({ state: "passing", passed: 3, total: 3 });
+    expect(result.reviewRequests?.map((event) => [event.reviewer.login, event.createdAt])).toEqual([
+      ["octocat", "2026-10-16T01:00:00Z"],
+      ["acme/reviewers", "2026-10-16T02:00:00Z"],
+    ]);
+    expect(result.reviewRequests?.[1]).toMatchObject({
+      actor: { login: "maria", avatarUrl: "https://avatars/maria" },
+      reviewer: { login: "acme/reviewers", name: "Reviewers", avatarUrl: null },
+    });
+  });
+
   const threadsJson = (
     nodes: ReadonlyArray<Record<string, unknown>>,
     totalCount = nodes.length,
@@ -860,6 +1007,37 @@ describe("review thread decoding", () => {
     expect(comments.map((comment) => comment.id)).toEqual(["t1", "t2"]);
   });
 
+  it("leaves out hidden thread comments, and a thread with none left", () => {
+    const result = expectSuccess(
+      decodeReviewThreadsJson(
+        threadsJson([
+          {
+            id: "PRRT_hidden_root",
+            path: "apps/server/src/ws.ts",
+            comments: {
+              nodes: [
+                { id: "t1", createdAt: "2026-07-01T00:00:00Z", isMinimized: true },
+                { id: "t2", createdAt: "2026-07-01T01:00:00Z" },
+              ],
+            },
+          },
+          {
+            id: "PRRT_all_hidden",
+            path: "apps/web/src/main.tsx",
+            comments: {
+              nodes: [{ id: "t3", createdAt: "2026-07-01T00:00:00Z", isMinimized: true }],
+            },
+          },
+        ]),
+      ),
+    );
+
+    expect(result.threads.map((entry) => [entry.thread.id, entry.commentCount])).toEqual([
+      ["PRRT_hidden_root", 1],
+    ]);
+    expect(result.threads[0]?.thread.comments.map((comment) => comment.id)).toEqual(["t2"]);
+  });
+
   it("keeps GitHub's own count of a thread whose comments were not all read", () => {
     const result = expectSuccess(
       decodeReviewThreadsJson(
@@ -883,7 +1061,7 @@ describe("review thread decoding", () => {
     });
   });
 
-  it("ends a thread's walk on the last page, which still names a cursor", () => {
+  it("ends a thread's walk on the last page, which still names a cursor, counting what it hid", () => {
     const decoded = expectSuccess(
       decodeReviewThreadCommentsJson(
         JSON.stringify({
@@ -893,7 +1071,10 @@ describe("review thread decoding", () => {
               pullRequest: { id: "PR_1" },
               comments: {
                 pageInfo: { hasNextPage: false, endCursor: "Y3Vyc29yOjk" },
-                nodes: [{ id: "t9", body: "last", createdAt: "2026-07-01T00:00:00Z" }],
+                nodes: [
+                  { id: "t8", body: "spam", createdAt: "2026-07-01T00:00:00Z", isMinimized: true },
+                  { id: "t9", body: "last", createdAt: "2026-07-01T00:00:00Z" },
+                ],
               },
             },
           },
@@ -901,6 +1082,7 @@ describe("review thread decoding", () => {
       ),
     );
     expect(decoded.comments.map((comment) => comment.id)).toEqual(["t9"]);
+    expect(decoded.hiddenCount).toBe(1);
     expect(decoded.nextCursor).toBeNull();
   });
 });
@@ -1273,6 +1455,8 @@ describe("reviewer candidate decoding", () => {
     readonly requested?: ReadonlyArray<Record<string, unknown> | null>;
     readonly author?: string;
     readonly hasNextPage?: boolean;
+    readonly suggested?: ReadonlyArray<Record<string, unknown>>;
+    readonly requestEvents?: ReadonlyArray<Record<string, unknown>>;
   }) =>
     JSON.stringify({
       data: {
@@ -1285,6 +1469,8 @@ describe("reviewer candidate decoding", () => {
           },
           pullRequest: {
             author: input.author === undefined ? null : { __typename: "User", login: input.author },
+            suggestedReviewers: input.suggested ?? [],
+            requestEvents: { nodes: input.requestEvents ?? [] },
             reviewRequests: {
               nodes: (input.requested ?? []).map((requestedReviewer) => ({
                 requestedReviewer:

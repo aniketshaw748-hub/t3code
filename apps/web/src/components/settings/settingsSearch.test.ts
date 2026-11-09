@@ -80,7 +80,6 @@ describe("searchSettings", () => {
 
   it("matches normalized title substrings", () => {
     expect(searchSettings("  WORD   WRAP  ", ITEMS).map((item) => item.id)).toEqual(["word-wrap"]);
-    expect(searchSettings("glass").map((item) => item.id)).toEqual(["setting-glass-opacity"]);
     expect(searchSettings("panel animations").map((item) => item.id)).toEqual(["panel-animations"]);
     expect(searchSettings("thè\u{1ab0}mes")[0]?.id).toBe("theme");
     const localeLowerCase = vi.spyOn(String.prototype, "toLocaleLowerCase").mockReturnValue("gıt");
@@ -218,6 +217,14 @@ describe("settings search targets", () => {
     expect(isSettingsSearchScopeAvailable(target.scope, "environment")).toBe(true);
   });
 
+  it("keeps layout settings reachable from every settings scope", () => {
+    const setting = getSettingsSearchTargetScope("layout-template")!;
+    expect(setting.scope).toBeNull();
+    for (const kind of ["all", "environment", "project", "checkout", "unavailable"] as const) {
+      expect(isSettingsSearchScopeAvailable(setting.scope, kind)).toBe(true);
+    }
+  });
+
   it("keeps environment-wide settings out of project scopes", () => {
     const updates = getSettingsSearchTargetScope("provider-update-checks")!;
     expect(updates.scope).toBe("environment-defaults");
@@ -235,7 +242,7 @@ describe("settings search targets", () => {
     for (const scope of ["all", "environment", "project"] as const) {
       expect(isSettingsSearchScopeAvailable("project-defaults", scope)).toBe(true);
     }
-    for (const id of ["legacy-plan-mode", "legacy-context-window-indicator", "boring-sidebar"]) {
+    for (const id of ["tool-call-visibility", "boring-sidebar"]) {
       expect(getSettingsSearchTargetScope(id)!.scope).toBeNull();
     }
   });

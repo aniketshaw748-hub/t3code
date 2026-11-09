@@ -274,6 +274,7 @@ query PullRequestActivity(
           createdAt
           lastEditedAt
           url
+          isMinimized
           author {
             login
             avatarUrl
@@ -295,6 +296,7 @@ query PullRequestActivity(
           submittedAt
           lastEditedAt
           url
+          isMinimized
           author {
             login
             avatarUrl
@@ -443,6 +445,33 @@ query ReviewerCandidates($owner: String!, $name: String!, $number: Int!, $query:
             ... on Bot {
               login
               avatarUrl
+            }
+          }
+        }
+      }
+      suggestedReviewers {
+        isAuthor
+        isCommenter
+        reviewer {
+          login
+          name
+          avatarUrl
+        }
+      }
+      requestEvents: timelineItems(itemTypes: [REVIEW_REQUESTED_EVENT], last: 100) {
+        nodes {
+          ... on ReviewRequestedEvent {
+            createdAt
+            requestedReviewer {
+              ... on User {
+                login
+              }
+              ... on Team {
+                slug
+              }
+              ... on Bot {
+                login
+              }
             }
           }
         }

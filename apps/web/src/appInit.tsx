@@ -38,8 +38,11 @@ import { readLocalStorageValue, subscribeLocalStorageKey } from "./hooks/useLoca
 import { startHostEnvironmentLookup } from "./state/primaryEnvironment";
 import {
   getClientSettings,
+  getClientSettingsHydratedSnapshot,
+  startLegacyLayoutSettingsMigration,
   startModelPreferencesMigration,
   subscribeClientSettings,
+  subscribeClientSettingsHydration,
 } from "./hooks/useSettings";
 import { syncBrowserChromeTheme } from "./hooks/useTheme";
 import { startThreadVisitedMigration } from "./hooks/useThreadVisitedMigration";
@@ -50,6 +53,7 @@ import {
 } from "./lib/windowControlsOverlay";
 import { startProviderAuthDelivery } from "./providerAuthDelivery";
 import { getRouter, type AppRouter } from "./router";
+import { trackNavigationHistory } from "./navigationHistory";
 import { appAtomRegistry } from "./rpc/atomRegistry";
 import { primaryServerConfigAtom } from "./state/server";
 import { environmentShell } from "./state/shell";
@@ -65,6 +69,7 @@ function startClientAppearance(): void {
   const root = document.documentElement;
   let applied: ClientSettings | null = null;
   let appliedSeparateFonts: boolean | null = null;
+  let appliedSurfaceStyle: ClientSettings["surfaceStyle"] | null = null;
   const apply = () => {
     const settings = getClientSettings();
     const previous = applied;
@@ -82,16 +87,18 @@ function startClientAppearance(): void {
     if (previous?.chatWidth !== settings.chatWidth) {
       root.dataset.chatWidth = settings.chatWidth;
     }
+    // Keep index.html's stored surface until hydration supplies the saved preference.
+    if (getClientSettingsHydratedSnapshot() && appliedSurfaceStyle !== settings.surfaceStyle) {
+      appliedSurfaceStyle = settings.surfaceStyle;
+      root.dataset.surfaceStyle = settings.surfaceStyle;
+      try {
+        window.localStorage.setItem("t3code:surface-style", settings.surfaceStyle);
+      } catch {
+        // The current page still uses the selected surface without persistence.
+      }
+    }
     if (previous?.appearanceContrast !== settings.appearanceContrast) {
       applyAppearanceContrast(root, settings.appearanceContrast);
-    }
-    if (previous?.glassOpacity !== settings.glassOpacity) {
-      root.style.setProperty("--glass-opacity", `${settings.glassOpacity}%`);
-      if (settings.glassOpacity === 100) {
-        root.style.setProperty("--glass-blur", "0px");
-      } else {
-        root.style.removeProperty("--glass-blur");
-      }
     }
     if (
       previous?.fontFamilySans !== settings.fontFamilySans ||
@@ -117,6 +124,7 @@ function startClientAppearance(): void {
   };
   subscribeClientSettings(apply);
   subscribeLocalStorageKey(TYPOGRAPHY_ADVANCED_STORAGE_KEY, apply);
+  subscribeClientSettingsHydration(apply);
   apply();
 }
 
@@ -144,6 +152,7 @@ function startBrowserChromeThemeSync(router: AppRouter): void {
   const resync = () => window.requestAnimationFrame(syncBrowserChromeTheme);
   router.subscribe("onRendered", resync);
   router.subscribe("onResolved", resync);
+  window.matchMedia("(max-width: 767px)").addEventListener("change", resync);
 }
 
 /** Chat overlays belong to the thread they were opened in, so leaving its route drops them. */
@@ -174,6 +183,7 @@ export function startAppServices(): AppRouter {
 
   // Electron loads the app from a file-backed shell, so hash history avoids path resolution issues.
   const router = getRouter(isElectron ? createHashHistory() : createBrowserHistory());
+  trackNavigationHistory(router.history);
 
   if (isBubblePage()) {
     // A second renderer beside the main window, which owns notifications, previews and drafts.
@@ -188,6 +198,8 @@ export function startAppServices(): AppRouter {
   if (isElectron) {
     syncDocumentElectronPlatformClasses(navigator.platform);
     syncDocumentWindowControlsOverlayClass();
+    // A reload keeps the window, including traffic lights hidden by the collapsed sidebar.
+    void window.desktopBridge?.setWindowButtonsVisible?.(true);
   }
 
   installDesktopPasteAsText(window.desktopBridge, window);
@@ -199,6 +211,7 @@ export function startAppServices(): AppRouter {
   startBrowserChromeThemeSync(router);
   startDefaultThemeAdoption();
   startModelPreferencesMigration();
+  startLegacyLayoutSettingsMigration();
   startAgentOpenedPreviews();
   if (isElectron) startElectronBrowserHost();
   startPreviewTitleRecording();

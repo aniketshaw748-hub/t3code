@@ -69,13 +69,14 @@ while you record; models with built-in long-form support transcribe when you sto
 ## Dictate
 
 Press the microphone in the composer, or `mod+shift+d` (`mod` is Command on
-macOS and Ctrl elsewhere). Press again, or the check mark, to finish; `Esc`
+macOS and Ctrl elsewhere). While you record, the microphone shows live bars and
+Send becomes Stop. Press the shortcut again, the bars, or Stop to finish; `Esc`
 discards the recording and leaves your draft unchanged. Recordings last up to
 five minutes. Text is inserted at the cursor or replaces the selection you had
 when recording started, and the editor is read-only while dictation runs.
 
-Pressing Send while dictating finishes the recording and sends the draft once
-the transcript has been inserted. Cancelling also cancels that queued send. In
+Using your send shortcut while dictating finishes the recording and sends the
+draft once the transcript has been inserted. Cancelling also cancels that queued send. In
 the other editors, Save, Comment, Reply, Submit review, or Attach works the
 same way, and the shortcut targets the editor that has focus, or the composer
 when none does. In the desktop browser's annotation editor, the microphone and
@@ -109,20 +110,21 @@ are down, and **Toggle** always needs a second press. Change the chord itself in
 Language and these preferences travel with each recording to the chosen
 environment; nothing else about the project is sent.
 
-## Clean up transcripts with a provider
+## Clean up transcripts
 
 **Transcript cleanup** is a separate choice and is off by default. When on, the
 finished transcript and up to 1,024 characters each from before, inside, and
-after your selection are sent to the
-text generation provider configured on the draft's environment, which fixes
-punctuation, numbers, and spoken corrections such as "make it 42, sorry, 24".
-Depending on the provider, that can involve an external service. Audio is never
+after your selection are sent to the cleanup model on the draft's environment,
+which fixes punctuation, numbers, and spoken corrections such as "make it 42,
+sorry, 24". Depending on the model, that can involve an external service. Audio is never
 sent to it. Use the built-in instructions or write your own, press **Skip**
 while cleanup runs to insert the raw transcript, and if cleanup fails the raw
 transcript is inserted.
 
 Cleanup uses the environment's text generation model unless you pick a
 **Cleanup model** for that environment, for example a cheaper or faster one.
+It can be a text generator instead of a coding agent; see
+[text generation models](./text-generation.md).
 
 If cleanup misses the way you correct yourself, set a **Correction cue**: the
 word or phrase you say to flag a correction, such as "scratch that". Cleanup

@@ -84,19 +84,18 @@ export function SubagentTooltipContent(props: {
             descriptor.type === "boolean" &&
             typeof saved?.value === "boolean"
           ) {
-            return getTraitsSpeedDisplay(provider.driver, {
+            return getTraitsSpeedDisplay({
               ...descriptor,
               currentValue: saved.value,
             });
           }
           if (
-            provider.driver === "codex" &&
             descriptor.id === "serviceTier" &&
             descriptor.type === "select" &&
             typeof saved?.value === "string" &&
             descriptor.options.some((option) => option.id === saved.value)
           ) {
-            return getTraitsSpeedDisplay(provider.driver, {
+            return getTraitsSpeedDisplay({
               ...descriptor,
               currentValue: saved.value,
             });
@@ -135,13 +134,13 @@ export function SubagentTooltipContent(props: {
         ) : (
           <BotIcon className="size-3 shrink-0" />
         )}
-        <span className="inline-flex min-w-0 items-center gap-1 text-foreground/75">
+        <span className="inline-flex min-w-0 flex-col items-start gap-1 text-muted-foreground">
           <span className="min-w-0 truncate">
-            {showInstanceBadge ? `${modelLabel} · ${entry.displayName}` : modelLabel}
+            <span>{modelLabel}</span>
+            {showInstanceBadge ? <span className="block">{entry.displayName}</span> : null}
           </span>
           {effort || speed?.speedIcon ? (
             <span className="inline-flex shrink-0 items-center gap-1">
-              {effort ? " · " : null}
               {speed?.speedIcon && provider ? (
                 <TraitsSpeedIcon provider={provider.driver} speedIcon={speed.speedIcon} size="xs" />
               ) : null}
@@ -155,11 +154,11 @@ export function SubagentTooltipContent(props: {
           className={cn(
             "inline-flex items-center gap-1 rounded-sm font-medium capitalize",
             working
-              ? "text-info"
+              ? "text-info-foreground"
               : failed
-                ? "text-error"
+                ? "text-error-foreground"
                 : props.status === "completed"
-                  ? "text-success"
+                  ? "text-success-foreground"
                   : "text-muted-foreground",
           )}
         >

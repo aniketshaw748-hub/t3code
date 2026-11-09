@@ -31,6 +31,7 @@ import {
   type ReviewDiffFileStat,
   type ReviewDiffPreviewSource,
   type VcsRef,
+  type VcsWorkingTreeFileStatus,
 } from "@t3tools/contracts";
 import { dedupeRemoteBranchesWithLocalMatches } from "@t3tools/shared/git";
 import * as HostProcess from "@t3tools/shared/HostProcess";
@@ -44,6 +45,7 @@ import * as GitVcsDriver from "./GitVcsDriver.ts";
 import { removeEmptyDirectory, type RemoveEmptyDirectoryError } from "./removeEmptyDirectory.ts";
 import { HIDDEN_REFS_ROOT } from "./hiddenRefs.ts";
 import { explicitBareRepositoryEnv, gitConfigEnv } from "./VcsProcess.ts";
+import { makeWorktreeCheckoutCache } from "./worktreeCheckoutCache.ts";
 import { removeLinkedWorktree } from "./worktreeRemoval.ts";
 import { resolveWorktreesDirectory } from "../worktreesDirectory.ts";
 import {
@@ -226,6 +228,13 @@ function parseReviewNumstat(stdout: string): ReviewDiffFileStat[] {
   return files;
 }
 
+function withFileStatus<T extends { path: string }>(
+  file: T,
+  status: VcsWorkingTreeFileStatus | null | undefined,
+): T & { status?: VcsWorkingTreeFileStatus } {
+  return status ? { ...file, status } : file;
+}
+
 // Space-separated fields precede the path in each porcelain v2 record type. The path itself
 // may contain spaces, so it is everything after them.
 const PORCELAIN_V2_FIELDS_BEFORE_PATH: Record<string, number> = {
@@ -241,6 +250,30 @@ function parsePorcelainPath(record: string): string | null {
   if (fieldsBeforePath === undefined) return null;
   const filePath = record.split(" ").slice(fieldsBeforePath).join(" ");
   return filePath.length > 0 ? filePath : null;
+}
+
+function parsePorcelainEntry(
+  record: string,
+): { path: string; status: VcsWorkingTreeFileStatus | null } | null {
+  const path = parsePorcelainPath(record);
+  if (path === null) return null;
+  const recordType = record[0];
+  const xy = record.split(" ")[1] ?? "";
+  const status: VcsWorkingTreeFileStatus | null =
+    recordType === "?"
+      ? "untracked"
+      : recordType === "!"
+        ? null
+        : recordType === "2"
+          ? "renamed"
+          : recordType === "u"
+            ? "modified"
+            : xy[1] === "D" || xy === "D."
+              ? "deleted"
+              : xy[0] === "A" || xy[1] === "A"
+                ? "added"
+                : "modified";
+  return { path, status };
 }
 
 function filterBranchesForListQuery(
@@ -946,7 +979,7 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
   const fileSystem = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
   const commandSpawner = yield* ChildProcessSpawner.ChildProcessSpawner;
-  const { worktreesDir } = yield* ServerConfig.ServerConfig;
+  const { worktreesDir, worktreeCheckoutCacheDir } = yield* ServerConfig.ServerConfig;
   const isServerInternalPath = yield* makeIsServerInternalPath;
   const digest = yield* Digest.Digest;
   const hostPlatform = yield* HostProcess.Platform;
@@ -1143,6 +1176,11 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
       (execution) =>
         input.writesSharedConfig ? withSharedConfigLock(input.cwd, execution) : execution,
     );
+
+  const checkoutCache = yield* makeWorktreeCheckoutCache({
+    cacheDir: worktreeCheckoutCacheDir,
+    execute,
+  });
 
   const executeGit = (
     operation: string,
@@ -2265,7 +2303,7 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
     let behindCount = 0;
     let aheadOfDefaultCount = 0;
     let hasWorkingTreeChanges = false;
-    const changedFilesWithoutNumstat = new Set<string>();
+    const changedFileStatuses = new Map<string, VcsWorkingTreeFileStatus | null>();
     const untrackedRoots: string[] = [];
 
     const statusRecords = statusStdout.split("\0");
@@ -2290,16 +2328,19 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
       }
       if (line.length > 0 && !line.startsWith("#")) {
         hasWorkingTreeChanges = true;
-        const pathValue = parsePorcelainPath(line);
-        if (pathValue) {
-          changedFilesWithoutNumstat.add(pathValue);
-          if (line.startsWith("? ")) untrackedRoots.push(pathValue);
+        const entry = parsePorcelainEntry(line);
+        if (entry) {
+          changedFileStatuses.set(entry.path, entry.status);
+          if (line.startsWith("? ")) untrackedRoots.push(entry.path);
         }
-        // A rename record is followed by its original path as a separate record. Listing it
-        // keeps the deletion selectable when committing only some files.
+        // Rename records carry a second NUL-delimited original path, selectable for partial commits.
         if (line.startsWith("2 ")) {
           const originalPath = statusRecords[++index];
-          if (originalPath) changedFilesWithoutNumstat.add(originalPath);
+          if (originalPath && !changedFileStatuses.has(originalPath))
+            changedFileStatuses.set(
+              originalPath,
+              line.split(" ")[1]?.includes("R") ? "deleted" : null,
+            );
         }
       }
     }
@@ -2348,12 +2389,15 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
     const files = Array.from(fileStatMap.entries()).map(([filePath, stat]) => {
       insertions += stat.insertions;
       deletions += stat.deletions;
-      return { path: filePath, insertions: stat.insertions, deletions: stat.deletions };
+      return withFileStatus(
+        { path: filePath, insertions: stat.insertions, deletions: stat.deletions },
+        changedFileStatuses.get(filePath),
+      );
     });
 
-    for (const filePath of changedFilesWithoutNumstat) {
+    for (const [filePath, status] of changedFileStatuses) {
       if (fileStatMap.has(filePath)) continue;
-      files.push({ path: filePath, insertions: 0, deletions: 0 });
+      files.push(withFileStatus({ path: filePath, insertions: 0, deletions: 0 }, status));
     }
     files.sort((a, b) => a.path.localeCompare(b.path));
 
@@ -4007,6 +4051,7 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
             isDefault: name === defaultBranch,
             worktreePath: worktreeMap.get(name) ?? null,
             ...(upstreamRef ? { upstreamRef } : {}),
+            ...(lastCommit > 0 ? { lastCommitAt: lastCommit } : {}),
           },
           lastCommit,
         });
@@ -4026,6 +4071,7 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
           parsedRemoteRef.branchName === defaultBranch,
         worktreePath: null,
         ...(parsedRemoteRef ? { remoteName: parsedRemoteRef.remoteName } : {}),
+        ...(lastCommit > 0 ? { lastCommitAt: lastCommit } : {}),
       };
       remoteBranches.push({ ref: remoteBranch, lastCommit });
     }
@@ -4260,7 +4306,7 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
         "git worktree add failed",
       );
     }
-    const args = ["worktree", "add", "--", worktreePath, newRefName ?? input.refName];
+    const checkoutRef = newRefName ?? input.refName;
     const progress = options?.progress;
     const onCheckoutProgress = progress?.onCheckoutProgress;
 
@@ -4275,10 +4321,20 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
       { concurrency: "unbounded" },
     );
     const checkoutWorkers = configuredCheckoutWorkers ?? "0";
-    yield* executeGitWithStableDiagnostics(
+    const fastCheckout = checkoutCache !== undefined && options?.fastCheckout === true;
+    const cacheGeneration = fastCheckout ? yield* checkoutCache.currentGeneration : 0;
+    const stockCheckout = executeGitWithStableDiagnostics(
       "GitVcsDriver.createWorktree",
       input.cwd,
-      ["-c", `checkout.workers=${checkoutWorkers}`, ...args],
+      [
+        "-c",
+        `checkout.workers=${checkoutWorkers}`,
+        "worktree",
+        "add",
+        "--",
+        worktreePath,
+        checkoutRef,
+      ],
       {
         fallbackErrorDetail: "git worktree add failed",
         // Large checkouts and post-checkout hooks can legitimately run for many
@@ -4298,6 +4354,13 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
             }
           : {}),
       },
+    );
+    yield* (
+      fastCheckout
+        ? checkoutCache
+            .create({ cwd: input.cwd, worktreePath, refName: checkoutRef, checkoutWorkers })
+            .pipe(Effect.flatMap((cloned) => (cloned ? Effect.void : stockCheckout)))
+        : stockCheckout
     ).pipe(
       Effect.onError(() =>
         newRefName
@@ -4309,6 +4372,9 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
           : Effect.void,
       ),
     );
+    if (fastCheckout) {
+      yield* checkoutCache.schedule(worktreePath, cacheGeneration);
+    }
 
     if (progress?.onWorktreeClaimed) {
       yield* progress.onWorktreeClaimed(worktreePath);
@@ -5098,6 +5164,7 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
         Effect.ensuring(invalidateWorktreeCreationCaches(input.cwd)),
       );
     }),
+    clearWorktreeCheckoutCache: checkoutCache?.clear ?? Effect.void,
     fetchRefIntoBranch: Effect.fnUntraced(function* (input) {
       return yield* withListRefsInvalidation(input.cwd, fetchRefIntoBranch(input));
     }),

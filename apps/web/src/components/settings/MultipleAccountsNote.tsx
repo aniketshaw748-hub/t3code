@@ -4,6 +4,7 @@ import { BRAND, brandRepositoryFileUrl } from "@t3tools/contracts/brand";
 import { InfoIcon } from "lucide-react";
 
 import { serverEnvironment } from "../../state/server";
+import { InlineButton } from "../ui/button";
 import { Alert, AlertDescription } from "../ui/alert";
 
 const MULTIPLE_ACCOUNTS_FAQ_URL = `${brandRepositoryFileUrl("docs/user/faq.md")}#can-i-add-a-bunch-of-accounts-for-one-provider`;
@@ -35,14 +36,11 @@ export function MultipleAccountsNote({
       <AlertDescription>
         <p>
           We do not recommend managing multiple {providerName} accounts in {BRAND.displayName}.{" "}
-          <a
-            href={MULTIPLE_ACCOUNTS_FAQ_URL}
-            target="_blank"
-            rel="noreferrer"
-            className="underline underline-offset-2 hover:text-foreground"
+          <InlineButton
+            render={<a href={MULTIPLE_ACCOUNTS_FAQ_URL} target="_blank" rel="noreferrer" />}
           >
             More info
-          </a>
+          </InlineButton>
         </p>
       </AlertDescription>
     </Alert>

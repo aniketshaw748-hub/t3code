@@ -25,7 +25,9 @@ import type {
   PullRequestReviewCommentDraft,
   PullRequestReviewDecision,
   PullRequestReviewPosition,
+  PullRequestReviewRequestEvent,
   PullRequestReviewThread,
+  PullRequestReviewThreadSnippetLine,
   PullRequestReviewVerdict,
   PullRequestReviewerCandidate,
   PullRequestReviewerCandidateList,
@@ -123,6 +125,7 @@ interface ReviewRequestFields {
 
 interface LatestReviewFields {
   readonly state?: string | null | undefined;
+  readonly isMinimized?: boolean | undefined;
 }
 
 /** Check runs use status/conclusion; commit statuses use a single state. */
@@ -509,14 +512,21 @@ export function toPullRequestActionSummary(
   };
 }
 
-/** Prefer GitHub's reviewDecision; only use latest reviews when it is absent (e.g. bot approvals). */
+/**
+ * Prefer GitHub's reviewDecision; only use latest reviews when it is absent (e.g. bot approvals).
+ * A review a maintainer hid casts no verdict.
+ */
 function toReviewDecisionWithReviews(
   value: string | null | undefined,
   reviews: ReadonlyArray<LatestReviewFields> | undefined,
 ): PullRequestReviewDecision | null {
   const summarized = toReviewDecision(value);
   if (summarized === "approved" || summarized === "changes-requested") return summarized;
-  const states = new Set((reviews ?? []).map((review) => review.state?.trim().toUpperCase() ?? ""));
+  const states = new Set(
+    (reviews ?? [])
+      .filter((review) => !review.isMinimized)
+      .map((review) => review.state?.trim().toUpperCase() ?? ""),
+  );
   if (states.has("CHANGES_REQUESTED")) return "changes-requested";
   if (summarized === null && states.has("APPROVED")) return "approved";
   return summarized;
@@ -610,6 +620,8 @@ function toCheckEntries(raw: ReadonlyArray<CheckFields> | null | undefined): Rea
     const name = trimmed(check.name) ?? trimmed(check.context);
     if (name === null) return [];
     const status = toCheckStatus(check);
+    const startedAt = realTimestamp(check.startedAt);
+    const completedAt = realTimestamp(check.completedAt);
     return [
       {
         check: {
@@ -617,6 +629,8 @@ function toCheckEntries(raw: ReadonlyArray<CheckFields> | null | undefined): Rea
           status,
           description: trimmed(check.description),
           url: trimmed(check.detailsUrl) ?? trimmed(check.targetUrl),
+          ...(startedAt === null ? {} : { startedAt }),
+          ...(completedAt === null ? {} : { completedAt }),
           ...(typeof check.isRequired === "boolean" ? { required: check.isRequired } : {}),
         },
         workflowName: trimmed(check.workflowName),
@@ -665,30 +679,36 @@ interface RemarkFields {
   readonly author: ActorFields | null;
   readonly body: string;
   readonly url: string | null;
+  readonly isMinimized: boolean;
 }
 
+// Hidden (minimized) remarks are left out, as github.com collapses them: a maintainer marked them
+// spam, off-topic, or outdated, and they should not reach readers or agents.
 function toComments(raw: {
   readonly comments: ReadonlyArray<RemarkFields & { readonly createdAt: string }>;
   readonly reviews: ReadonlyArray<
     RemarkFields & { readonly state: string; readonly submittedAt: string | null }
   >;
 }): ReadonlyArray<PullRequestComment> {
-  const issueComments = raw.comments.map((comment): PullRequestComment => ({
-    id: comment.id,
-    kind: "issue-comment",
-    author: toActor(comment.author),
-    body: comment.body ?? "",
-    createdAt: comment.createdAt,
-    editedAt: comment.lastEditedAt ?? null,
-    url: trimmed(comment.url),
-    path: null,
-    reviewState: null,
-  }));
+  const issueComments = raw.comments
+    .filter((comment) => !comment.isMinimized)
+    .map((comment): PullRequestComment => ({
+      id: comment.id,
+      kind: "issue-comment",
+      author: toActor(comment.author),
+      body: comment.body ?? "",
+      createdAt: comment.createdAt,
+      editedAt: comment.lastEditedAt ?? null,
+      url: trimmed(comment.url),
+      path: null,
+      reviewState: null,
+    }));
   // Bodiless COMMENTED reviews only hold line comments read separately.
   const reviews = raw.reviews.flatMap((review): ReadonlyArray<PullRequestComment> => {
     const submittedAt = trimmed(review.submittedAt);
     const reviewState = trimmed(review.state);
     if (
+      review.isMinimized ||
       submittedAt === null ||
       ((review.body ?? "").trim().length === 0 && !isReviewVerdict(reviewState))
     ) {
@@ -1232,6 +1252,8 @@ export interface GitHubReviewThreadComments {
    */
   readonly commits: ReadonlyArray<PullRequestCommit>;
   readonly viewer: { readonly canUpdate: boolean; readonly didAuthor: boolean };
+  /** Each review request on the timeline, oldest first. Absent where the read never happened. */
+  readonly reviewRequests?: ReadonlyArray<PullRequestReviewRequestEvent>;
 }
 
 export interface GitHubReviewThreadEntry {
@@ -1253,6 +1275,7 @@ export interface GitHubReviewThreadPage {
   readonly viewer: { readonly canUpdate: boolean; readonly didAuthor: boolean };
   readonly dismissalsByReviewId: ReadonlyMap<string, string>;
   readonly nextDismissalCursor: string | null;
+  readonly reviewRequests: ReadonlyArray<PullRequestReviewRequestEvent>;
 }
 
 export function reviewThreadConversation(
@@ -1321,7 +1344,9 @@ function toReviewThreadEntries(threads: ReviewThreadPage, viewer: string | null)
   const entries = threadNodes.flatMap((thread): ReadonlyArray<GitHubReviewThreadEntry> => {
     const path = trimmed(thread.path);
     const id = trimmed(thread.id);
-    const comments = nodesOf(thread.comments);
+    const loaded = nodesOf(thread.comments);
+    // Hidden comments are left out, as in `toComments`; a thread with none left is dropped.
+    const comments = loaded.filter((comment) => !comment.isMinimized);
     if (path === null || id === null || comments.length === 0) return [];
     return [
       {
@@ -1333,9 +1358,10 @@ function toReviewThreadEntries(threads: ReviewThreadPage, viewer: string | null)
           side: thread.diffSide.toUpperCase() === "LEFT" ? "left" : "right",
           isResolved: thread.isResolved,
           isOutdated: thread.isOutdated,
+          ...snippetField(nodesOf(thread.firstComment)[0]?.diffHunk),
           comments: comments.map((comment) => toThreadComment(comment, viewer)),
         },
-        commentCount: thread.comments.totalCount,
+        commentCount: thread.comments.totalCount - (loaded.length - comments.length),
         nextCommentCursor: nextCursorOf(thread.comments.pageInfo),
       },
     ];
@@ -1373,6 +1399,10 @@ export function toLaterReviewThreadPage(
   return { threads: entries, nextCursor, ...collectActors(authors) };
 }
 
+type ReviewThreadCommit = NonNullable<
+  NonNullable<ReviewThreadsPullRequest["commits"]["nodes"]>[number]
+>["commit"];
+
 export function toReviewThreadPage(result: ReviewThreads.Result): GitHubReviewThreadPage | null {
   const pullRequest = result.repository?.pullRequest;
   if (pullRequest == null) return null;
@@ -1381,7 +1411,8 @@ export function toReviewThreadPage(result: ReviewThreads.Result): GitHubReviewTh
   const requestedReviewers = nodesOf(pullRequest.reviewRequests).map(
     (node): ActorFields | null => node.requestedReviewer,
   );
-  const latestReviews = nodesOf(pullRequest.latestReviews);
+  // Someone whose review was hidden is not listed as a reviewer.
+  const latestReviews = nodesOf(pullRequest.latestReviews).filter((node) => !node.isMinimized);
   const comments = nodesOf(pullRequest.comments);
   const reviews = nodesOf(pullRequest.reviews);
   const { avatarsByLogin, botLogins } = collectActors([
@@ -1390,6 +1421,10 @@ export function toReviewThreadPage(result: ReviewThreads.Result): GitHubReviewTh
     ...reviews.map((node) => node.author),
     ...requestedReviewers,
     ...latestReviews.map((node) => node.author),
+    ...nodesOf(pullRequest.reviewRequestEvents).flatMap(
+      (node): ReadonlyArray<ActorFields | null> =>
+        "createdAt" in node ? [node.actor, node.requestedReviewer] : [],
+    ),
     ...page.authors,
   ]);
   const reviewers = new Map<string, PullRequestActor>();
@@ -1403,11 +1438,13 @@ export function toReviewThreadPage(result: ReviewThreads.Result): GitHubReviewTh
     if (oid === null) continue;
     const committedDate = trimmed(commit.committedDate);
     if (committedDate === null) continue;
+    const checks = toCommitChecks(commit.statusCheckRollup);
     commits.push({
       oid,
       messageHeadline: commit.messageHeadline,
       committedDate,
       authors: nodesOf(commit.authors).flatMap((author) => toGraphqlCommitActor(author) ?? []),
+      ...(checks === null ? {} : { checks }),
     });
   }
   const reactionsById = new Map<string, ReadonlyArray<PullRequestReaction>>();
@@ -1433,20 +1470,134 @@ export function toReviewThreadPage(result: ReviewThreads.Result): GitHubReviewTh
     viewer: toPullRequestViewerFields(pullRequest),
     dismissalsByReviewId: toDismissalEntries(pullRequest.reviewDismissals),
     nextDismissalCursor: nextCursorOf(pullRequest.reviewDismissals.pageInfo),
+    reviewRequests: toReviewRequestEvents(pullRequest.reviewRequestEvents),
   };
+}
+
+/** Oldest first, and only the ones that name somebody: a request for a deleted team names nobody. */
+function toReviewRequestEvents(
+  connection: ReviewThreadsPullRequest["reviewRequestEvents"],
+): ReadonlyArray<PullRequestReviewRequestEvent> {
+  return nodesOf(connection)
+    .flatMap((node): ReadonlyArray<PullRequestReviewRequestEvent> => {
+      if (!("createdAt" in node)) return [];
+      const createdAt = trimmed(node.createdAt);
+      const raw = node.requestedReviewer;
+      const slug = raw !== null && "combinedSlug" in raw ? trimmed(raw.combinedSlug) : null;
+      const reviewer =
+        slug === null
+          ? toActor(raw)
+          : {
+              login: slug,
+              name: trimmed(raw !== null && "teamName" in raw ? raw.teamName : null),
+              avatarUrl: trimmed(raw !== null && "teamAvatarUrl" in raw ? raw.teamAvatarUrl : null),
+            };
+      if (createdAt === null || reviewer === null) return [];
+      return [{ actor: toActor(node.actor), reviewer, createdAt }];
+    })
+    .toSorted((left, right) => left.createdAt.localeCompare(right.createdAt));
+}
+
+function sumStateCounts(
+  counts:
+    | ReadonlyArray<{
+        readonly state?: string | null | undefined;
+        readonly count?: number | null | undefined;
+      }>
+    | null
+    | undefined,
+  passing: ReadonlySet<string>,
+): number {
+  return (counts ?? []).reduce(
+    (total, entry) =>
+      passing.has((entry.state ?? "").toUpperCase())
+        ? total + Math.max(0, entry.count ?? 0)
+        : total,
+    0,
+  );
+}
+
+const PASSING_CHECK_RUN_STATES = new Set(["SUCCESS", "NEUTRAL", "SKIPPED"]);
+const PASSING_STATUS_CONTEXT_STATES = new Set(["SUCCESS"]);
+
+/** A commit's rollup as a pill: GitHub's own verdict, and how many of its checks passed. */
+function toCommitChecks(
+  rollup: ReviewThreadCommit["statusCheckRollup"],
+): PullRequestCommit["checks"] | null {
+  const total = rollup?.contexts?.totalCount ?? 0;
+  if (rollup === null || rollup === undefined || total <= 0) return null;
+  const state = (rollup.state ?? "").toUpperCase();
+  const checksState =
+    state === "SUCCESS"
+      ? "passing"
+      : state === "FAILURE" || state === "ERROR"
+        ? "failing"
+        : state === "PENDING" || state === "EXPECTED"
+          ? "pending"
+          : null;
+  if (checksState === null) return null;
+  const passed =
+    sumStateCounts(rollup.contexts?.checkRunCountsByState, PASSING_CHECK_RUN_STATES) +
+    sumStateCounts(rollup.contexts?.statusContextCountsByState, PASSING_STATUS_CONTEXT_STATES);
+  return { state: checksState, passed: Math.min(passed, total), total };
+}
+
+/** How many hunk lines a thread carries with it: its own line and the two above it. */
+const SNIPPET_LINES = 3;
+
+/**
+ * The end of a comment's diff hunk, numbered. GitHub's hunk stops at the line the thread was
+ * written on, so its last lines are the code the thread is about.
+ */
+function reviewThreadSnippet(
+  diffHunk: string | null | undefined,
+): ReadonlyArray<PullRequestReviewThreadSnippetLine> {
+  const lines = (diffHunk ?? "").split("\n");
+  const header = /^@@ -(\d+)(?:,\d+)? \+(\d+)(?:,\d+)? @@/u.exec(lines[0] ?? "");
+  if (header === null) return [];
+  let oldLine = Number(header[1]);
+  let newLine = Number(header[2]);
+  const numbered: PullRequestReviewThreadSnippetLine[] = [];
+  for (const raw of lines.slice(1)) {
+    const marker = raw.charAt(0);
+    const text = raw.slice(1);
+    if (marker === "+") {
+      numbered.push({ kind: "added", line: newLine > 0 ? newLine : null, text });
+      newLine += 1;
+    } else if (marker === "-") {
+      numbered.push({ kind: "deleted", line: oldLine > 0 ? oldLine : null, text });
+      oldLine += 1;
+    } else if (marker === " " || raw.length === 0) {
+      numbered.push({ kind: "context", line: newLine > 0 ? newLine : null, text });
+      oldLine += 1;
+      newLine += 1;
+    }
+  }
+  return numbered.slice(-SNIPPET_LINES);
+}
+
+function snippetField(diffHunk: string | null | undefined): {
+  readonly snippet?: ReadonlyArray<PullRequestReviewThreadSnippetLine>;
+} {
+  const snippet = reviewThreadSnippet(diffHunk);
+  return snippet.length === 0 ? {} : { snippet };
 }
 
 export function toReviewThreadCommentsPage(result: ReviewThreadComments.Result): {
   readonly belongsToPullRequest: boolean;
   readonly comments: ReadonlyArray<PullRequestThreadComment>;
+  readonly hiddenCount: number;
   readonly nextCursor: string | null;
 } {
   const viewer = trimmed(result.viewer.login);
   const thread = result.node?.__typename === "PullRequestReviewThread" ? result.node : null;
   const pullRequestId = result.repository?.pullRequest?.id;
+  const loaded = nodesOf(thread?.comments);
+  const comments = loaded.filter((comment) => !comment.isMinimized);
   return {
     belongsToPullRequest: pullRequestId !== undefined && pullRequestId === thread?.pullRequest.id,
-    comments: nodesOf(thread?.comments).map((comment) => toThreadComment(comment, viewer)),
+    comments: comments.map((comment) => toThreadComment(comment, viewer)),
+    hiddenCount: loaded.length - comments.length,
     nextCursor: nextCursorOf(thread?.comments.pageInfo),
   };
 }
@@ -1499,12 +1650,27 @@ export function toReviewerCandidates(
   const pullRequest = repository.pullRequest;
   const author = trimmed(pullRequest?.author?.login);
   const candidates = new Map<string, PullRequestReviewerCandidate>();
+  // The newest request of each reviewer, which is when the outstanding one was made.
+  const requestedAtByKey = new Map<string, string>();
+  for (const node of nodesOf(pullRequest?.requestEvents)) {
+    if (!("createdAt" in node)) continue;
+    const raw = node.requestedReviewer;
+    const slug = raw !== null && "slug" in raw ? trimmed(raw.slug) : null;
+    const id = slug ?? (raw !== null && "login" in raw ? trimmed(raw.login) : null);
+    const createdAt = trimmed(node.createdAt);
+    if (id === null || createdAt === null) continue;
+    const key = `${slug === null ? "user" : "team"} ${id}`;
+    const previous = requestedAtByKey.get(key);
+    if (previous === undefined || createdAt > previous) requestedAtByKey.set(key, createdAt);
+  }
   for (const { requestedReviewer: raw } of nodesOf(pullRequest?.reviewRequests)) {
     if (raw === null) continue;
     const slug = "slug" in raw ? trimmed(raw.slug) : null;
     const id = slug ?? ("login" in raw ? trimmed(raw.login) : null);
     if (id === null) continue;
-    candidates.set(`${slug === null ? "user" : "team"} ${id}`, {
+    const key = `${slug === null ? "user" : "team"} ${id}`;
+    const requestedAt = requestedAtByKey.get(key);
+    candidates.set(key, {
       id,
       kind: slug === null ? "user" : "team",
       // Match reviewer rows' org/slug so requests can be withdrawn.
@@ -1514,6 +1680,25 @@ export function toReviewerCandidates(
         "teamAvatarUrl" in raw ? raw.teamAvatarUrl : "avatarUrl" in raw ? raw.avatarUrl : null,
       ),
       isRequested: true,
+      ...(requestedAt === undefined ? {} : { requestedAt }),
+    });
+  }
+  // GitHub's own suggestions, from who touched or reviewed these files, lead the rest.
+  for (const node of pullRequest?.suggestedReviewers ?? []) {
+    const login = trimmed(node?.reviewer?.login);
+    if (login === null || login === author || candidates.has(`user ${login}`)) continue;
+    candidates.set(`user ${login}`, {
+      id: login,
+      kind: "user",
+      login,
+      name: trimmed(node?.reviewer?.name),
+      avatarUrl: trimmed(node?.reviewer?.avatarUrl),
+      isRequested: false,
+      suggestion: node?.isAuthor
+        ? "touched these files"
+        : node?.isCommenter
+          ? "commented on these files"
+          : "suggested by GitHub",
     });
   }
   const hostMatches = new Set<string>();

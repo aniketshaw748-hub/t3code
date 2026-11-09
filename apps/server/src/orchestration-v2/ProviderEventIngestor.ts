@@ -40,7 +40,7 @@ import * as ProviderAdapter from "@t3tools/provider-core/server/ProviderAdapter"
 import { makeProviderFailureTurnItem } from "@t3tools/provider-core/server/failure";
 import * as ThreadCommandExecutor from "./ThreadCommandExecutor.ts";
 import { stripUnservedToolOutputImageBytes } from "./toolOutputImageBytes.ts";
-import { boundFileChangeForStorage } from "./WireProjection.ts";
+import { boundFileChangeForStorage } from "@t3tools/shared/wireProjection";
 
 export class ProviderEventNormalizeError extends Schema.TaggedError<ProviderEventNormalizeError>()(
   "ProviderEventNormalizeError",
@@ -619,7 +619,8 @@ export const layer: Layer.Layer<
             case "background_work.updated":
               return [];
             case "command_output.delta":
-              // Live output is routed to the command output hub before ingestion.
+            case "prompt_suggestion.updated":
+              // The session manager serves these to clients before ingestion.
               return [];
             case "turn.terminal":
               const dismissed = yield* dismissNativeUserInputs(input, input.event.providerTurnId);

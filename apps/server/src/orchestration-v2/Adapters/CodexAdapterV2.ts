@@ -39,6 +39,7 @@ import {
   ProviderDriverKind,
   ProviderSetupError,
   type ServerProviderCompatibilityAdvisory,
+  isDelegatedAppThread,
 } from "@t3tools/contracts";
 import { SKILL_MENTION_PATTERN } from "@t3tools/shared/composerInlineTokens";
 import { AgentScope } from "@t3tools/shared/AgentScope";
@@ -232,6 +233,10 @@ const decodeCodexBackgroundTerminalTerminateResponse = Schema.decodeUnknownEffec
 const decodeCodexBackgroundTerminalsListResponse = Schema.decodeUnknownEffect(
   CodexBackgroundTerminalsListResponse,
 );
+const CodexThreadSampleResponse = Schema.Struct({ text: Schema.NullOr(Schema.String) });
+const decodeCodexThreadSampleResponse = Schema.decodeUnknownEffect(CodexThreadSampleResponse);
+export const CODEX_PROMPT_SUGGESTION_PROMPT =
+  "Predict the next message the user will send in this conversation. Reply with only that message, written as the user would type it, in under 20 words. Do not use tools. If there is no clear next step, reply with nothing.";
 const CODEX_CLIENT_CAPABILITIES = {
   experimentalApi: true,
   optOutNotificationMethods: ["turn/diff/updated"],
@@ -1877,6 +1882,18 @@ export const makeCodexAdapterV2 = Effect.fn("makeCodexAdapterV2")(function* (
         );
         const activeTurns = yield* Ref.make(new Map<string, ActiveCodexTurnContext>());
         const turnTokenUsageByThread = new Map<string, CodexTurnTokenUsageState>();
+        const contextUsageByThread = new Map<
+          string,
+          {
+            tokens: number | undefined;
+            compaction?: {
+              nativeItemId: string;
+              nativeTurnId: string;
+              before?: number;
+              after?: number;
+            };
+          }
+        >();
         const usageStateForThread = (nativeThreadId: string) => {
           let state = turnTokenUsageByThread.get(nativeThreadId);
           if (!state) {
@@ -2016,6 +2033,43 @@ export const makeCodexAdapterV2 = Effect.fn("makeCodexAdapterV2")(function* (
 
         const emitProviderEvent = (event: ProviderAdapter.ProviderAdapterV2Event) =>
           Queue.offer(events, event).pipe(Effect.asVoid);
+
+        const promptSuggestionsEnabled = input.promptSuggestions ?? Effect.succeed(false);
+        // Best effort: older Codex lacks thread/sample, and a sample fails once the user sends again.
+        // Delegated threads share this session but have no one typing, so they never sample.
+        const samplePromptSuggestion = Effect.fn("CodexAdapterV2.samplePromptSuggestion")(
+          function* (
+            context: ActiveCodexTurnContext,
+            nativeThreadId: string,
+            nativeTurnId: string,
+          ) {
+            if (
+              isDelegatedAppThread(context.input.appThread) ||
+              !(yield* promptSuggestionsEnabled)
+            ) {
+              return;
+            }
+            const response = yield* client.raw.request("thread/sample", {
+              threadId: nativeThreadId,
+              expectedTurnId: nativeTurnId,
+              prompt: CODEX_PROMPT_SUGGESTION_PROMPT,
+              effort: "low",
+            });
+            const suggestion =
+              (yield* decodeCodexThreadSampleResponse(response)).text?.trim() ?? "";
+            if (suggestion.length === 0) return;
+            yield* emitProviderEvent({
+              type: "prompt_suggestion.updated",
+              driver: CODEX_PROVIDER,
+              threadId: context.projectionThreadId,
+              runId: context.input.runId,
+              text: suggestion,
+            });
+          },
+          Effect.catchCause((cause) =>
+            Effect.logDebug("orchestration-v2.codex-prompt-suggestion-failed", { cause }),
+          ),
+        );
 
         const emitImageWorkState =
           /* Provider events include streaming deltas; avoid a span for each update. */
@@ -4528,6 +4582,28 @@ export const makeCodexAdapterV2 = Effect.fn("makeCodexAdapterV2")(function* (
 
         yield* client.handleServerNotification("thread/tokenUsage/updated", (payload) =>
           Effect.gen(function* () {
+            const last = payload.tokenUsage.last;
+            const usage = contextUsageByThread.get(payload.threadId) ?? { tokens: undefined };
+            usage.tokens =
+              Number.isSafeInteger(last.totalTokens) && last.totalTokens >= 0
+                ? last.totalTokens
+                : undefined;
+            // Codex resets `last` to context size with zero usage breakdown
+            // after compaction. The preceding summarization request is billable
+            // usage, not the reduced context, so never use it as the after count.
+            if (
+              usage.compaction &&
+              usage.tokens !== undefined &&
+              usage.compaction.nativeTurnId === payload.turnId &&
+              last.inputTokens === 0 &&
+              last.cachedInputTokens === 0 &&
+              (last.cacheWriteInputTokens ?? 0) === 0 &&
+              last.outputTokens === 0 &&
+              last.reasoningOutputTokens === 0
+            ) {
+              usage.compaction.after = usage.tokens;
+            }
+            contextUsageByThread.set(payload.threadId, usage);
             accumulateCodexTurnTokenUsage(
               usageStateForThread(payload.threadId),
               payload.turnId,
@@ -4782,6 +4858,24 @@ export const makeCodexAdapterV2 = Effect.fn("makeCodexAdapterV2")(function* (
           status: "running" | "completed" | "failed" | "interrupted" | "cancelled",
           updatedAt: DateTime.Utc,
         ) {
+          const nativeThreadId = context.providerThread.nativeThreadRef?.nativeId;
+          if (nativeThreadId && status === "running") {
+            const tokens = contextUsageByThread.get(nativeThreadId)?.tokens;
+            contextUsageByThread.set(nativeThreadId, {
+              tokens,
+              compaction: {
+                nativeItemId,
+                nativeTurnId: context.nativeTurnId,
+                ...(tokens === undefined ? {} : { before: tokens }),
+              },
+            });
+          }
+          const usage = nativeThreadId ? contextUsageByThread.get(nativeThreadId) : undefined;
+          const compaction =
+            usage?.compaction?.nativeItemId === nativeItemId ? usage.compaction : undefined;
+          if (status !== "running" && compaction && usage) {
+            delete usage.compaction;
+          }
           const { ordinal, startedAt } = yield* resolveItemPosition(
             context,
             nativeItemId,
@@ -4816,6 +4910,10 @@ export const makeCodexAdapterV2 = Effect.fn("makeCodexAdapterV2")(function* (
                     : status === "failed"
                       ? "Context compaction failed"
                       : "Context compaction stopped",
+              ...(compaction?.before === undefined ? {} : { beforeTokenCount: compaction.before }),
+              ...(status === "completed" && compaction?.after !== undefined
+                ? { afterTokenCount: compaction.after }
+                : {}),
               startedAt,
               completedAt: status === "running" ? null : updatedAt,
               updatedAt,
@@ -6039,6 +6137,14 @@ export const makeCodexAdapterV2 = Effect.fn("makeCodexAdapterV2")(function* (
           });
           yield* emitRootTerminal(hold.context, { ...hold.event, status });
           yield* Deferred.succeed(hold.next, undefined);
+          const nativeThreadId = hold.context.providerThread.nativeThreadRef?.nativeId;
+          if (status === "completed" && nativeThreadId != null) {
+            yield* samplePromptSuggestion(
+              hold.context,
+              nativeThreadId,
+              hold.context.nativeTurnId,
+            ).pipe(Effect.forkIn(scope));
+          }
         });
 
         const releaseGoalHold = Effect.fnUntraced(function* (
@@ -6370,6 +6476,20 @@ export const makeCodexAdapterV2 = Effect.fn("makeCodexAdapterV2")(function* (
               const retainSettledContext =
                 input.status === "completed" &&
                 (yield* turnHasRetainedBackgroundWork(input.nativeTurnId));
+              // A held goal predicts when settleGoalHold completes it.
+              if (
+                input.status === "completed" &&
+                input.context.subagent === null &&
+                !input.continueRun &&
+                !holdsForGoal &&
+                nativeThreadId != null
+              ) {
+                yield* samplePromptSuggestion(
+                  input.context,
+                  nativeThreadId,
+                  input.nativeTurnId,
+                ).pipe(Effect.forkIn(scope));
+              }
               if (retainSettledContext) {
                 yield* Ref.update(settledTurns, (current) => {
                   const updated = new Map(current);

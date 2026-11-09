@@ -178,7 +178,9 @@ describe("buildThreadActionItems", () => {
       runThread,
     });
     expect(new Set(items.map((item) => item.value)).size).toBe(2);
-    const remoteItem = items.find((item) => item.description === "Remote project · Current thread");
+    const remoteItem = items.find(
+      (item) => item.value === `thread:${remote.environmentId}:${remote.id}`,
+    );
     await remoteItem?.run();
     expect(runThread).toHaveBeenCalledWith(remote);
   });
@@ -948,7 +950,7 @@ describe("newThreadNoProjectIndex", () => {
   });
 
   it("goes after the pinned projects and the first unpinned one", () => {
-    expect(newThreadNoProjectIndex([entry(true), entry(true), entry(false, true), entry()])).toBe(
+    expect(newThreadNoProjectIndex([entry(false, true), entry(true), entry(true), entry()])).toBe(
       3,
     );
     expect(newThreadNoProjectIndex([entry(false, true), entry(), entry(false, false, true)])).toBe(
