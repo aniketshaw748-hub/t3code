@@ -34,6 +34,7 @@ import * as DeliverableGit from "./DeliverableGit.ts";
 import * as DeliverableRenderers from "./DeliverableRenderers.ts";
 import * as DeliverableSelfCheck from "./DeliverableSelfCheck.ts";
 import * as DeliverableService from "./DeliverableService.ts";
+import * as WorkProjectEvents from "./WorkProjectEvents.ts";
 import * as DeliverableTurnNotes from "./DeliverableTurnNotes.ts";
 import * as TurnContextNotes from "../orchestration-v2/TurnContextNotes.ts";
 
@@ -129,6 +130,7 @@ const layerEngine = (root: string) =>
       ),
     ),
     Layer.provideMerge(DeliverableBlobStore.layer),
+    Layer.provideMerge(WorkProjectEvents.layer),
     Layer.provideMerge(
       DeliverableRepository.layer.pipe(Layer.provide(SqlitePersistence.layerMemory)),
     ),

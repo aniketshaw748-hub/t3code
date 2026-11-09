@@ -139,6 +139,7 @@ import * as DeliverableRenderers from "./deliverables/DeliverableRenderers.ts";
 import * as DeliverableSelfCheck from "./deliverables/DeliverableSelfCheck.ts";
 import * as DeliverableService from "./deliverables/DeliverableService.ts";
 import * as DeliverableTurnNotes from "./deliverables/DeliverableTurnNotes.ts";
+import * as WorkProjectEvents from "./deliverables/WorkProjectEvents.ts";
 import * as DeliverableRepository from "./persistence/Deliverables.ts";
 import * as SpendApprovals from "./spend/SpendApprovals.ts";
 import * as SourceControlProviderRegistry from "./sourceControl/SourceControlProviderRegistry.ts";
@@ -612,6 +613,7 @@ const layerDeliverables = Layer.effectDiscard(
   ),
   Layer.provideMerge(DeliverableBlobStore.layer),
   Layer.provideMerge(DeliverableRepository.layer),
+  Layer.provideMerge(WorkProjectEvents.layer),
   Layer.provideMerge(layerCheckpointStore),
 );
 

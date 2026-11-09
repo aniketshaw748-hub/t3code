@@ -4,11 +4,13 @@ import {
   OrchestratorMcpFailure,
   SPEND_APPROVAL_UNAPPROVED_NOTE,
   type SpendApprovalError,
+  type ThreadId,
 } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
 import * as SecureRandom from "effect/crypto/SecureRandom";
 
 import * as DeliverableService from "../../../deliverables/DeliverableService.ts";
+import * as ThreadManagementService from "../../../orchestration-v2/ThreadManagementService.ts";
 import * as SpendApprovals from "../../../spend/SpendApprovals.ts";
 import * as McpInvocationContext from "../../McpInvocationContext.ts";
 import * as McpToolAccess from "../../McpToolAccess.ts";
@@ -42,6 +44,13 @@ export const layer = McpToolAccess.toLayer(
     const deliverables = yield* DeliverableService.DeliverableService;
     const spendApprovals = yield* SpendApprovals.SpendApprovals;
     const random = yield* SecureRandom.SecureRandom;
+    const threads = yield* ThreadManagementService.ThreadManagementService;
+    // The caller's live run, so versions and notes it records link to the turn that made them.
+    const activeRunId = (threadId: ThreadId) =>
+      threads.getThreadRecords(threadId, ["runs"], { messageRoles: [] }).pipe(
+        Effect.map((records) => ThreadManagementService.latestActiveRun(records)?.id),
+        Effect.orElseSucceed(() => undefined),
+      );
     return {
       deliverables_list: McpToolAccess.reads((input) =>
         Effect.gen(function* () {
@@ -67,6 +76,8 @@ export const layer = McpToolAccess.toLayer(
         Effect.gen(function* () {
           const scope = yield* McpInvocationContext.McpInvocationContext;
           const projectId = yield* callerProject(input.projectId);
+          const runId =
+            scope.thread === undefined ? undefined : yield* activeRunId(scope.thread.threadId);
           return yield* deliverables
             .registerVersion({
               projectId,
@@ -77,6 +88,7 @@ export const layer = McpToolAccess.toLayer(
                 ? {}
                 : { expectedChanges: input.expectedChanges }),
               ...(scope.thread === undefined ? {} : { threadId: scope.thread.threadId }),
+              ...(runId === undefined ? {} : { runId }),
             })
             .pipe(Effect.mapError(toFailure));
         }),

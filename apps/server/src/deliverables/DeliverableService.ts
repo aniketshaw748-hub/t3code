@@ -40,6 +40,7 @@ import * as DeliverableContext from "./DeliverableContext.ts";
 import * as DeliverableGit from "./DeliverableGit.ts";
 import * as DeliverableRenderers from "./DeliverableRenderers.ts";
 import * as DeliverableSelfCheck from "./DeliverableSelfCheck.ts";
+import * as WorkProjectEvents from "./WorkProjectEvents.ts";
 import {
   compareSequences,
   compareTimelines,
@@ -149,6 +150,7 @@ const make = Effect.gen(function* () {
   const renderers = yield* DeliverableRenderers.DeliverableRenderers;
   const selfCheck = yield* DeliverableSelfCheck.DeliverableSelfCheck;
   const context = yield* DeliverableContext.DeliverableContext;
+  const events = yield* WorkProjectEvents.WorkProjectEvents;
   const fileSystem = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
   const random = yield* SecureRandom.SecureRandom;
@@ -275,6 +277,12 @@ const make = Effect.gen(function* () {
     yield* worker.enqueue(version.id);
     const refreshed = yield* loadDeliverable(deliverable.id);
     const recorded = yield* loadVersion(version.id);
+    yield* events.publish({
+      type: "version-recorded",
+      projectId: input.projectId,
+      version: publicVersion(recorded),
+    });
+    yield* events.publish({ type: "changed", projectId: input.projectId });
     return { deliverable: refreshed, version: recorded, created: true };
   });
 
@@ -334,57 +342,76 @@ const make = Effect.gen(function* () {
       parentCheckpointId: checkpoint.parentCheckpointId,
     });
     if (turn === null) return [];
-    const truncated =
-      checkpoint.filesTotal !== undefined && checkpoint.filesTotal.count > checkpoint.files.length;
-    const paths = truncated
-      ? yield* git
-          .changedPaths({ cwd: turn.cwd, from: turn.parentCheckpointRef, to: checkpoint.ref })
-          .pipe(Effect.mapError(fail("git_failed")))
-      : checkpoint.files.map((file) => file.path);
-    const candidates = [...new Set(paths)].filter((candidate) =>
-      AUTO_DETECTED_DELIVERABLE_KINDS.has(deliverableKindForPath(candidate)),
-    );
-    if (candidates.length === 0) return [];
-    const sourceCommit = yield* git
-      .resolveCommit({ cwd: turn.cwd, rev: checkpoint.ref })
-      .pipe(Effect.mapError(fail("git_failed")));
-    if (sourceCommit === null) return [];
-    const recorded: DeliverableVersion[] = [];
-    yield* projectLock.withLock(
-      turn.projectId,
-      Effect.forEach(
-        candidates,
-        (relativePath) =>
-          recordVersion({
-            projectId: turn.projectId,
-            cwd: turn.cwd,
-            relativePath,
-            sourceCommit,
-            source: {
-              type: "checkpoint",
-              threadId: input.threadId,
-              runId: checkpoint.runId!,
-              checkpointId: checkpoint.id,
-            },
-            summary: versionSummary(turn.reply),
-            expectedChanges: [],
-          }).pipe(
-            Effect.tap((result) =>
-              result.created
-                ? Effect.sync(() => recorded.push(publicVersion(result.version)))
-                : Effect.void,
-            ),
-            // A file deleted in the turn has no new version; the rest still record.
-            Effect.catchTags({
-              DeliverableError: (error) =>
-                error.reason === "file_not_found" ? Effect.void : Effect.fail(error),
-            }),
-          ),
-        { discard: true },
-      ),
-    );
+    const recorded = yield* recordCheckpointVersions(input, turn);
+    yield* events.publish({
+      type: "turn-settled",
+      projectId: turn.projectId,
+      threadId: input.threadId,
+      runId: checkpoint.runId,
+      versions: recorded,
+    });
     return recorded;
   });
+
+  const recordCheckpointVersions = Effect.fn("DeliverableService.recordCheckpointVersions")(
+    function* (
+      input: Parameters<DeliverableService["Service"]["detectFromCheckpoint"]>[0],
+      turn: DeliverableContext.TurnContext,
+    ) {
+      const { checkpoint } = input;
+      const truncated =
+        checkpoint.filesTotal !== undefined &&
+        checkpoint.filesTotal.count > checkpoint.files.length;
+      const paths = truncated
+        ? yield* git
+            .changedPaths({ cwd: turn.cwd, from: turn.parentCheckpointRef, to: checkpoint.ref })
+            .pipe(Effect.mapError(fail("git_failed")))
+        : checkpoint.files.map((file) => file.path);
+      const candidates = [...new Set(paths)].filter((candidate) =>
+        AUTO_DETECTED_DELIVERABLE_KINDS.has(deliverableKindForPath(candidate)),
+      );
+      if (candidates.length === 0) return [];
+      const sourceCommit = yield* git
+        .resolveCommit({ cwd: turn.cwd, rev: checkpoint.ref })
+        .pipe(Effect.mapError(fail("git_failed")));
+      if (sourceCommit === null) return [];
+      const recorded: DeliverableVersion[] = [];
+      yield* projectLock.withLock(
+        turn.projectId,
+        Effect.forEach(
+          candidates,
+          (relativePath) =>
+            recordVersion({
+              projectId: turn.projectId,
+              cwd: turn.cwd,
+              relativePath,
+              sourceCommit,
+              source: {
+                type: "checkpoint",
+                threadId: input.threadId,
+                runId: checkpoint.runId!,
+                checkpointId: checkpoint.id,
+              },
+              summary: versionSummary(turn.reply),
+              expectedChanges: [],
+            }).pipe(
+              Effect.tap((result) =>
+                result.created
+                  ? Effect.sync(() => recorded.push(publicVersion(result.version)))
+                  : Effect.void,
+              ),
+              // A file deleted in the turn has no new version; the rest still record.
+              Effect.catchTags({
+                DeliverableError: (error) =>
+                  error.reason === "file_not_found" ? Effect.void : Effect.fail(error),
+              }),
+            ),
+          { discard: true },
+        ),
+      );
+      return recorded;
+    },
+  );
 
   const renditionRelative = (sha256: string, kind: DeliverableKind, file: string) =>
     path
@@ -637,6 +664,7 @@ const make = Effect.gen(function* () {
           })
           .pipe(persistence);
         const updated = yield* loadDeliverable(deliverableId);
+        yield* events.publish({ type: "changed", projectId: updated.projectId });
         return {
           deliverable: updated,
           graph: graphOf(updated, versions),
@@ -669,7 +697,10 @@ const make = Effect.gen(function* () {
         Effect.flatMap(DateTime.now, (updatedAt) =>
           repository
             .putRendition({ contentSha256: sha, kind: deliverable.kind, updatedAt, ...fields })
-            .pipe(persistence),
+            .pipe(
+              persistence,
+              Effect.andThen(events.publish({ type: "changed", projectId: deliverable.projectId })),
+            ),
         );
       yield* put({ status: "rendering", renderer: null, detail: null, data: null });
       const outDir = blobs.renditionDir({ sha256: sha, kind: deliverable.kind });
@@ -727,6 +758,7 @@ const make = Effect.gen(function* () {
       })),
     });
     yield* repository.setSelfCheck({ versionId, result }).pipe(persistence);
+    yield* events.publish({ type: "changed", projectId: deliverable.projectId });
   });
 
   const worker = yield* makeDrainableWorker((versionId: DeliverableVersionId) =>
