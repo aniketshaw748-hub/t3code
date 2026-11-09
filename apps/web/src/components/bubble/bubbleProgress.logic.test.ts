@@ -50,6 +50,14 @@ describe("describeTurnItemStep", () => {
     ).toEqual({ label: "Ran pnpm test", active: false });
     expect(
       describeTurnItemStep(
+        item("command_execution", {
+          input:
+            "\"C:\\\\Users\\\\me\\\\pwsh.exe\" -Command 'Start-Sleep -Seconds 1; Write-Output 17'",
+        }).item,
+      ),
+    ).toEqual({ label: "Ran Start-Sleep -Seconds 1; Write-Output 17", active: false });
+    expect(
+      describeTurnItemStep(
         item("file_change", { fileName: "apps/web/src/index.css" }, "running").item,
       ),
     ).toEqual({ label: "Editing index.css", active: true });

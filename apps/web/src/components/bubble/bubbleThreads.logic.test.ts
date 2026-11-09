@@ -85,7 +85,7 @@ describe("selectBubbleThreads", () => {
     expect(stale?.nowLine).toBe("Working");
   });
 
-  it("keeps runs that ended since the bubble appeared until they are opened", () => {
+  it("keeps runs that ended since the bubble appeared, even in a thread the window shows", () => {
     const ended = (id: string, completedAt: string, visitedAt: string | null) =>
       shell(id, {
         latestRunId: RunId.make(`run-${id}`),
@@ -95,8 +95,7 @@ describe("selectBubbleThreads", () => {
       });
     const threads = select([
       ended("before-bubble", "2026-06-20T09:59:00.000Z", null),
-      ended("unseen", "2026-06-20T10:05:00.000Z", "2026-06-20T09:00:00.000Z"),
-      ended("opened", "2026-06-20T10:05:00.000Z", "2026-06-20T10:06:00.000Z"),
+      ended("shown-in-window", "2026-06-20T10:05:00.000Z", "2026-06-20T10:05:00.000Z"),
       shell("failed", {
         latestRunId: RunId.make("run-failed"),
         status: "failed",
@@ -106,7 +105,7 @@ describe("selectBubbleThreads", () => {
     ]);
     expect(threads.map((thread) => [thread.threadId, thread.tone, thread.nowLine])).toEqual([
       ["failed", "failed", "Provider exited"],
-      ["unseen", "done", "Finished"],
+      ["shown-in-window", "done", "Finished"],
     ]);
   });
 

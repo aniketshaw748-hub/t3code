@@ -10,6 +10,7 @@ for your approval or answer. Restoring the window hides it again.
   latest replies with code collapsed, lets you approve requests and send a message, and opens the
   full thread in the app.
 - Drag the bubble anywhere; it snaps to the nearest side of the screen and remembers the spot.
-- Threads that finish while you are away stay listed until you open them.
+- Threads that finish while the window is minimized stay listed, marked done or failed, until you
+  restore it.
 
 Turn it off in **Settings → General → Bubble when minimized**.

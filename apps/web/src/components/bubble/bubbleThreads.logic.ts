@@ -51,12 +51,13 @@ function parseMs(value: string | null | undefined): number | null {
   return Number.isFinite(ms) ? ms : null;
 }
 
-/** A run that ended at or after `sinceMs` and has not been opened since. */
-function endedUnseenSince(thread: EnvironmentThreadShell, sinceMs: number): boolean {
+/**
+ * A run that ended while the bubble was up. Visits do not count: a minimized window still marks
+ * the thread it shows as visited, though nobody saw the run end.
+ */
+function endedSince(thread: EnvironmentThreadShell, sinceMs: number): boolean {
   const completedAt = parseMs(thread.latestRun?.completedAt);
-  if (completedAt === null || completedAt < sinceMs) return false;
-  const visitedAt = parseMs(thread.lastVisitedAt);
-  return visitedAt === null || visitedAt < completedAt;
+  return completedAt !== null && completedAt >= sinceMs;
 }
 
 function latestAssistantLine(
@@ -146,7 +147,7 @@ function classify(
       };
     }
     case "failed":
-      return endedUnseenSince(thread, sinceMs)
+      return endedSince(thread, sinceMs)
         ? {
             tone: "failed",
             statusLabel: "Failed",
@@ -157,7 +158,7 @@ function classify(
           }
         : null;
     case "ready":
-      if (!endedUnseenSince(thread, sinceMs)) return null;
+      if (!endedSince(thread, sinceMs)) return null;
       if (thread.latestRun?.status === "failed") {
         return {
           tone: "failed",
@@ -179,7 +180,7 @@ function classify(
 
 /**
  * The threads the bubble lists: everything running or waiting on the user, plus runs that ended
- * since the bubble appeared and are still unopened, most urgent first.
+ * since the bubble appeared, most urgent first.
  */
 export function selectBubbleThreads(input: {
   readonly threads: ReadonlyArray<EnvironmentThreadShell>;

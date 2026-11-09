@@ -25,6 +25,18 @@ function short(text: string): string {
   return plainLine(text, { max: LABEL_MAX, pick: "first" }) ?? text.slice(0, LABEL_MAX);
 }
 
+// commandDisplayText keeps Windows shell wrappers, which Codex uses for every command on Windows.
+const WINDOWS_SHELL_WRAPPER =
+  /^(?:"[^"]*?|\S*?)(?:powershell|pwsh|cmd)(?:\.exe)?"?(?:\s+-(?:NoProfile|NoLogo|NonInteractive))*\s+(?:-Command|-c|\/c)\s+([\s\S]+)$/i;
+
+function commandLabel(input: string): string {
+  const command = commandDisplayText(input).trim();
+  const script = WINDOWS_SHELL_WRAPPER.exec(command)?.[1]?.trim();
+  if (script === undefined) return command;
+  const quote = script[0];
+  return (quote === "'" || quote === '"') && script.endsWith(quote) ? script.slice(1, -1) : script;
+}
+
 function basename(path: string): string {
   return path.split(/[\\/]/).filter(Boolean).at(-1) ?? path;
 }
@@ -37,7 +49,7 @@ export function describeTurnItemStep(
   const title = item.title?.trim() ? short(item.title) : null;
   switch (item.type) {
     case "command_execution": {
-      const command = short(commandDisplayText(item.input));
+      const command = short(commandLabel(item.input));
       return { label: `${active ? "Running" : "Ran"} ${command}`, active };
     }
     case "file_change":

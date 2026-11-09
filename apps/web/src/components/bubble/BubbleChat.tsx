@@ -149,6 +149,7 @@ function AssistantReply(props: {
         ) : (
           <ChatMarkdown
             key={block.id}
+            className="text-xs leading-5"
             text={block.markdown}
             cwd={props.cwd}
             environmentId={props.target.environmentId}

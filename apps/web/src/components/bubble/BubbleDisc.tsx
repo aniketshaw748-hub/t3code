@@ -7,7 +7,7 @@ import type { BubbleStackSummary, BubbleThreadTone } from "./bubbleThreads.logic
 const RING_RADIUS = 26;
 const RING_LENGTH = 2 * Math.PI * RING_RADIUS;
 /** How far each disc behind the front one peeks out, toward the open side of the screen. */
-const STACK_OFFSETS = [0, 5, 9] as const;
+const STACK_OFFSETS = [0, 6, 8] as const;
 
 const TONE_RING: Record<BubbleThreadTone | "idle", string> = {
   attention: "stroke-warning",
@@ -65,7 +65,7 @@ export function BubbleDisc(props: {
             className={cn(
               "absolute inset-2 rounded-full border-2 bg-popover shadow-md",
               TONE_EDGE[tone],
-              behind.length - index === 1 ? "scale-[0.92]" : "scale-[0.84] opacity-80",
+              behind.length - index === 1 ? "opacity-95" : "opacity-70",
             )}
             style={{ translate: `${dx * offset}px ${dy * offset}px` }}
           />
