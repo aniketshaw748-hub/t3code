@@ -1,4 +1,4 @@
-import { makeAggregateState } from "./agentActivityAggregate.ts";
+import { makeAggregateState } from "@t3tools/shared/agentActivityAggregate";
 import type {
   RelayAgentActivitySnapshotResponse,
   RelayDeviceRegistrationRequest,

@@ -1,3 +1,5 @@
+// @effect-diagnostics-next-line nodeBuiltinImport:off -- a sync probe keeps every CLI caller free of FileSystem.
+import * as NodeFS from "node:fs";
 import * as HostProcess from "@t3tools/shared/HostProcess";
 import { normalizeHostname } from "@t3tools/shared/hostClassification";
 import * as Duration from "effect/Duration";
@@ -28,6 +30,26 @@ const TAILSCALE_PROBE_TIMEOUT = Duration.millis(2_500);
 
 const tailscaleCommandForPlatform = (platform: NodeJS.Platform): "tailscale" | "tailscale.exe" =>
   platform === "win32" ? "tailscale.exe" : "tailscale";
+
+/**
+ * The Windows installer adds its folder to PATH only for processes started afterwards, so an app
+ * already running when Tailscale was installed would not find it; use the installed copy.
+ */
+export function tailscaleExecutablePath(
+  platform: NodeJS.Platform,
+  env: NodeJS.ProcessEnv,
+  exists: (path: string) => boolean,
+): string {
+  if (platform !== "win32") return tailscaleCommandForPlatform(platform);
+  const installed = `${env.ProgramFiles ?? "C:\\Program Files"}\\Tailscale\\tailscale.exe`;
+  return exists(installed) ? installed : "tailscale.exe";
+}
+
+const resolveTailscaleExecutable = Effect.gen(function* () {
+  const platform = yield* HostProcess.Platform;
+  const env = yield* HostProcess.Environment;
+  return tailscaleExecutablePath(platform, env, NodeFS.existsSync);
+});
 
 const TailscaleCommandContext = {
   executable: Schema.Literals(["tailscale", "tailscale.exe"]),
@@ -144,6 +166,7 @@ const TailscaleStatusSelf = Schema.Struct({
 });
 
 const TailscaleStatusJson = Schema.Struct({
+  BackendState: Schema.optional(Schema.Unknown),
   Self: Schema.optional(TailscaleStatusSelf),
 });
 
@@ -241,7 +264,7 @@ const readTailscaleOutput = Effect.fn("tailscale.readTailscaleOutput")(function*
     subcommand,
     argumentCount: args.length,
   };
-  const command = ChildProcess.make(executable, [...args], {
+  const command = ChildProcess.make(yield* resolveTailscaleExecutable, [...args], {
     forceKillAfter: TAILSCALE_KILL_GRACE,
   });
   return yield* Effect.gen(function* () {
@@ -294,6 +317,50 @@ const readTailscaleOutput = Effect.fn("tailscale.readTailscaleOutput")(function*
 
 export const readTailscaleStatus = readTailscaleOutput("status", ["status", "--json"]).pipe(
   Effect.flatMap(parseTailscaleStatus),
+);
+
+export type TailscaleAvailability =
+  | { readonly state: "not-installed" | "not-running" | "needs-login" | "stopped" }
+  | ({ readonly state: "running" } & TailscaleStatus);
+
+/** What a user must do next, read from `tailscale status --json`'s BackendState. */
+export const parseTailscaleAvailability = (
+  rawStatusJson: string,
+): Effect.Effect<TailscaleAvailability, TailscaleStatusParseError> =>
+  Effect.all([
+    decodeTailscaleStatusJson(rawStatusJson).pipe(
+      Effect.mapError((cause) => new TailscaleStatusParseError({ cause })),
+    ),
+    parseTailscaleStatus(rawStatusJson),
+  ]).pipe(
+    Effect.map(([raw, status]): TailscaleAvailability => {
+      switch (raw.BackendState) {
+        case "Running":
+          return { state: "running", ...status };
+        case "Stopped":
+          return { state: "stopped" };
+        case "NeedsLogin":
+        case "NeedsMachineAuth":
+          return { state: "needs-login" };
+        default:
+          return status.tailnetIpv4Addresses.length > 0
+            ? { state: "running", ...status }
+            : { state: "not-running" };
+      }
+    }),
+  );
+
+export const readTailscaleAvailability: Effect.Effect<
+  TailscaleAvailability,
+  never,
+  ChildProcessSpawner.ChildProcessSpawner
+> = readTailscaleOutput("status", ["status", "--json"]).pipe(
+  Effect.flatMap(parseTailscaleAvailability),
+  Effect.catchTags({
+    TailscaleCommandSpawnError: () => Effect.succeed({ state: "not-installed" as const }),
+  }),
+  // The CLI exits non-zero, times out or prints nothing usable when its service is down.
+  Effect.orElseSucceed(() => ({ state: "not-running" as const })),
 );
 
 const TailscaleExitNodeJson = Schema.Struct({
@@ -398,7 +465,11 @@ const runTailscaleCommand = Effect.fn("tailscale.runTailscaleCommand")(function*
   const timeout = Duration.fromInputUnsafe(timeoutInput);
   return yield* Effect.gen(function* () {
     const child = yield* spawner
-      .spawn(ChildProcess.make(executable, args, { forceKillAfter: TAILSCALE_KILL_GRACE }))
+      .spawn(
+        ChildProcess.make(yield* resolveTailscaleExecutable, args, {
+          forceKillAfter: TAILSCALE_KILL_GRACE,
+        }),
+      )
       .pipe(
         Effect.mapError((cause) => new TailscaleCommandSpawnError({ ...commandContext, cause })),
         Effect.catchDefect((cause) =>

@@ -1,3 +1,4 @@
+import { readTailscaleAvailability, type TailscaleAvailability } from "@t3tools/tailscale";
 import {
   createAdvertisedEndpoint,
   type CreateAdvertisedEndpointInput,
@@ -287,6 +288,7 @@ export class DesktopServerExposure extends Context.Service<
       readonly port?: number;
     }) => Effect.Effect<DesktopServerExposureChange, DesktopTailscaleServePersistenceError>;
     readonly getAdvertisedEndpoints: Effect.Effect<readonly AdvertisedEndpoint[]>;
+    readonly getTailscaleAvailability: Effect.Effect<TailscaleAvailability>;
   }
 >()("@t3tools/desktop/backend/DesktopServerExposure") {}
 
@@ -638,6 +640,10 @@ export const make = Effect.gen(function* () {
     setMode,
     setTailscaleServeEnabled,
     getAdvertisedEndpoints,
+    getTailscaleAvailability: readTailscaleAvailability.pipe(
+      Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, childProcessSpawner),
+      Effect.withSpan("desktop.serverExposure.getTailscaleAvailability"),
+    ),
   });
 });
 

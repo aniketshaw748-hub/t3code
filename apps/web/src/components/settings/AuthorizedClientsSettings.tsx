@@ -1,3 +1,4 @@
+import { BRAND } from "@t3tools/contracts/brand";
 import { AUTH_SCOPE_OPTIONS as PAIRING_SCOPE_OPTIONS } from "@t3tools/shared/authScopeOptions";
 import { PlusIcon, QrCodeIcon } from "lucide-react";
 import { type ReactNode, memo, useId, useState } from "react";
@@ -23,7 +24,11 @@ import {
 import { useCopyToClipboard } from "../../hooks/useCopyToClipboard";
 import { cn } from "../../lib/utils";
 import { formatElapsedDurationLabel, formatExpiresInLabel } from "../../timestampFormat";
-import { resolveDesktopPairingUrl, resolveHostedPairingUrl } from "./pairingUrls";
+import {
+  resolveDesktopPairingUrl,
+  resolveHostedPairingUrl,
+  resolveMobileAppPairingUrl,
+} from "./pairingUrls";
 import {
   canRevokeOtherClients,
   isQrShareableEndpoint,
@@ -154,6 +159,7 @@ const PairingLinkListRow = memo(function PairingLinkListRow({
   const [isRevealDialogOpen, setIsRevealDialogOpen] = useState(false);
   const [isQrPanelOpen, setIsQrPanelOpen] = useState(defaultShareOpen);
   const [qrEndpointId, setQrEndpointId] = useState<string | null>(null);
+  const [qrForApp, setQrForApp] = useState(true);
   const qrPanelId = useId();
 
   const currentOriginPairingUrl = credential ? resolveCurrentOriginPairingUrl(credential) : null;
@@ -274,6 +280,8 @@ const PairingLinkListRow = memo(function PairingLinkListRow({
   );
   const qrPairingUrl = selectedQrOption?.url ?? shareablePairingUrl;
   const canRenderQrForSelection = selectedQrOption?.qrShareable ?? true;
+  const qrCodeValue =
+    qrPairingUrl !== null && qrForApp ? resolveMobileAppPairingUrl(qrPairingUrl) : qrPairingUrl;
   if (expiresAtMs <= nowMs) {
     return null;
   }
@@ -468,15 +476,47 @@ const PairingLinkListRow = memo(function PairingLinkListRow({
               Copy code only
             </Button>
           </div>
-          {canRenderQrForSelection ? (
-            <div className="w-fit shrink-0 self-center rounded-xl bg-white p-3 sm:self-start">
-              <QRCodeSvg
-                value={qrPairingUrl}
-                size={168}
-                level="M"
-                marginSize={1}
-                title="Pairing link. Scan to open on another device"
-              />
+          {canRenderQrForSelection && qrCodeValue !== null ? (
+            <div className="flex w-fit shrink-0 flex-col items-center gap-2 self-center sm:self-start">
+              <div className="rounded-xl bg-white p-3">
+                <QRCodeSvg
+                  value={qrCodeValue}
+                  size={168}
+                  level="M"
+                  marginSize={1}
+                  title={
+                    qrForApp
+                      ? `Pairing link. Scan with a phone camera to open the ${BRAND.displayName} app`
+                      : "Pairing link. Scan to open on another device"
+                  }
+                />
+              </div>
+              <div
+                className="flex gap-1"
+                role="radiogroup"
+                aria-label="What the scanning phone opens"
+              >
+                {[
+                  { forApp: true, label: `${BRAND.displayName} app` },
+                  { forApp: false, label: "Browser" },
+                ].map((option) => (
+                  <button
+                    key={option.label}
+                    type="button"
+                    role="radio"
+                    aria-checked={qrForApp === option.forApp}
+                    className={cn(
+                      "rounded-md border px-2 py-0.5 text-2xs outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
+                      qrForApp === option.forApp
+                        ? "border-foreground/60 bg-muted/30 text-foreground"
+                        : "border-border/50 text-muted-foreground hover:bg-muted/20",
+                    )}
+                    onClick={() => setQrForApp(option.forApp)}
+                  >
+                    {option.label}
+                  </button>
+                ))}
+              </div>
             </div>
           ) : (
             <div className="flex size-[192px] shrink-0 items-center justify-center self-center rounded-xl border border-border/50 p-4 sm:self-start">

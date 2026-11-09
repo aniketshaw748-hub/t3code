@@ -47,6 +47,7 @@ import {
 } from "./agentLiveActivity";
 import { resolveCloudPublicConfig } from "../cloud/publicConfig";
 import { supportsAgentAwarenessPush } from "./capabilities";
+import { setAgentAwarenessRelayMode } from "./relayMode";
 import { makeRelayDeviceRegistrationRequest, resolveApsEnvironment } from "./registrationPayload";
 
 const REMOTE_ACTIVITY_REGISTRATION_RETRY_MS = 15_000;
@@ -215,8 +216,10 @@ export function setAgentAwarenessRelayTokenProvider(
     void clearAgentAwarenessRegistrationRecord().catch((error: unknown) => {
       logRegistrationError("clear registration record on sign-out failed", error);
     });
+    setAgentAwarenessRelayMode("none");
     return;
   }
+  setAgentAwarenessRelayMode("relay");
   ensurePushTokenListener();
   ensureAppStateListener();
   runRegistrationInBackground(

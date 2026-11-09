@@ -15,8 +15,8 @@ import type { ApnsCredentials } from "../Config.ts";
 import * as ApnsClient from "./ApnsClient.ts";
 import {
   sanitizeAgentActivityAggregateState,
-  sanitizeApnsNotificationPayload,
-} from "./agentActivityPayloads.ts";
+  sanitizeAgentActivityNotification,
+} from "@t3tools/shared/agentActivityPayloads";
 import * as ApnsProviderTokens from "./ApnsProviderTokens.ts";
 
 const layerTest = ApnsClient.layer.pipe(
@@ -150,7 +150,7 @@ describe("ApnsClient", () => {
       const apns = yield* ApnsClient.ApnsClient;
       const environmentId = "é".repeat(191);
       const threadId = "t".repeat(512);
-      const notification = sanitizeApnsNotificationPayload({
+      const notification = sanitizeAgentActivityNotification({
         title: "界".repeat(120),
         body: "界".repeat(120),
         environmentId,

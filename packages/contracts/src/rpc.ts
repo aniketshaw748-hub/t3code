@@ -222,6 +222,15 @@ import {
   RelayClientStatusSchema,
 } from "./relayClient.ts";
 import {
+  DirectPushDeviceRegistrationInput,
+  DirectPushRegisterResult,
+  DirectPushSendTestInput,
+  DirectPushSendTestResult,
+  DirectPushSetServiceAccountInput,
+  DirectPushStatus,
+  DirectPushUnregisterInput,
+} from "./directPush.ts";
+import {
   ORCHESTRATION_V2_WS_METHODS,
   OrchestrationGetWorkflowScriptError,
   OrchestrationV2GetNativeChildWorkError,
@@ -609,6 +618,12 @@ export const WS_METHODS = {
 
   cloudGetRelayClientStatus: "cloud.getRelayClientStatus",
   cloudInstallRelayClient: "cloud.installRelayClient",
+
+  directPushGetStatus: "directPush.getStatus",
+  directPushRegisterDevice: "directPush.registerDevice",
+  directPushUnregisterDevice: "directPush.unregisterDevice",
+  directPushSetServiceAccount: "directPush.setServiceAccount",
+  directPushSendTest: "directPush.sendTest",
 
   pullRequestsList: "pullRequests.list",
   pullRequestsListStats: "pullRequests.listStats",
@@ -1058,6 +1073,36 @@ const WsServerSignalProcessRpc = Rpc.make(WS_METHODS.serverSignalProcess, {
 const WsCloudGetRelayClientStatusRpc = Rpc.make(WS_METHODS.cloudGetRelayClientStatus, {
   payload: Schema.Struct({}),
   success: RelayClientStatusSchema,
+  error: EnvironmentAuthorizationError,
+});
+
+const WsDirectPushGetStatusRpc = Rpc.make(WS_METHODS.directPushGetStatus, {
+  payload: Schema.Struct({}),
+  success: DirectPushStatus,
+  error: EnvironmentAuthorizationError,
+});
+
+const WsDirectPushRegisterDeviceRpc = Rpc.make(WS_METHODS.directPushRegisterDevice, {
+  payload: DirectPushDeviceRegistrationInput,
+  success: DirectPushRegisterResult,
+  error: EnvironmentAuthorizationError,
+});
+
+const WsDirectPushUnregisterDeviceRpc = Rpc.make(WS_METHODS.directPushUnregisterDevice, {
+  payload: DirectPushUnregisterInput,
+  success: Schema.Struct({}),
+  error: EnvironmentAuthorizationError,
+});
+
+const WsDirectPushSetServiceAccountRpc = Rpc.make(WS_METHODS.directPushSetServiceAccount, {
+  payload: DirectPushSetServiceAccountInput,
+  success: DirectPushStatus,
+  error: EnvironmentAuthorizationError,
+});
+
+const WsDirectPushSendTestRpc = Rpc.make(WS_METHODS.directPushSendTest, {
+  payload: DirectPushSendTestInput,
+  success: DirectPushSendTestResult,
   error: EnvironmentAuthorizationError,
 });
 
@@ -2300,6 +2345,11 @@ export const WsRpcGroup = RpcGroup.make(
   WsServerReportClientActivityRpc,
   WsCloudGetRelayClientStatusRpc,
   WsCloudInstallRelayClientRpc,
+  WsDirectPushGetStatusRpc,
+  WsDirectPushRegisterDeviceRpc,
+  WsDirectPushUnregisterDeviceRpc,
+  WsDirectPushSetServiceAccountRpc,
+  WsDirectPushSendTestRpc,
   WsPullRequestsListRpc,
   WsPullRequestsListStatsRpc,
   WsPullRequestsFilterOptionsRpc,

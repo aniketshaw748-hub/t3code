@@ -2,6 +2,7 @@ import { BRAND } from "@t3tools/contracts/brand";
 import { OrchestrationDispatchCommandError } from "@t3tools/contracts";
 import * as Context from "effect/Context";
 import * as SecureRandom from "effect/crypto/SecureRandom";
+import * as DirectPush from "./directPush/DirectPush.ts";
 import * as Orchestrator from "./orchestration-v2/Orchestrator.ts";
 import * as PeerLinkRequests from "./peer/PeerLinkRequests.ts";
 import * as PeerLinks from "./peer/PeerLinks.ts";
@@ -1561,6 +1562,7 @@ export const layerWsRpc = (
       const processResourceMonitor = yield* ProcessResourceMonitor.ProcessResourceMonitor;
       const resourceTelemetry = yield* ResourceTelemetry.ResourceTelemetry;
       const relayClient = yield* RelayClient.RelayClient;
+      const directPush = yield* DirectPush.DirectPush;
       // Webhook URLs start agents; expose them only to operate-scoped sessions while keeping tasks readable.
       const withVisibleWebhookUrls = (result: ScheduledTaskListResult): ScheduledTaskListResult =>
         currentSession.scopes.includes(AuthOrchestrationOperateScope)
@@ -2786,6 +2788,17 @@ export const layerWsRpc = (
             ),
           ),
         [WS_METHODS.cloudGetRelayClientStatus]: (_input) => relayClient.resolve,
+        [WS_METHODS.directPushGetStatus]: (_input) => directPush.getStatus.pipe(Effect.orDie),
+        [WS_METHODS.directPushRegisterDevice]: (input) =>
+          directPush
+            .registerDevice({ registration: input, sessionId: currentSessionId })
+            .pipe(Effect.orDie),
+        [WS_METHODS.directPushUnregisterDevice]: (input) =>
+          directPush.unregisterDevice(input.deviceId).pipe(Effect.as({}), Effect.orDie),
+        [WS_METHODS.directPushSetServiceAccount]: (input) =>
+          directPush.setServiceAccount(input.path).pipe(Effect.orDie),
+        [WS_METHODS.directPushSendTest]: (input) =>
+          directPush.sendTest(input.deviceId).pipe(Effect.orDie),
         [WS_METHODS.cloudInstallRelayClient]: (_input) =>
           Stream.callback<RelayClientInstallProgressEvent, RelayClientInstallFailedError>((queue) =>
             relayClient
