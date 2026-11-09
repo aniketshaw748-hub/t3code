@@ -2,6 +2,7 @@
 import * as NodeURL from "node:url";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { expect, it } from "@effect/vitest";
+import { BRAND } from "@t3tools/contracts/brand";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Stream from "effect/Stream";
@@ -68,7 +69,7 @@ it.live("loads the CLI with its cache settings only when the command needs it", 
     const launcherHelp = yield* run({ T3CODE_HOME: "" }, ["__service-launcher", "--help"]);
     expect(launcherHelp.exitCode).toBe(0);
     expect(launcherHelp.stderr).toContain("LOADED_CLI_MAIN");
-    expect(launcherHelp.stdout).toContain("t3 __service-launcher [flags]");
+    expect(launcherHelp.stdout).toContain(`${BRAND.cliName} __service-launcher [flags]`);
     const launcherFlags = yield* run({ T3CODE_HOME: "" }, [
       "__service-launcher",
       "--log-level",
