@@ -1,4 +1,3 @@
-import { useAtomValue } from "@effect/atom-react";
 import { scopeThreadRef, scopeProjectRef } from "@t3tools/client-runtime/environment";
 import { resolveComposerDispatchMode } from "@t3tools/client-runtime/state/composer-dispatch";
 import {
@@ -26,12 +25,11 @@ import {
   useQuietThreadVisibleTurnItems,
   useThreadVisibleTurnItems,
 } from "~/state/entities";
-import { environmentThreadDetails, threadEnvironment } from "~/state/threads";
-import { useAtomCommand } from "~/state/use-atom-command";
+import { threadEnvironment } from "~/state/threads";
 import { useOrchestrationCommand } from "~/state/use-orchestration-command";
 import { isImageAttachment } from "~/types";
 import ChatMarkdown from "../ChatMarkdown";
-import { ComposerPendingApprovalActions } from "../chat/ComposerPendingApprovalActions";
+import { PendingRequestCards } from "../chat/PendingRequestCards";
 import { AttachmentImage } from "../media/AttachmentImage";
 import { Button } from "../ui/button";
 import { Textarea } from "../ui/textarea";
@@ -163,68 +161,6 @@ function AssistantReply(props: {
         </Button>
       ) : null}
     </div>
-  );
-}
-
-function PendingRequests(props: {
-  readonly target: DesktopBubbleThreadTarget;
-  readonly onOpenFull: () => void;
-}) {
-  const ref = scopeThreadRef(props.target.environmentId, props.target.threadId);
-  const requests = useAtomValue(environmentThreadDetails.pendingRequestsAtom(ref));
-  const respond = useAtomCommand(threadEnvironment.respondToApproval, { reportFailure: false });
-  const [responding, setResponding] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  if (requests === null) return null;
-  return (
-    <>
-      {requests.approvals.map((approval) => (
-        <section
-          key={approval.requestId}
-          aria-label="Approval needed"
-          className="flex flex-col gap-1.5 rounded-lg border border-warning/40 bg-warning/8 p-2 text-xs"
-        >
-          <p className="font-medium text-warning">Approval needed</p>
-          {approval.detail ? (
-            <pre className="max-h-24 overflow-auto font-mono text-2xs whitespace-pre-wrap break-words">
-              {approval.detail}
-            </pre>
-          ) : null}
-          <div className="flex flex-wrap gap-1.5">
-            <ComposerPendingApprovalActions
-              presentation="inline"
-              requestId={approval.requestId}
-              isResponding={responding}
-              canRespond={approval.responseCapability === "live"}
-              {...(approval.options === undefined ? {} : { options: approval.options })}
-              onRespondToApproval={async (requestId, decision) => {
-                setResponding(true);
-                setError(null);
-                const result = await respond({
-                  environmentId: props.target.environmentId,
-                  input: { threadId: props.target.threadId, requestId, decision },
-                });
-                if (result._tag === "Failure" && !isAtomCommandInterrupted(result)) {
-                  const failure = squashAtomCommandFailure(result);
-                  setError(failure instanceof Error ? failure.message : "Could not send that.");
-                }
-                setResponding(false);
-                return result;
-              }}
-            />
-          </div>
-          {error ? <p className="text-destructive">{error}</p> : null}
-        </section>
-      ))}
-      {requests.userInputs.length > 0 ? (
-        <section className="flex items-center gap-2 rounded-lg border border-warning/40 bg-warning/8 p-2 text-xs">
-          <p className="min-w-0 flex-1 font-medium text-warning">The agent has a question</p>
-          <Button variant="outline" size="compact" onClick={props.onOpenFull}>
-            Answer in app
-          </Button>
-        </section>
-      ) : null}
-    </>
   );
 }
 
@@ -369,7 +305,11 @@ export function BubbleChat(props: {
             </div>
           ),
         )}
-        <PendingRequests target={props.target} onOpenFull={props.onOpenFull} />
+        <PendingRequestCards
+          environmentId={props.target.environmentId}
+          threadId={props.target.threadId}
+          onOpenFull={props.onOpenFull}
+        />
         {running ? (
           <p className="flex min-w-0 items-center gap-1.5 text-2xs text-muted-foreground">
             <span aria-hidden className="size-1.5 shrink-0 rounded-full bg-primary" />

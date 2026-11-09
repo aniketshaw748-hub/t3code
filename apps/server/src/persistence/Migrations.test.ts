@@ -116,6 +116,50 @@ describe("runMigrations", () => {
     }).pipe(Effect.provide(NodeSqliteClient.layer({ filename: ":memory:" }))),
   );
 
+  it.effect("drops only the user's sent whole-deliverable notes, which are chat now", () =>
+    Effect.gen(function* () {
+      const sql = yield* SqlClient.SqlClient;
+      yield* runMigrations({ toMigrationInclusive: 83 });
+      const user = '{"kind":"user","name":null,"source":null}';
+      const reviewer = '{"kind":"external","name":"Ana","source":"review-app"}';
+      const slide = '{"kind":"slide","index":1}';
+      yield* sql`
+        INSERT INTO deliverables (
+          deliverable_id, project_id, path, kind, title, current_version_id, created_at, updated_at
+        ) VALUES (
+          'dlv-1', 'project-1', 'deck.pptx', 'deck', 'deck.pptx', NULL,
+          '2026-01-01T00:00:00.000Z', '2026-01-01T00:00:00.000Z'
+        )
+      `;
+      for (const [id, anchor, author, sent] of [
+        ["whole-sent", null, user, "message-1"],
+        ["whole-unsent", null, user, null],
+        ["whole-reviewer", null, reviewer, "message-2"],
+        ["slide-sent", slide, user, "message-3"],
+      ] as const) {
+        yield* sql`
+          INSERT INTO deliverable_notes (
+            note_id, project_id, deliverable_id, version_id, anchor_json, body, author_json,
+            status, sent_message_id, created_at, updated_at
+          ) VALUES (
+            ${id}, 'project-1', 'dlv-1', 'dlvv-1', ${anchor}, 'Body', ${author},
+            'open', ${sent}, '2026-01-01T00:00:00.000Z', '2026-01-01T00:00:00.000Z'
+          )
+        `;
+      }
+
+      yield* runMigrations();
+
+      const kept = yield* sql<{ readonly note_id: string }>`
+        SELECT note_id FROM deliverable_notes ORDER BY note_id
+      `;
+      assert.deepStrictEqual(
+        kept.map((row) => row.note_id),
+        ["slide-sent", "whole-reviewer", "whole-unsent"],
+      );
+    }).pipe(Effect.provide(NodeSqliteClient.layer({ filename: ":memory:" }))),
+  );
+
   it.effect.each([30, 54])("still starts with a site-local migration at id %s", (id) =>
     Effect.gen(function* () {
       const sql = yield* SqlClient.SqlClient;

@@ -22,7 +22,7 @@ import {
   type ProjectId,
   type UploadChatAttachment,
 } from "@t3tools/contracts";
-import { formatTimecode } from "@t3tools/shared/deliverableNotes";
+import { formatTimecode, formatWholeDeliverableMessage } from "@t3tools/shared/deliverableNotes";
 import { Link } from "@tanstack/react-router";
 import { ChevronLeftIcon, RotateCcwIcon } from "lucide-react";
 import { useRef, useState } from "react";
@@ -185,9 +185,10 @@ export function WorkProjectScreen(props: {
           ? "the drawing"
           : null;
 
+  /** A drawing always pins: it marks a place, so it is a note even with "Whole deck" chosen. */
   const pinnedAnchor = (): DeliverableAnchor | null => {
     const region = drawing?.region;
-    if (!pinned || pinLabel === null) return null;
+    if ((!pinned && drawing === null) || pinLabel === null) return null;
     if (kind === "video") {
       return region === undefined
         ? { kind: "time", t: playhead }
@@ -258,6 +259,20 @@ export function WorkProjectScreen(props: {
       if (sent !== null) setText("");
       return;
     }
+    const anchor = pinnedAnchor();
+    if (anchor === null) {
+      // About the whole deliverable: a chat message to the agent, with nothing to track.
+      setSending(true);
+      const sent = await sendMessage({
+        environmentId,
+        projectId,
+        thread,
+        text: formatWholeDeliverableMessage({ deliverable, versionOrdinal: viewed.ordinal, body }),
+      });
+      setSending(false);
+      if (sent !== null) setText("");
+      return;
+    }
     setSending(true);
     const snapshotDataUrl = drawing?.snapshotDataUrl ?? null;
     const created = await createNote({
@@ -265,7 +280,7 @@ export function WorkProjectScreen(props: {
       input: {
         deliverableId: deliverable.id,
         versionId: viewed.id,
-        anchor: pinnedAnchor(),
+        anchor,
         body,
         ...(snapshotDataUrl === null ? {} : { snapshotDataUrl }),
       },

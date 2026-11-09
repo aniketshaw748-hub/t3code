@@ -666,6 +666,120 @@ it.effect(
     }).pipe(Effect.provide(layerTest)),
 );
 
+it.effect("a user's next message closes a question its agent asked without waiting", () =>
+  Effect.gen(function* () {
+    const orchestrator = yield* Orchestrator.OrchestratorV2;
+    const projections = yield* ProjectionStore.ProjectionStoreV2;
+    const threadId = ThreadId.make("thread:message-question");
+    const requestId = RuntimeRequestId.make("request:message-question");
+    const nodeId = NodeId.make("node:message-question");
+    const now = yield* DateTime.now;
+    yield* orchestrator.dispatch({
+      type: "thread.create",
+      commandId: CommandId.make("create-message-question"),
+      threadId,
+      projectId: ProjectId.make("project:message-question"),
+      title: "Question",
+      modelSelection,
+      runtimeMode: "full-access",
+      interactionMode: "default",
+      branch: null,
+      worktreePath: null,
+      createdBy: "user",
+      creationSource: "web",
+    });
+    for (const event of [
+      {
+        id: EventId.make("request:message-question"),
+        type: "runtime-request.updated",
+        threadId,
+        occurredAt: now,
+        payload: {
+          id: requestId,
+          nodeId,
+          providerTurnId: null,
+          nativeRequestRef: null,
+          kind: "user_input",
+          status: "pending",
+          responseCapability: { type: "message" },
+          createdAt: now,
+          resolvedAt: null,
+        },
+      },
+      {
+        id: EventId.make("node:message-question"),
+        type: "node.updated",
+        threadId,
+        occurredAt: now,
+        payload: {
+          id: nodeId,
+          threadId,
+          runId: null,
+          parentNodeId: null,
+          rootNodeId: nodeId,
+          kind: "user_input_request",
+          status: "waiting",
+          countsForRun: false,
+          providerThreadId: null,
+          providerTurnId: null,
+          nativeItemRef: null,
+          runtimeRequestId: requestId,
+          checkpointScopeId: null,
+          startedAt: now,
+          completedAt: null,
+        },
+      },
+      {
+        id: EventId.make("item:message-question"),
+        type: "turn-item.updated",
+        threadId,
+        occurredAt: now,
+        payload: {
+          id: TurnItemId.make("item:message-question"),
+          threadId,
+          runId: null,
+          nodeId,
+          providerThreadId: null,
+          providerTurnId: null,
+          nativeItemRef: null,
+          parentItemId: null,
+          ordinal: 1,
+          status: "waiting",
+          title: null,
+          startedAt: now,
+          completedAt: null,
+          updatedAt: now,
+          type: "user_input_request",
+          requestId,
+          questions: [],
+        },
+      },
+    ] satisfies ReadonlyArray<OrchestrationV2DomainEvent>) {
+      yield* projections.apply(event);
+    }
+    const send = (name: string, creationSource: "server" | "web") =>
+      orchestrator.dispatch({
+        type: "message.dispatch",
+        commandId: CommandId.make(`send:${name}`),
+        threadId,
+        messageId: MessageId.make(`message:${name}`),
+        text: "Make it blue",
+        attachments: [],
+        dispatchMode: { type: "defer_start" },
+        createdBy: "user",
+        creationSource,
+      });
+    yield* send("server", "server");
+    assert.equal((yield* projections.getRuntimeRequest(threadId, requestId))?.status, "pending");
+    yield* send("web", "web");
+    const response = yield* projections.getRuntimeResponseContext(threadId, requestId);
+    assert.equal(response.request?.status, "resolved");
+    assert.equal(response.node?.status, "cancelled");
+    assert.equal(response.item?.status, "cancelled");
+    assert.isNull((yield* projections.getThreadShell(threadId))?.pendingRuntimeRequest);
+  }).pipe(Effect.provide(layerTest)),
+);
+
 it.effect("keeps the store's read failure as the cause when a command projection fails", () =>
   Effect.gen(function* () {
     const orchestrator = yield* Orchestrator.OrchestratorV2;

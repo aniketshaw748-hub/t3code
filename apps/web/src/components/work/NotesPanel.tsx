@@ -4,6 +4,7 @@ import {
   noteDisplay,
   notesSummary,
   sortNotes,
+  workChatEntries,
   type NoteCheckTarget,
 } from "@t3tools/client-runtime/work/notes";
 import type {
@@ -23,12 +24,13 @@ import { TextFieldSpeechControls, type TextFieldSpeech } from "../../speech/useT
 import { workEnvironment } from "../../state/work";
 import { useAtomCommand } from "../../state/use-atom-command";
 import { RelativeTime } from "../RelativeTime";
+import { PendingRequestCards } from "../chat/PendingRequestCards";
 import { SpendApprovalCard, type SpendApprovalItem } from "../chat/SpendApprovalCard";
 import { Button } from "../ui/button";
 import { Textarea } from "../ui/textarea";
 import { Toggle, ToggleGroup } from "../ui/toggle-group";
 import type { Drawing } from "./DrawOverlay";
-import { isThreadBusy, useLatestAgentText, useWorkAssetUrl } from "./useWorkData";
+import { isThreadBusy, useThreadMessages, useWorkAssetUrl } from "./useWorkData";
 import { scopeThreadRef } from "@t3tools/client-runtime/environment";
 import { WorkThreadChat } from "./WorkThreadChat";
 import { NoteStatusTag, noteStatusDotClass } from "./WorkStatusChip";
@@ -75,6 +77,9 @@ export function NotesPanel(props: {
   const ordinalOf = (versionId: DeliverableVersionId) => ordinalById.get(versionId);
   const sorted = sortNotes(props.notes);
   const summary = notesSummary(props.notes);
+  const noteMessageIds = new Set(
+    props.notes.flatMap((note) => (note.sentMessageId === null ? [] : [note.sentMessageId])),
+  );
   const unsent = props.notes.filter(
     (note) => note.status === "open" && note.sentMessageId === null,
   );
@@ -151,6 +156,13 @@ export function NotesPanel(props: {
             </div>
           ) : null}
           <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto px-4 py-3">
+            {props.thread === null ? null : (
+              <PendingRequestCards
+                environmentId={props.environmentId}
+                threadId={props.thread.id}
+                onOpenFull={() => props.onTab("chat")}
+              />
+            )}
             {props.spendApprovals.map((item) => (
               <SpendApprovalCard
                 key={item.id}
@@ -192,9 +204,10 @@ export function NotesPanel(props: {
               />
             ))}
             {props.thread === null ? null : (
-              <AgentLine
+              <WorkChatLog
                 environmentId={props.environmentId}
                 thread={props.thread}
+                noteMessageIds={noteMessageIds}
                 onOpenChat={() => props.onTab("chat")}
               />
             )}
@@ -390,30 +403,50 @@ function NoteSnapshot(props: { readonly environmentId: EnvironmentId; readonly u
   );
 }
 
-function AgentLine(props: {
+/** What was said outside notes, and each run's last reply, so a whole-deck ask reads as chat. */
+function WorkChatLog(props: {
   readonly environmentId: EnvironmentId;
   readonly thread: EnvironmentThreadShell;
+  readonly noteMessageIds: ReadonlySet<string>;
   readonly onOpenChat: () => void;
 }) {
-  const latest = useLatestAgentText(scopeThreadRef(props.environmentId, props.thread.id));
+  const messages = useThreadMessages(scopeThreadRef(props.environmentId, props.thread.id));
+  const entries = workChatEntries(messages, props.noteMessageIds);
   const working = isThreadBusy(props.thread);
-  if (latest === null && !working) return null;
-  // A plain preview: markdown emphasis and code marks would show as stray characters.
-  const text = (latest ?? "").replace(/[*_`#>]+/g, "").trim();
+  if (entries.length === 0 && !working) return null;
   return (
-    <div className="flex min-w-0 gap-2 px-1">
-      <Avatar agent>
-        <SparklesIcon className="size-3" />
-      </Avatar>
-      <div className="flex min-w-0 flex-col items-start gap-1">
-        <p className="line-clamp-4 text-xs whitespace-pre-line text-work-muted">
-          {working ? (text.length === 0 ? "Working…" : "Working · ") : ""}
-          {text}
-        </p>
-        <Button variant="link" size="micro" onClick={props.onOpenChat}>
-          Open the full chat
-        </Button>
-      </div>
+    <div className="flex min-w-0 flex-col gap-2.5 px-1">
+      {entries.map((entry) => (
+        <div key={entry.id} className="flex min-w-0 gap-2">
+          {entry.role === "user" ? (
+            <Avatar>Y</Avatar>
+          ) : (
+            <Avatar agent>
+              <SparklesIcon className="size-3" />
+            </Avatar>
+          )}
+          <p
+            className={cn(
+              "min-w-0 text-xs whitespace-pre-line",
+              entry.role === "user" ? "line-clamp-3 text-work-ink" : "line-clamp-4 text-work-muted",
+            )}
+          >
+            {/* A plain preview: markdown emphasis and code marks would show as stray characters. */}
+            {entry.role === "user" ? entry.text : entry.text.replace(/[*_`#>]+/g, "")}
+          </p>
+        </div>
+      ))}
+      {working ? (
+        <div className="flex min-w-0 gap-2">
+          <Avatar agent>
+            <SparklesIcon className="size-3" />
+          </Avatar>
+          <p className="text-xs text-work-muted">Working…</p>
+        </div>
+      ) : null}
+      <Button variant="link" size="micro" className="self-start" onClick={props.onOpenChat}>
+        Open the full chat
+      </Button>
     </div>
   );
 }

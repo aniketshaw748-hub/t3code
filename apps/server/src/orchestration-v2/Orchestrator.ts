@@ -6160,6 +6160,13 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
             payload: { ...sourcePlan, status: "completed" },
           });
 
+    if (
+      command.createdBy === "user" &&
+      (command.creationSource === "web" || command.creationSource === "mobile") &&
+      command.scheduledTaskId === undefined
+    ) {
+      yield* closeMessageQuestions({ command, events, projection });
+    }
     if (dispatchMode.type === "steer_active" || dispatchMode.type === "restart_active") {
       yield* dispatchSteerIntoRun({
         command,
@@ -9401,6 +9408,72 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
         events,
         effects,
       );
+    },
+  );
+
+  /**
+   * Closes questions an agent asked without waiting for the answer, as dismiss does. Once the
+   * user writes in the thread they have moved past them, and a stale one would keep the thread
+   * reading as waiting on the user.
+   */
+  const closeMessageQuestions = Effect.fn("orchestrationV2.closeMessageQuestions")(
+    function* (input: {
+      readonly command: OrchestrationV2ServerCommand;
+      readonly events: Ref.Ref<Array<OrchestrationV2DomainEvent>>;
+      readonly projection: OrchestrationV2ThreadProjection;
+    }) {
+      const threadId = input.projection.thread.id;
+      const questions = input.projection.runtimeRequests.filter(
+        (request) =>
+          request.status === "pending" &&
+          request.kind === "user_input" &&
+          request.responseCapability.type === "message",
+      );
+      if (questions.length === 0) return;
+      const { turnItems } = yield* projectionStore
+        .getThreadRecords(threadId, ["turnItems"], {
+          turnItemTypes: ["user_input_request"],
+          messageRoles: [],
+        })
+        .pipe(mapDispatchError(input.command));
+      const now = yield* DateTime.now;
+      const emitEvent = emit(input.events, input.command);
+      for (const request of questions) {
+        const node = input.projection.nodes.find((candidate) => candidate.id === request.nodeId);
+        const runId = node?.runId ?? null;
+        yield* emitEvent({
+          type: "runtime-request.updated",
+          threadId,
+          ...(runId === null ? {} : { runId }),
+          nodeId: request.nodeId,
+          occurredAt: now,
+          payload: { ...request, status: "resolved", resolvedAt: now, decision: "cancel" },
+        });
+        if (node !== undefined) {
+          yield* emitEvent({
+            type: "node.updated",
+            threadId,
+            ...(runId === null ? {} : { runId }),
+            nodeId: node.id,
+            occurredAt: now,
+            payload: { ...node, status: "cancelled", completedAt: now },
+          });
+        }
+        const item = turnItems.find(
+          (candidate) =>
+            candidate.type === "user_input_request" && candidate.requestId === request.id,
+        );
+        if (item !== undefined) {
+          yield* emitEvent({
+            type: "turn-item.updated",
+            threadId,
+            ...(item.runId === null ? {} : { runId: item.runId }),
+            ...(item.nodeId === null ? {} : { nodeId: item.nodeId }),
+            occurredAt: now,
+            payload: { ...item, status: "cancelled", completedAt: now, updatedAt: now },
+          });
+        }
+      }
     },
   );
 

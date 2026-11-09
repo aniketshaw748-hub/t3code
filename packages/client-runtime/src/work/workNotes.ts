@@ -3,8 +3,9 @@ import type {
   DeliverableNote,
   DeliverableNoteStatus,
   DeliverableVersionId,
+  OrchestrationV2ConversationMessage,
 } from "@t3tools/contracts";
-import { formatTimecode } from "@t3tools/shared/deliverableNotes";
+import { formatTimecode, wholeDeliverableMessageBody } from "@t3tools/shared/deliverableNotes";
 
 /** Display order for the summary bar: what needs the user first. */
 const NOTE_STATUS_ORDER: ReadonlyArray<DeliverableNoteStatus> = [
@@ -177,4 +178,45 @@ export function agentProgress(text: string | null): AgentProgress {
     renderPercent:
       percent === null || !Number.isFinite(percent) || percent > 100 ? null : Math.round(percent),
   };
+}
+
+export interface WorkChatEntry {
+  readonly id: string;
+  readonly role: "user" | "assistant";
+  readonly text: string;
+}
+
+type ChatMessage = Pick<
+  OrchestrationV2ConversationMessage,
+  "id" | "role" | "text" | "runId" | "createdBy"
+>;
+
+/**
+ * The conversation beside the notes: what the user said outside notes, and each run's last
+ * reply, newest last. Messages that sent notes show as their note cards instead.
+ */
+export function workChatEntries(
+  messages: ReadonlyArray<ChatMessage>,
+  noteMessageIds: ReadonlySet<string>,
+  limit = 6,
+): ReadonlyArray<WorkChatEntry> {
+  const lastReplyByRun = new Map<string, string>();
+  for (const message of messages) {
+    if (message.role === "assistant" && message.runId !== null && message.text.trim() !== "") {
+      lastReplyByRun.set(message.runId, message.id);
+    }
+  }
+  const entries: WorkChatEntry[] = [];
+  for (const message of messages) {
+    if (message.role === "user") {
+      if (message.createdBy !== "user" || noteMessageIds.has(message.id)) continue;
+      const text = wholeDeliverableMessageBody(message.text).trim();
+      if (text !== "") entries.push({ id: message.id, role: "user", text });
+    } else if (message.role === "assistant" && message.runId !== null) {
+      if (lastReplyByRun.get(message.runId) === message.id) {
+        entries.push({ id: message.id, role: "assistant", text: message.text.trim() });
+      }
+    }
+  }
+  return entries.slice(-limit);
 }

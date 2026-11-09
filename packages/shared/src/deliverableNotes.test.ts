@@ -1,7 +1,13 @@
 import { DeliverableNoteId } from "@t3tools/contracts";
 import { describe, expect, it } from "vite-plus/test";
 
-import { describeAnchor, formatNotesMessage, formatTimecode } from "./deliverableNotes.ts";
+import {
+  describeAnchor,
+  formatNotesMessage,
+  formatTimecode,
+  formatWholeDeliverableMessage,
+  wholeDeliverableMessageBody,
+} from "./deliverableNotes.ts";
 
 describe("formatTimecode", () => {
   it.each([
@@ -59,5 +65,21 @@ describe("formatNotesMessage", () => {
     );
     expect(message).toContain("- [note_b] the whole video: Warmer grade");
     expect(message).toContain("deliverable_mark_notes_fixed");
+  });
+});
+
+describe("formatWholeDeliverableMessage", () => {
+  it("names the file and version for the agent, and the body comes back out for the chat", () => {
+    const message = formatWholeDeliverableMessage({
+      deliverable: { path: "decks/pitch.pptx", kind: "deck" },
+      versionOrdinal: 2,
+      body: "Make it warmer:\nfewer words",
+    });
+    expect(message).toBe(
+      "On decks/pitch.pptx, V2, about the whole deck:\nMake it warmer:\nfewer words",
+    );
+    expect(message).not.toContain("deliverable_mark_notes_fixed");
+    expect(wholeDeliverableMessageBody(message)).toBe("Make it warmer:\nfewer words");
+    expect(wholeDeliverableMessageBody("Plain message")).toBe("Plain message");
   });
 });

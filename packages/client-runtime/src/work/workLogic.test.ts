@@ -2,6 +2,7 @@ import {
   DeliverableId,
   DeliverableNoteId,
   DeliverableVersionId,
+  MessageId,
   RunId,
   type DeliverableNote,
   type DeliverableNoteStatus,
@@ -19,6 +20,7 @@ import {
   noteDisplay,
   notesSummary,
   sortNotes,
+  workChatEntries,
 } from "./workNotes.ts";
 import { shelfStatus } from "./workShelf.ts";
 import { historyAvailability, versionStrip } from "./workVersions.ts";
@@ -300,5 +302,40 @@ describe("shelfStatus", () => {
     ["idle with a current version", [], null, snapshot(), "V2"],
   ])("shows %s", (_name, threads, agentText, value, label) => {
     expect(shelfStatus({ snapshot: value, threads, agentText }).label).toBe(label);
+  });
+});
+
+describe("workChatEntries", () => {
+  const message = (
+    id: string,
+    role: "user" | "assistant",
+    text: string,
+    runId: string | null,
+    createdBy: "user" | "agent" = "user",
+  ) => ({
+    id: MessageId.make(id),
+    role,
+    text,
+    runId: runId === null ? null : RunId.make(runId),
+    createdBy,
+  });
+
+  it("keeps the user's own messages and each run's last reply, leaving note messages to their cards", () => {
+    const entries = workChatEntries(
+      [
+        message("m1", "user", "On deck.pptx, V1, about the whole deck:\nWarmer colours", null),
+        message("a1", "assistant", "Looking at it", "r1"),
+        message("a2", "assistant", "Warmed the palette.", "r1"),
+        message("m2", "user", "A note on deck.pptx, V2: ...", null),
+        message("a3", "assistant", "Fixed slide 2.", "r2"),
+        message("w1", "user", "Delegated result", null, "agent"),
+      ],
+      new Set(["m2"]),
+    );
+    expect(entries).toEqual([
+      { id: "m1", role: "user", text: "Warmer colours" },
+      { id: "a2", role: "assistant", text: "Warmed the palette." },
+      { id: "a3", role: "assistant", text: "Fixed slide 2." },
+    ]);
   });
 });

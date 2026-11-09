@@ -81,3 +81,22 @@ export function formatNotesMessage(input: {
     `When ${single ? "it is" : "they are"} done, call deliverable_mark_notes_fixed with the note ids, a one-line reply, and where to check the change.`,
   ].join("\n");
 }
+
+const WHOLE_MESSAGE_HEADER = /^On .+, V\d+, about the whole \w+:\n/;
+
+/**
+ * A message about a whole deliverable. It is chat, not a note: nothing to mark fixed, so it
+ * names the file and version for the agent and carries no note ids.
+ */
+export function formatWholeDeliverableMessage(input: {
+  readonly deliverable: { readonly path: string; readonly kind: DeliverableKind };
+  readonly versionOrdinal: number;
+  readonly body: string;
+}): string {
+  return `On ${input.deliverable.path}, V${input.versionOrdinal}, about ${WHOLE[input.deliverable.kind]}:\n${input.body}`;
+}
+
+/** What the user wrote in a whole-deliverable message, without the header the agent reads. */
+export function wholeDeliverableMessageBody(text: string): string {
+  return text.replace(WHOLE_MESSAGE_HEADER, "");
+}
