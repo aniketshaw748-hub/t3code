@@ -98,6 +98,8 @@ import * as ScheduledTasks from "./scheduledTasks/ScheduledTaskService.ts";
 import * as SecretRequests from "./secrets/SecretRequests.ts";
 import * as SpendApprovals from "./spend/SpendApprovals.ts";
 import * as DeliverableService from "./deliverables/DeliverableService.ts";
+import * as DeliverableNotes from "./deliverables/DeliverableNotes.ts";
+import * as WorkProjectFeed from "./deliverables/WorkProjectFeed.ts";
 import * as GuestShareService from "./guest/GuestShareService.ts";
 import * as ServerEnvironment from "./environment/ServerEnvironment.ts";
 import * as ServerLifecycleEvents from "./serverLifecycleEvents.ts";
@@ -821,6 +823,8 @@ const layerUnusedConfigRpcServices = Layer.mergeAll(
   Layer.mock(SecretRequests.SecretRequests)({}),
   Layer.mock(SpendApprovals.SpendApprovals)({}),
   Layer.mock(DeliverableService.DeliverableService)({}),
+  Layer.mock(DeliverableNotes.DeliverableNotes)({}),
+  Layer.mock(WorkProjectFeed.WorkProjectFeed)({}),
   Layer.mock(SecretResolver.SecretResolver)({}),
   Layer.mock(GuestShareService.GuestShareService)({}),
   Layer.mock(ServerLifecycleEvents.ServerLifecycleEvents)({}),

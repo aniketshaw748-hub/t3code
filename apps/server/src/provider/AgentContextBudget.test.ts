@@ -39,6 +39,7 @@ import { ScheduledTaskService } from "../scheduledTasks/ScheduledTaskService.ts"
 import { SecretRequests } from "../secrets/SecretRequests.ts";
 import { SpendApprovals } from "../spend/SpendApprovals.ts";
 import { DeliverableService } from "../deliverables/DeliverableService.ts";
+import { DeliverableNotes } from "../deliverables/DeliverableNotes.ts";
 import { ServerSettingsService } from "../serverSettings.ts";
 import { SourceControlRepositoryService } from "../sourceControl/SourceControlRepositoryService.ts";
 import { GitVcsDriver } from "../vcs/GitVcsDriver.ts";
@@ -75,6 +76,7 @@ const toolHandlerServices = Layer.mergeAll(
   Layer.mock(SecretRequests)({}),
   Layer.mock(SpendApprovals)({}),
   Layer.mock(DeliverableService)({}),
+  Layer.mock(DeliverableNotes)({}),
   ServerConfig.layerTest(process.cwd(), { prefix: "t3-agent-context-budget-" }),
   Layer.mock(ServerEnvironment)({}),
   Layer.mock(ServerSecretStore)({}),

@@ -398,6 +398,18 @@ import {
   DeliverablesListResult,
 } from "./deliverables.ts";
 import {
+  DeliverableNote,
+  DeliverableNoteCreateInput,
+  DeliverableNoteError,
+  DeliverableNoteRef,
+  DeliverableNoteSetStatusInput,
+  DeliverableNotesMarkSentInput,
+  DeliverableNotesResult,
+  DeliverableReviewStatusSetInput,
+  WorkProjectSnapshot,
+  WorkProjectSubscribeInput,
+} from "./deliverableNotes.ts";
+import {
   ProjectCloneActionInput,
   ProjectCloneActionResult,
   ProjectCloneListEvent,
@@ -576,6 +588,12 @@ export const WS_METHODS = {
   deliverablesUndo: "deliverables.undo",
   deliverablesRedo: "deliverables.redo",
   deliverablesRestore: "deliverables.restore",
+  deliverableNotesCreate: "deliverableNotes.create",
+  deliverableNotesMarkSent: "deliverableNotes.markSent",
+  deliverableNotesSetStatus: "deliverableNotes.setStatus",
+  deliverableNotesDelete: "deliverableNotes.delete",
+  deliverableReviewSetStatus: "deliverableReview.setStatus",
+  workSubscribeProject: "work.subscribeProject",
   guestShareCreate: "guestShare.create",
   scheduledTasksListWebhookDeliveries: "scheduledTasks.listWebhookDeliveries",
   scheduledTasksGetWebhookDelivery: "scheduledTasks.getWebhookDelivery",
@@ -2083,6 +2101,43 @@ const WsDeliverablesRestoreRpc = Rpc.make(WS_METHODS.deliverablesRestore, {
   error: DeliverableRpcError,
 });
 
+const DeliverableNoteRpcError = Schema.Union([DeliverableNoteError, EnvironmentAuthorizationError]);
+
+const WsDeliverableNotesCreateRpc = Rpc.make(WS_METHODS.deliverableNotesCreate, {
+  payload: DeliverableNoteCreateInput,
+  success: DeliverableNote,
+  error: DeliverableNoteRpcError,
+});
+
+const WsDeliverableNotesMarkSentRpc = Rpc.make(WS_METHODS.deliverableNotesMarkSent, {
+  payload: DeliverableNotesMarkSentInput,
+  success: DeliverableNotesResult,
+  error: DeliverableNoteRpcError,
+});
+
+const WsDeliverableNotesSetStatusRpc = Rpc.make(WS_METHODS.deliverableNotesSetStatus, {
+  payload: DeliverableNoteSetStatusInput,
+  success: DeliverableNote,
+  error: DeliverableNoteRpcError,
+});
+
+const WsDeliverableNotesDeleteRpc = Rpc.make(WS_METHODS.deliverableNotesDelete, {
+  payload: DeliverableNoteRef,
+  error: DeliverableNoteRpcError,
+});
+
+const WsDeliverableReviewSetStatusRpc = Rpc.make(WS_METHODS.deliverableReviewSetStatus, {
+  payload: DeliverableReviewStatusSetInput,
+  error: DeliverableNoteRpcError,
+});
+
+const WsWorkSubscribeProjectRpc = Rpc.make(WS_METHODS.workSubscribeProject, {
+  payload: WorkProjectSubscribeInput,
+  success: WorkProjectSnapshot,
+  error: DeliverableNoteRpcError,
+  stream: true,
+});
+
 const WsScheduledTasksListWebhookDeliveriesRpc = Rpc.make(
   WS_METHODS.scheduledTasksListWebhookDeliveries,
   {
@@ -2195,6 +2250,12 @@ export const WsRpcGroup = RpcGroup.make(
   WsDeliverablesUndoRpc,
   WsDeliverablesRedoRpc,
   WsDeliverablesRestoreRpc,
+  WsDeliverableNotesCreateRpc,
+  WsDeliverableNotesMarkSentRpc,
+  WsDeliverableNotesSetStatusRpc,
+  WsDeliverableNotesDeleteRpc,
+  WsDeliverableReviewSetStatusRpc,
+  WsWorkSubscribeProjectRpc,
   WsScheduledTasksListWebhookDeliveriesRpc,
   WsScheduledTasksGetWebhookDeliveryRpc,
   WsServerReportClientActivityRpc,

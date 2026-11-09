@@ -8,6 +8,7 @@ import {
   CheckpointId,
   CheckpointRef,
   CheckpointScopeId,
+  MessageId,
   NodeId,
   type OrchestrationV2Checkpoint,
   ProjectId,
@@ -23,6 +24,7 @@ import * as Path from "effect/Path";
 import * as AssetSigner from "../assets/AssetSigner.ts";
 import * as CheckpointStore from "../checkpointing/CheckpointStore.ts";
 import * as ServerConfig from "../config.ts";
+import * as DeliverableNoteRepository from "../persistence/DeliverableNotes.ts";
 import * as DeliverableRepository from "../persistence/Deliverables.ts";
 import * as SqlitePersistence from "../persistence/Sqlite.ts";
 import * as VcsDriverRegistry from "../vcs/VcsDriverRegistry.ts";
@@ -33,6 +35,7 @@ import * as DeliverableContext from "./DeliverableContext.ts";
 import * as DeliverableGit from "./DeliverableGit.ts";
 import * as DeliverableRenderers from "./DeliverableRenderers.ts";
 import * as DeliverableSelfCheck from "./DeliverableSelfCheck.ts";
+import * as DeliverableNotes from "./DeliverableNotes.ts";
 import * as DeliverableService from "./DeliverableService.ts";
 import * as WorkProjectEvents from "./WorkProjectEvents.ts";
 import * as DeliverableTurnNotes from "./DeliverableTurnNotes.ts";
@@ -115,7 +118,7 @@ const layerContext = (root: string) =>
 const layerPlatform = Layer.mergeAll(NodeServices.layer, NodeCryptoLayer.layer);
 const layerVcsProcess = VcsProcess.layer.pipe(Layer.provide(layerPlatform));
 const layerEngine = (root: string) =>
-  DeliverableService.layer.pipe(
+  Layer.mergeAll(DeliverableService.layer, DeliverableNotes.layer).pipe(
     Layer.provide(
       Layer.mergeAll(
         DeliverableGit.layer,
@@ -132,7 +135,9 @@ const layerEngine = (root: string) =>
     Layer.provideMerge(DeliverableBlobStore.layer),
     Layer.provideMerge(WorkProjectEvents.layer),
     Layer.provideMerge(
-      DeliverableRepository.layer.pipe(Layer.provide(SqlitePersistence.layerMemory)),
+      Layer.mergeAll(DeliverableRepository.layer, DeliverableNoteRepository.layer).pipe(
+        Layer.provide(SqlitePersistence.layerMemory),
+      ),
     ),
     Layer.provide(Layer.mock(AssetSigner.AssetSigner)({ sign: () => Effect.succeed("signature") })),
     Layer.provideMerge(
@@ -325,6 +330,69 @@ it.live("tells the next turn which versions were restored since the last one", (
       assert.deepEqual(notes, [
         "Since your last turn, deliverables moved to other versions:\n- deck.pptx was undone to V2; it and the sources that changed with it now match V2.\nWork from these files, not from what you last wrote.",
       ]);
+    }),
+  ),
+);
+
+it.live("moves notes from sent to fixed in the version their run made, and back to open", () =>
+  withEngine((repo) =>
+    Effect.gen(function* () {
+      const deliverables = yield* DeliverableService.DeliverableService;
+      const notes = yield* DeliverableNotes.DeliverableNotes;
+      yield* repo.write("deck.pptx", "Title\nAgenda");
+      const v1 = (yield* deliverables.registerVersion({ projectId, path: "deck.pptx" })).version;
+      const create = (body: string) =>
+        notes.create({
+          deliverableId: v1.deliverableId,
+          versionId: v1.id,
+          anchor: { kind: "slide", index: 1 },
+          body,
+        });
+      const marked = yield* create("Punchier agenda");
+      const skipped = yield* create("Bigger logo");
+      const messageId = MessageId.make("message-notes");
+      const runId = RunId.make("run-notes");
+      const sent = yield* notes.markSent({
+        noteIds: [marked.id, skipped.id],
+        threadId,
+        messageId,
+      });
+      assert.deepEqual(
+        sent.map((note) => note.status),
+        ["fixing", "fixing"],
+      );
+      yield* notes.linkRun({ messageId, runId });
+
+      // The agent says it addressed one note before its turn makes a version.
+      const [addressed] = yield* notes.markFixed({
+        projectId,
+        noteIds: [marked.id],
+        reply: "Led with the 40% number.",
+        checkAnchor: { kind: "slide", index: 1 },
+        runId,
+      });
+      assert.equal(addressed?.status, "fixing");
+
+      yield* repo.write("deck.pptx", "Title\nAgenda: 40% faster");
+      const v2 = (yield* deliverables.registerVersion({ projectId, path: "deck.pptx", runId }))
+        .version;
+      yield* notes.settleRun({ projectId, runId, final: false });
+      yield* notes.settleRun({ projectId, runId, final: true });
+
+      const byId = new Map((yield* notes.list(projectId)).map((note) => [note.id, note]));
+      assert.equal(byId.get(marked.id)?.status, "fixed");
+      assert.equal(byId.get(marked.id)?.fixedInVersionId, v2.id);
+      assert.equal(byId.get(marked.id)?.reply, "Led with the 40% number.");
+      assert.equal(byId.get(marked.id)?.sentRunId, runId);
+      // Sent with it but not marked, so the agent did not claim it.
+      assert.equal(byId.get(skipped.id)?.status, "open");
+
+      const resolved = yield* notes.setStatus({ noteId: marked.id, status: "resolved" });
+      assert.equal(resolved.status, "resolved");
+      assert.isNotNull(resolved.resolvedAt);
+      const reopened = yield* notes.setStatus({ noteId: marked.id, status: "open" });
+      assert.equal(reopened.status, "open");
+      assert.isNull(reopened.fixedInVersionId);
     }),
   ),
 );

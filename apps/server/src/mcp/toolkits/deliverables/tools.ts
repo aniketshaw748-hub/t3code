@@ -3,6 +3,9 @@ import {
   DeliverableAnchor,
   DeliverableComparison,
   DeliverableId,
+  DeliverableNote,
+  DeliverableNoteId,
+  DeliverableNoteStatus,
   DeliverableRendition,
   DeliverableRestoreResult,
   DeliverableVersion,
@@ -17,6 +20,7 @@ import {
 import * as Schema from "effect/Schema";
 import { Tool, Toolkit } from "effect/ai";
 
+import * as DeliverableNotes from "../../../deliverables/DeliverableNotes.ts";
 import * as DeliverableService from "../../../deliverables/DeliverableService.ts";
 import * as ThreadManagementService from "../../../orchestration-v2/ThreadManagementService.ts";
 import * as SpendApprovals from "../../../spend/SpendApprovals.ts";
@@ -123,6 +127,41 @@ const DeliverableRestoreTool = Tool.make("deliverable_restore", {
   success: DeliverableRestoreResult,
 }).annotate(Tool.Destructive, true);
 
+const notesShared = {
+  ...shared,
+  dependencies: [...shared.dependencies, DeliverableNotes.DeliverableNotes],
+};
+
+const DeliverableNotesTool = Tool.make("deliverable_notes", {
+  ...notesShared,
+  description:
+    "The user's and reviewers' notes on deliverables: each with its anchor (time in seconds, 0-based slide, region x/y/w/h 0-1), the version it was left on, a snapshotUrl of the frame or slide with their drawing, and its status. Read open and fixing notes before you change a deliverable.",
+  parameters: Schema.Struct({
+    projectId: ProjectTarget,
+    deliverableId: Schema.optional(DeliverableId),
+    status: Schema.optional(Schema.Array(DeliverableNoteStatus)),
+  }),
+  success: Schema.Struct({ notes: Schema.Array(DeliverableNote) }),
+})
+  .annotate(Tool.Readonly, true)
+  .annotate(Tool.Idempotent, true);
+
+const DeliverableMarkNotesFixedTool = Tool.make("deliverable_mark_notes_fixed", {
+  ...notesShared,
+  description:
+    "After you address notes, mark them. They show as fixed in the version this turn makes, with your reply and a link to checkAt.",
+  parameters: Schema.Struct({
+    noteIds: Schema.Array(DeliverableNoteId).check(Schema.isMinLength(1), Schema.isMaxLength(50)),
+    reply: TrimmedNonEmptyString.check(Schema.isMaxLength(600)).annotate({
+      description: "One or two plain lines: what you changed.",
+    }),
+    checkAt: Schema.optional(DeliverableAnchor).annotate({
+      description: "Where to look, e.g. {kind:'time',t:12} or {kind:'slide',index:2}.",
+    }),
+  }),
+  success: Schema.Struct({ notes: Schema.Array(DeliverableNote) }),
+}).annotate(Tool.Destructive, false);
+
 const RequestSpendApprovalTool = Tool.make("request_spend_approval", {
   failure: OrchestratorMcpFailure,
   failureMode: "return",
@@ -161,5 +200,7 @@ export const DeliverablesToolkit = Toolkit.make(
   DeliverableRenditionsTool,
   DeliverableRegisterVersionTool,
   DeliverableRestoreTool,
+  DeliverableNotesTool,
+  DeliverableMarkNotesFixedTool,
   RequestSpendApprovalTool,
 );

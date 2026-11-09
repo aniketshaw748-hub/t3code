@@ -140,6 +140,10 @@ import * as DeliverableSelfCheck from "./deliverables/DeliverableSelfCheck.ts";
 import * as DeliverableService from "./deliverables/DeliverableService.ts";
 import * as DeliverableTurnNotes from "./deliverables/DeliverableTurnNotes.ts";
 import * as WorkProjectEvents from "./deliverables/WorkProjectEvents.ts";
+import * as WorkProjectFeed from "./deliverables/WorkProjectFeed.ts";
+import * as DeliverableNotes from "./deliverables/DeliverableNotes.ts";
+import * as DeliverableNotesReactor from "./deliverables/DeliverableNotesReactor.ts";
+import * as DeliverableNoteRepository from "./persistence/DeliverableNotes.ts";
 import * as DeliverableRepository from "./persistence/Deliverables.ts";
 import * as SpendApprovals from "./spend/SpendApprovals.ts";
 import * as SourceControlProviderRegistry from "./sourceControl/SourceControlProviderRegistry.ts";
@@ -599,9 +603,14 @@ const layerDeliverables = Layer.effectDiscard(
   Effect.gen(function* () {
     const reactor = yield* DeliverableCheckpointReactor.DeliverableCheckpointReactor;
     yield* reactor.start();
+    const notesReactor = yield* DeliverableNotesReactor.DeliverableNotesReactor;
+    yield* notesReactor.start();
   }),
 ).pipe(
   Layer.provideMerge(DeliverableCheckpointReactor.layer),
+  Layer.provideMerge(DeliverableNotesReactor.layer),
+  Layer.provideMerge(WorkProjectFeed.layer),
+  Layer.provideMerge(DeliverableNotes.layer),
   Layer.provideMerge(DeliverableService.layer),
   Layer.provide(
     Layer.mergeAll(
@@ -611,6 +620,7 @@ const layerDeliverables = Layer.effectDiscard(
       DeliverableContext.layer.pipe(Layer.provide(ProjectStore.layer)),
     ),
   ),
+  Layer.provideMerge(DeliverableNoteRepository.layer),
   Layer.provideMerge(DeliverableBlobStore.layer),
   Layer.provideMerge(DeliverableRepository.layer),
   Layer.provideMerge(WorkProjectEvents.layer),

@@ -128,6 +128,8 @@ import * as ScheduledTasks from "./scheduledTasks/ScheduledTaskService.ts";
 import * as SecretRequests from "./secrets/SecretRequests.ts";
 import * as SpendApprovals from "./spend/SpendApprovals.ts";
 import * as DeliverableService from "./deliverables/DeliverableService.ts";
+import * as DeliverableNotes from "./deliverables/DeliverableNotes.ts";
+import * as WorkProjectFeed from "./deliverables/WorkProjectFeed.ts";
 import * as GuestShareService from "./guest/GuestShareService.ts";
 import {
   bufferShellLiveStream,
@@ -1443,6 +1445,8 @@ export const layerWsRpc = (
       const secretRequests = yield* SecretRequests.SecretRequests;
       const spendApprovals = yield* SpendApprovals.SpendApprovals;
       const deliverables = yield* DeliverableService.DeliverableService;
+      const deliverableNotes = yield* DeliverableNotes.DeliverableNotes;
+      const workFeed = yield* WorkProjectFeed.WorkProjectFeed;
       const guestShares = yield* GuestShareService.GuestShareService;
       const pullRequests = yield* PullRequestService.PullRequestService;
       const reviewGuides = yield* PullRequestReviewGuideService.PullRequestReviewGuideService;
@@ -2384,6 +2388,13 @@ export const layerWsRpc = (
         [WS_METHODS.deliverablesUndo]: (input) => deliverables.undo(input.deliverableId),
         [WS_METHODS.deliverablesRedo]: (input) => deliverables.redo(input.deliverableId),
         [WS_METHODS.deliverablesRestore]: (input) => deliverables.restore(input),
+        [WS_METHODS.deliverableNotesCreate]: (input) => deliverableNotes.create(input),
+        [WS_METHODS.deliverableNotesMarkSent]: (input) =>
+          deliverableNotes.markSent(input).pipe(Effect.map((notes) => ({ notes }))),
+        [WS_METHODS.deliverableNotesSetStatus]: (input) => deliverableNotes.setStatus(input),
+        [WS_METHODS.deliverableNotesDelete]: (input) => deliverableNotes.remove(input.noteId),
+        [WS_METHODS.deliverableReviewSetStatus]: (input) => deliverableNotes.setReviewStatus(input),
+        [WS_METHODS.workSubscribeProject]: (input) => workFeed.subscribe(input.projectId),
         [WS_METHODS.scheduledTasksListWebhookDeliveries]: (input) =>
           Effect.annotateCurrentSpan({ "scheduled_task.id": input.id }).pipe(
             Effect.andThen(scheduledTasks.listWebhookDeliveries(input)),

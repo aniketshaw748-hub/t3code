@@ -1,5 +1,6 @@
 import {
   type DeliverableError,
+  type DeliverableNoteError,
   DeliverableVersionId,
   OrchestratorMcpFailure,
   SPEND_APPROVAL_UNAPPROVED_NOTE,
@@ -9,6 +10,7 @@ import {
 import * as Effect from "effect/Effect";
 import * as SecureRandom from "effect/crypto/SecureRandom";
 
+import * as DeliverableNotes from "../../../deliverables/DeliverableNotes.ts";
 import * as DeliverableService from "../../../deliverables/DeliverableService.ts";
 import * as ThreadManagementService from "../../../orchestration-v2/ThreadManagementService.ts";
 import * as SpendApprovals from "../../../spend/SpendApprovals.ts";
@@ -29,6 +31,15 @@ const toFailure = (error: DeliverableError) =>
     message: error.message,
   });
 
+const noteFailure = (error: DeliverableNoteError) =>
+  new OrchestratorMcpFailure({
+    code:
+      error.reason === "persistence_failed" || error.reason === "storage_failed"
+        ? "orchestration_error"
+        : "invalid_request",
+    message: error.message,
+  });
+
 const spendFailure = (error: SpendApprovalError) =>
   new OrchestratorMcpFailure({
     code: error.reason === "agent_stopped" ? "parent_not_active" : "orchestration_error",
@@ -42,6 +53,7 @@ export const layer = McpToolAccess.toLayer(
   DeliverablesToolkit,
   Effect.gen(function* () {
     const deliverables = yield* DeliverableService.DeliverableService;
+    const notes = yield* DeliverableNotes.DeliverableNotes;
     const spendApprovals = yield* SpendApprovals.SpendApprovals;
     const random = yield* SecureRandom.SecureRandom;
     const threads = yield* ThreadManagementService.ThreadManagementService;
@@ -103,6 +115,39 @@ export const layer = McpToolAccess.toLayer(
                 versionId: DeliverableVersionId.make(input.to),
               })
         ).pipe(Effect.mapError(toFailure)),
+      ),
+      deliverable_notes: McpToolAccess.reads((input) =>
+        Effect.gen(function* () {
+          const projectId = yield* callerProject(input.projectId);
+          const list = yield* notes.list(projectId).pipe(Effect.mapError(noteFailure));
+          return {
+            notes: list.filter(
+              (note) =>
+                (input.deliverableId === undefined || note.deliverableId === input.deliverableId) &&
+                (input.status === undefined || input.status.includes(note.status)),
+            ),
+          };
+        }),
+      ),
+      deliverable_mark_notes_fixed: McpToolAccess.actsAsCaller((input) =>
+        Effect.gen(function* () {
+          const scope = yield* McpInvocationContext.McpInvocationContext;
+          const { thread } = yield* McpInvocationContext.requireThreadScope(
+            scope,
+            "deliverable_mark_notes_fixed",
+          );
+          const projectId = yield* callerProject(undefined);
+          const marked = yield* notes
+            .markFixed({
+              projectId,
+              noteIds: input.noteIds,
+              reply: input.reply,
+              checkAnchor: input.checkAt ?? null,
+              runId: yield* activeRunId(thread.threadId),
+            })
+            .pipe(Effect.mapError(noteFailure));
+          return { notes: marked };
+        }),
       ),
       request_spend_approval: McpToolAccess.actsAsCaller((input) =>
         Effect.gen(function* () {
