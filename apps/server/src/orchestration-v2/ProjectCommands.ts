@@ -5,6 +5,7 @@ import {
   type ModelSelection,
   type ProjectIconOverride,
   ProjectId,
+  type ProjectKind,
   type ProjectScript,
   SCRIPT_RUN_COMMAND_PATTERN,
   type ThreadEnvMode,
@@ -39,6 +40,7 @@ export interface ProjectMetaUpdateCommand {
   readonly scripts?: ReadonlyArray<ProjectScript>;
   readonly pinned?: boolean;
   readonly archived?: boolean;
+  readonly kind?: ProjectKind;
 }
 
 export interface ProjectDeleteCommand {
@@ -217,6 +219,7 @@ export function planProjectCommand(input: {
           ...(command.archived === undefined
             ? {}
             : { archivedAt: command.archived ? (project.archivedAt ?? occurredAt) : null }),
+          ...(command.kind === undefined ? {} : { kind: command.kind }),
           updatedAt: occurredAt,
         },
       });

@@ -150,6 +150,10 @@ export const ReceivedProjectIcon = ForwardCompatibleUnion(projectIconMembers, "k
   ),
 );
 
+/** `work` projects open in Work mode: decks, videos and images instead of code. */
+export const ProjectKind = Schema.Literals(["code", "work"]);
+export type ProjectKind = typeof ProjectKind.Type;
+
 export const Project = Schema.Struct({
   id: ProjectId,
   title: TrimmedNonEmptyString,
@@ -164,6 +168,8 @@ export const Project = Schema.Struct({
   scripts: Schema.Array(ProjectScript),
   pinnedAt: Schema.optional(Schema.NullOr(IsoDateTime)),
   archivedAt: Schema.optional(Schema.NullOr(IsoDateTime)),
+  // Absent from older servers, which only have code projects.
+  kind: Schema.optional(ProjectKind),
   createdAt: IsoDateTime,
   updatedAt: IsoDateTime,
   deletedAt: Schema.NullOr(IsoDateTime),
@@ -195,6 +201,7 @@ export const ProjectUpdatePayload = Schema.Struct({
   defaultThreadEnvMode: Schema.optional(Schema.NullOr(ThreadEnvMode)),
   scripts: Schema.optional(Schema.Array(ProjectScript)),
   pinned: Schema.optional(Schema.Boolean),
+  kind: Schema.optional(ProjectKind),
   archived: Schema.optional(
     Schema.Boolean.annotate({
       description: "Threads and files are kept.",
@@ -526,6 +533,7 @@ export type ProjectEnsureScratchResult = typeof ProjectEnsureScratchResult.Type;
 
 export const ProjectCreateNewInput = Schema.Struct({
   name: TrimmedNonEmptyString.check(Schema.isMaxLength(200)),
+  kind: Schema.optional(ProjectKind),
 });
 export type ProjectCreateNewInput = typeof ProjectCreateNewInput.Type;
 

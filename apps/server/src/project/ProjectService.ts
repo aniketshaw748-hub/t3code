@@ -192,6 +192,7 @@ export const make = Effect.gen(function* () {
     scripts: row.scripts,
     pinnedAt: row.pinnedAt,
     archivedAt: row.archivedAt,
+    kind: row.kind,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
     deletedAt: row.deletedAt,
@@ -403,6 +404,7 @@ export const make = Effect.gen(function* () {
         ...(input.scripts === undefined ? {} : { scripts: input.scripts }),
         ...(input.pinned === undefined ? {} : { pinned: input.pinned }),
         ...(input.archived === undefined ? {} : { archived: input.archived }),
+        ...(input.kind === undefined ? {} : { kind: input.kind }),
       });
       if (workspaceRoot !== previousRoot) {
         yield* projectEnrichment.invalidate([previousRoot, workspaceRoot]);
