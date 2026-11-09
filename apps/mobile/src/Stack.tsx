@@ -231,7 +231,7 @@ const SETTINGS_SCREENS = {
   }),
   SettingsEnvironmentNew: createNativeStackScreen({
     screen: ConnectionsNewRouteScreen,
-    linking: "settings/environment-new",
+    linking: PAIRING_FORM_LINKING,
     options: settingsPage("Add Environment"),
   }),
   SettingsArchive: createNativeStackScreen({
@@ -732,7 +732,7 @@ const RootStackConfig = createWorkspaceStackNavigator({
     }),
     ConnectionsNew: createNativeStackScreen({
       screen: ConnectionsNewRouteScreen,
-      linking: PAIRING_FORM_LINKING,
+      linking: "connections/new",
       options: sheetRoute({ title: "Add Environment", detent: 0.55, maxDetent: 0.7 }),
     }),
     NotFound: createNativeStackScreen({

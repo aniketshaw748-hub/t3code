@@ -33,6 +33,11 @@ const readPushToken = (observedPushToken: string | undefined) =>
 const REGISTER_TIMEOUT_MS = 15_000;
 // Each registration repaints the card from the host; unchanged ones only refresh this often.
 const REREGISTER_AFTER_MS = 5 * 60_000;
+const RETRY_AFTER_MS = 15_000;
+
+function failureMessage(error: unknown): string {
+  return error instanceof Error && error.message ? error.message : "Registration failed.";
+}
 
 export type DirectPushHostStatus =
   | { readonly state: "registering" }
@@ -101,6 +106,7 @@ export const layer = Layer.effectDiscard(
   Effect.gen(function* () {
     if (Platform.OS !== "android") return;
     const registry = yield* EnvironmentRegistry.EnvironmentRegistry;
+    const scope = yield* Effect.scope;
     const storage = yield* MobileStorage.MobileStorage;
     const requests = yield* Queue.sliding<string | undefined>(1);
     requestSync = (observedPushToken) => Queue.offerUnsafe(requests, observedPushToken);
@@ -177,7 +183,7 @@ export const layer = Layer.effectDiscard(
               Effect.catchCause((cause) =>
                 Effect.succeed<DirectPushHostStatus>({
                   state: "failed",
-                  error: Cause.pretty(cause).split("\n")[0] ?? "Registration failed.",
+                  error: failureMessage(Cause.squash(cause)),
                 }),
               ),
               Effect.map((status) => [environmentId, status] as const),
@@ -188,6 +194,13 @@ export const layer = Layer.effectDiscard(
       for (const id of next.keys()) if (!environmentIds.includes(id)) next.delete(id);
       for (const [id, status] of results) next.set(id, status);
       setStatuses(next);
+      // A host still connecting gets another try soon instead of at the next foreground.
+      if (results.some(([, status]) => status.state === "failed")) {
+        yield* Effect.sleep(`${RETRY_AFTER_MS} millis`).pipe(
+          Effect.andThen(Effect.sync(() => requestSync())),
+          Effect.forkIn(scope),
+        );
+      }
     });
 
     yield* Effect.acquireRelease(

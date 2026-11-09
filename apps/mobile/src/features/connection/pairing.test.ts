@@ -64,9 +64,11 @@ describe("parsePairingUrl", () => {
 describe("pair deep links", () => {
   it("open the prefilled pairing form with the desktop QR's tailnet host and code", () => {
     const link = "pair?pairingUrl=http%3A%2F%2F100.116.182.86%3A3773%2Fpair%23token%3DPAIRCODE";
-    const state = getStateFromPath(link, { screens: { ConnectionsNew: PAIRING_FORM_LINKING } });
+    const state = getStateFromPath(link, {
+      screens: { SettingsEnvironmentNew: PAIRING_FORM_LINKING },
+    });
     const route = state?.routes[0];
-    expect(route?.name).toBe("ConnectionsNew");
+    expect(route?.name).toBe("SettingsEnvironmentNew");
     const pairingUrl = (route?.params as { pairingUrl?: string } | undefined)?.pairingUrl ?? "";
     expect(parsePairingUrl(pairingUrl)).toEqual({
       host: "http://100.116.182.86:3773",

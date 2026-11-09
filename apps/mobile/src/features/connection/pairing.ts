@@ -6,9 +6,9 @@ const MOBILE_PAIRING_URL_PARAM = "pairingUrl";
 
 /**
  * `<scheme>://pair?pairingUrl=…` is what a desktop pairing QR opens; it lands on the
- * add-environment form, prefilled, and the user confirms the host before pairing.
+ * full-page add-environment form, prefilled, and the user confirms the host before pairing.
  */
-export const PAIRING_FORM_LINKING = { path: "connections/new", alias: ["pair"] };
+export const PAIRING_FORM_LINKING = { path: "settings/environment-new", alias: ["pair"] };
 
 function isIpLiteral(host: string): boolean {
   try {
