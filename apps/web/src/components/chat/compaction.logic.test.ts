@@ -1,3 +1,4 @@
+import { BRAND } from "@t3tools/contracts/brand";
 import { ProviderDriverKind, ProviderInstanceId, type ServerProvider } from "@t3tools/contracts";
 import { describe, expect, it } from "vite-plus/test";
 import { deriveProviderInstanceEntries } from "../../providerInstances";
@@ -69,7 +70,7 @@ describe("contextWindowSegments", () => {
     ).toEqual([
       ["Messages", 500],
       ["System prompt", 300],
-      ["T3 Code tools", 200],
+      [`${BRAND.displayName} tools`, 200],
     ]);
   });
 

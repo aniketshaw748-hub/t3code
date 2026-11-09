@@ -756,7 +756,10 @@ describe("makeRelayDeviceRegistrationRequest", () => {
         registrations.push(await request.json());
         return Response.json({ ok: true });
       });
-      Constants.expoConfig!.extra = { relay: { url: "https://relay.example.test" } };
+      Constants.expoConfig!.extra = {
+        androidPushConfigured: true,
+        relay: { url: "https://relay.example.test" },
+      };
       setAgentAwarenessRelayTokenProvider(() => Promise.resolve("clerk"), "user-a");
       return Effect.gen(function* () {
         yield* runBackgroundOperations();
