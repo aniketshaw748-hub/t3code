@@ -1,3 +1,4 @@
+import { BRAND, brandDesktopScheme } from "@t3tools/contracts/brand";
 import { assert, describe, it } from "@effect/vitest";
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
@@ -262,8 +263,8 @@ describe("DesktopLifecycle", () => {
         Effect.provideService(HostProcess.Arguments, [
           "/opt/T3 Code/t3code",
           "--no-sandbox",
-          "T3CODE://pair?token=spent",
-          "t3code://new?prompt=hello",
+          `${BRAND.urlSchemes.production.toUpperCase()}://pair?token=spent`,
+          `${brandDesktopScheme(false)}://new?prompt=hello`,
         ]),
       );
 

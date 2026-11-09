@@ -64,11 +64,13 @@ import {
   WSL_RUNTIME_ARCHIVE_HASH_NAME,
   WSL_RUNTIME_ARCHIVE_NAME,
   wslRuntimeArchiveStem,
+  renderBrandTemplate,
 } from "./build-desktop-artifact.ts";
 import {
   ReleasePackageManifestError,
   releasePackageFiles,
 } from "./update-release-package-versions.ts";
+import { BRAND } from "@t3tools/contracts/brand";
 import * as HostProcess from "@t3tools/shared/HostProcess";
 import { symlinksSupported } from "@t3tools/shared/testing/symlinks";
 
@@ -545,6 +547,39 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
         ),
       ),
     ),
+  );
+
+  it.effect("updates from the brand repository when no repository is configured", () =>
+    Effect.gen(function* () {
+      const release = yield* createBuildConfig(
+        "win",
+        "nsis",
+        "0.0.33",
+        false,
+        false,
+        undefined,
+        undefined,
+      );
+      const [owner, repo] = BRAND.repository.split("/");
+      assert.deepStrictEqual(release.publish, [
+        { provider: "github", owner, repo, releaseType: "release" },
+      ]);
+    }).pipe(Effect.provide(ConfigProvider.layer(ConfigProvider.fromEnv({ env: {} })))),
+  );
+
+  it.effect("fills every brand placeholder in the templated packaging resources", () =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      for (const resource of ["installer.nsh", "linux/metainfo.xml"]) {
+        const template = yield* fs.readFileString(
+          path.join(import.meta.dirname, "../apps/desktop/resources", resource),
+        );
+        const rendered = renderBrandTemplate(template);
+        assert.notInclude(rendered, "{{", resource);
+        assert.include(rendered, BRAND.displayName, resource);
+      }
+    }),
   );
 
   it.effect("declares Calendar access for hosted commands in macOS builds", () =>
@@ -1445,7 +1480,7 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
     });
 
     assert.deepStrictEqual(configuration, {
-      appId: "com.t3tools.t3code",
+      appId: BRAND.appId,
       teamId: "ABC1234567",
       rpDomains: ["example.clerk.accounts.dev"],
       provisioningProfilePath: "/tmp/t3code.provisionprofile",
@@ -1468,7 +1503,7 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
       "clerk.example.com",
       "example.clerk.accounts.dev",
     ]);
-    assert.include(entitlements, "<string>ABC1234567.com.t3tools.t3code</string>");
+    assert.include(entitlements, `<string>ABC1234567.${BRAND.appId}</string>`);
     assert.include(entitlements, "<string>webcredentials:clerk.example.com</string>");
     assert.include(entitlements, "<string>webcredentials:example.clerk.accounts.dev</string>");
     assert.include(entitlements, "<key>com.apple.security.cs.allow-jit</key>");

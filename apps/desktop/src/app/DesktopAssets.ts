@@ -6,6 +6,7 @@ import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 
 import * as DesktopEnvironment from "./DesktopEnvironment.ts";
+import { BRAND_ASSET_PATHS } from "../../../../scripts/lib/brand-assets.ts";
 
 export interface DesktopIconPaths {
   readonly ico: Option.Option<string>;
@@ -61,16 +62,16 @@ const resolveResourcePath = Effect.fn("desktop.assets.resolveResourcePath")(func
   return Option.none<string>();
 });
 
-const sourceTreeIconFileNames = {
+const sourceTreeIconPaths = {
   dev: {
-    ico: "blueprint-windows.ico",
-    macPng: "blueprint-macos-1024.png",
-    universalPng: "blueprint-universal-1024.png",
+    ico: BRAND_ASSET_PATHS.developmentWindowsIconIco,
+    macPng: BRAND_ASSET_PATHS.developmentDesktopIconPng,
+    universalPng: BRAND_ASSET_PATHS.developmentUniversalIconPng,
   },
   prod: {
-    ico: "t3-black-windows.ico",
-    macPng: "black-macos-1024.png",
-    universalPng: "black-universal-1024.png",
+    ico: BRAND_ASSET_PATHS.productionWindowsIconIco,
+    macPng: BRAND_ASSET_PATHS.productionMacIconPng,
+    universalPng: BRAND_ASSET_PATHS.productionLinuxIconPng,
   },
 } as const;
 
@@ -79,15 +80,14 @@ function resolveSourceTreeIconPath(
   ext: keyof DesktopIconPaths,
 ): string | undefined {
   if (environment.isPackaged || ext === "icns") return undefined;
-  const brand = environment.isDevelopment ? "dev" : "prod";
-  const fileNames = sourceTreeIconFileNames[brand];
-  const fileName =
+  const iconPaths = sourceTreeIconPaths[environment.isDevelopment ? "dev" : "prod"];
+  const iconPath =
     ext === "ico"
-      ? fileNames.ico
+      ? iconPaths.ico
       : environment.platform === "darwin"
-        ? fileNames.macPng
-        : fileNames.universalPng;
-  return environment.path.join(environment.rootDir, "assets", brand, fileName);
+        ? iconPaths.macPng
+        : iconPaths.universalPng;
+  return environment.path.join(environment.rootDir, ...iconPath.split("/"));
 }
 
 const resolveIconPath = Effect.fn("desktop.assets.resolveIconPath")(function* (

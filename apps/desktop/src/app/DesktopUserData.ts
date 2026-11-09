@@ -1,3 +1,4 @@
+import { BRAND } from "@t3tools/contracts/brand";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Path from "effect/Path";
@@ -39,11 +40,14 @@ export const resolveUserDataPath = Effect.fn("desktop.userData.resolveUserDataPa
   }) {
     const fs = yield* FileSystem.FileSystem;
     const path = yield* Path.Path;
-    const names = input.isDevelopment
-      ? { current: "t3code-dev", legacy: "T3 Code (Dev)" }
-      : { current: "t3code-v2", legacy: "T3 Code (Alpha)" };
-    const destinationPath = path.join(input.appDataDirectory, names.current);
-    const legacyPath = path.join(input.appDataDirectory, names.legacy);
+    const channel = input.isDevelopment ? "development" : "production";
+    const destinationPath = path.join(
+      input.appDataDirectory,
+      BRAND.desktop.userDataDirNames[channel],
+    );
+    const legacyPaths = BRAND.desktop.legacyUserDataDirNames[channel].map((name) =>
+      path.join(input.appDataDirectory, name),
+    );
     const inspect = (resourcePath: string) =>
       fs
         .exists(resourcePath)
@@ -52,18 +56,23 @@ export const resolveUserDataPath = Effect.fn("desktop.userData.resolveUserDataPa
             DesktopUserDataInitializationError.fromFileSystem(cause, "inspect", resourcePath),
           ),
         );
+    const firstExisting = function* (candidates: ReadonlyArray<string>) {
+      for (const candidate of candidates) {
+        if (yield* inspect(candidate)) return candidate;
+      }
+      return undefined;
+    };
     if (input.isDevelopment) {
-      return (yield* inspect(legacyPath)) ? legacyPath : destinationPath;
+      return (yield* firstExisting(legacyPaths)) ?? destinationPath;
     }
     // Chromium databases require their own profile for each running version.
     if (input.platform !== "win32") return destinationPath;
     const destinationState = path.join(destinationPath, "Local State");
     if (yield* inspect(destinationState)) return destinationPath;
-    const legacyState = path.join(legacyPath, "Local State");
-    const sourceState = (yield* inspect(legacyState))
-      ? legacyState
-      : path.join(input.appDataDirectory, "t3code", "Local State");
-    if (!(yield* inspect(sourceState))) return destinationPath;
+    const sourceState = yield* firstExisting(
+      legacyPaths.map((legacyPath) => path.join(legacyPath, "Local State")),
+    );
+    if (sourceState === undefined) return destinationPath;
     // Windows safeStorage keys live here. Copy only these preferences, never locked databases.
     const state = yield* fs
       .readFileString(sourceState)

@@ -1,3 +1,4 @@
+import { brandDesktopScheme } from "@t3tools/contracts/brand";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, describe, it } from "@effect/vitest";
 import * as Deferred from "effect/Deferred";
@@ -71,7 +72,7 @@ function makeFakeBrowserWindow() {
     copyImageAt: vi.fn(),
     focus: vi.fn(),
     isDestroyed: vi.fn(() => false),
-    getURL: vi.fn(() => "t3code-dev://app/"),
+    getURL: vi.fn(() => `${brandDesktopScheme(true)}://app/`),
     getZoomLevel: vi.fn(() => zoomLevel),
     getZoomFactor: vi.fn(() => 1.2 ** zoomLevel),
     setZoomLevel: vi.fn((level: number) => {
@@ -1126,9 +1127,9 @@ describe("DesktopWindow", () => {
           return yield* Effect.die("will-navigate listener was not registered");
         }
         for (const [url, expectedPrevented] of [
-          ["t3code-dev://app/threads?id=1#latest", false],
-          ["t3code-dev://other/", true],
-          ["t3code://app/", true],
+          [`${brandDesktopScheme(true)}://app/threads?id=1#latest`, false],
+          [`${brandDesktopScheme(true)}://other/`, true],
+          [`${brandDesktopScheme(false)}://app/`, true],
         ] as const) {
           const preventDefault = vi.fn();
           willNavigate({ preventDefault }, url);

@@ -1,3 +1,4 @@
+import { BRAND, brandDesktopScheme, brandStageName } from "@t3tools/contracts/brand";
 import { assert, describe, it } from "@effect/vitest";
 import * as HostProcess from "@t3tools/shared/HostProcess";
 import * as Context from "effect/Context";
@@ -130,13 +131,13 @@ describe("DesktopPreReadyPlatform", () => {
     let desktopEntry = previousEntry;
     let iconInstalled = false;
     copyFileSyncMock.mockImplementation((_source: string, destination: string) => {
-      iconInstalled = destination === "/xdg/icons/com.t3tools.T3Code.desktop.png";
+      iconInstalled = destination === `/xdg/icons/${BRAND.linuxAppId}.desktop.png`;
     });
     setDesktopNameMock.mockImplementation((name: string) => {
       desktopName = name;
     });
     writeFileSyncMock.mockImplementation((path: string, contents: string) => {
-      if (path === "/xdg/applications/com.t3tools.T3Code.desktop") desktopEntry = contents;
+      if (path === `/xdg/applications/${BRAND.linuxAppId}.desktop`) desktopEntry = contents;
     });
 
     return Effect.scoped(
@@ -158,13 +159,16 @@ describe("DesktopPreReadyPlatform", () => {
           ),
         );
         const identity = yield* Effect.promise(() => portalIdentity);
-        assert.equal(identity.desktopName, "com.t3tools.T3Code.desktop");
+        assert.equal(identity.desktopName, `${BRAND.linuxAppId}.desktop`);
         assert.include(identity.desktopEntry ?? "", "Exec=/Applications/current.AppImage %U");
-        assert.include(identity.desktopEntry ?? "", "Name=T3 Code (Beta)");
-        assert.include(identity.desktopEntry ?? "", "MimeType=x-scheme-handler/t3code;");
+        assert.include(identity.desktopEntry ?? "", `Name=${brandStageName("Beta")}`);
         assert.include(
           identity.desktopEntry ?? "",
-          "Icon=/xdg/icons/com.t3tools.T3Code.desktop.png",
+          `MimeType=x-scheme-handler/${brandDesktopScheme(false)};`,
+        );
+        assert.include(
+          identity.desktopEntry ?? "",
+          `Icon=/xdg/icons/${BRAND.linuxAppId}.desktop.png`,
         );
         assert.isTrue(identity.iconInstalled);
       }),
@@ -190,7 +194,7 @@ describe("DesktopPreReadyPlatform", () => {
           ),
         );
         const entry = writeFileSyncMock.mock.calls.find(
-          ([path]) => path === "/xdg/applications/com.t3tools.T3Code.desktop",
+          ([path]) => path === `/xdg/applications/${BRAND.linuxAppId}.desktop`,
         )?.[1];
         assert.include(entry, 'Exec="/opt/T3 Code/t3code" %U');
       }),
