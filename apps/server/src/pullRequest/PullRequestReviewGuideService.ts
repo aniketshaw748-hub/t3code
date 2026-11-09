@@ -38,6 +38,7 @@ import * as PullRequestService from "./PullRequestService.ts";
 import { pullRequestSyncKey } from "./pullRequestSyncKey.ts";
 import { reviewGuideInputFromPullRequest } from "./pullRequestReviewGuideInput.ts";
 import { normalizeReviewGuide, parseReviewGuideChange } from "./pullRequestReviewGuideNormalize.ts";
+import { HIDDEN_REFS_ROOT } from "../vcs/hiddenRefs.ts";
 
 const COMMIT_HASH_PATTERN = /^[0-9a-f]{7,64}$/;
 
@@ -212,7 +213,7 @@ const make = Effect.gen(function* () {
         ),
       );
     // FETCH_HEAD is workspace-global; isolate this run's base from concurrent fetches.
-    const baseRef = `refs/t3/review-guide/${runId}/base`;
+    const baseRef = `${HIDDEN_REFS_ROOT}/review-guide/${runId}/base`;
     yield* fetch([`+refs/heads/${detail.baseBranch}:${baseRef}`]);
     yield* Effect.addFinalizer(() =>
       git
