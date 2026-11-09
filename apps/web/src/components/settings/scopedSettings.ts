@@ -25,6 +25,7 @@ import * as Equal from "effect/Equal";
 import * as Cause from "effect/Cause";
 
 import type { ResolvedSettingsScope } from "./settingsScope";
+import { BRAND } from "@t3tools/contracts/brand";
 
 export type ScopedSettingsPatch = ServerSettingsPatch & ClientSettingsPatch;
 
@@ -475,7 +476,7 @@ export async function persistScopedSettingsPatch(
       return [
         {
           ...environment,
-          message: "This environment does not support this setting. Update T3 Code on it.",
+          message: `This environment does not support this setting. Update ${BRAND.displayName} on it.`,
         },
       ];
     }

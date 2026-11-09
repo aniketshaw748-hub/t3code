@@ -19,6 +19,7 @@ import { Button } from "../ui/button";
 import { toastManager } from "../ui/toast";
 import { shortcutToKeybindingInput } from "./KeybindingsSettings.logic";
 import { useSnapShotShortcutRecorder } from "./useSnapShotShortcutRecorder";
+import { BRAND } from "@t3tools/contracts/brand";
 
 const DEFAULT_SHORTCUT = parseKeybindingShortcut("Ctrl+Shift+2")!;
 
@@ -218,8 +219,8 @@ export function CaptureShortcutConfig({
       ) : (
         <>
           <p className="text-muted-foreground">
-            Allow T3 Code to read your desktop settings. You'll review any changes here before
-            saving.
+            Allow {BRAND.displayName} to read your desktop settings. You'll review any changes here
+            before saving.
           </p>
           <Button
             disabled={actionBusy || !bridge}
@@ -239,7 +240,7 @@ export function CaptureShortcutConfig({
         <p role="status" className="text-muted-foreground">
           {state.shortcutPending
             ? "Connecting to your desktop…"
-            : "Restart T3 Code to finish connecting your shortcut."}
+            : `Restart ${BRAND.displayName} to finish connecting your shortcut.`}
         </p>
       ) : null}
       <details className="text-xs text-muted-foreground">
@@ -258,7 +259,7 @@ export function CaptureShortcutConfig({
                 state.shortcutConfigPath ??
                 (niri ? "~/.config/niri/config.kdl" : "~/.config/hypr/hyprland.conf")}
             </p>
-            {niri ? <p>T3 Code also reads any files included by this file.</p> : null}
+            {niri ? <p>{BRAND.displayName} also reads any files included by this file.</p> : null}
             {preview && preview.resolvedPath !== preview.path ? (
               <p className="break-all">Linked to {preview.resolvedPath}. The link will be kept.</p>
             ) : null}
@@ -319,8 +320,8 @@ export function CaptureShortcutConfig({
             {isCopied ? "Copied" : "Copy shortcut"}
           </Button>
           <p>
-            Turn capture off in T3 Code to stop it. Remove the shortcut from {desktop} to free up
-            the keys.
+            Turn capture off in {BRAND.displayName} to stop it. Remove the shortcut from {desktop}{" "}
+            to free up the keys.
           </p>
           {state.shortcutActionRegistered === false ? (
             <p role="status">{state.shortcutMessage}</p>

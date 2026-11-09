@@ -1,3 +1,4 @@
+import { BRAND } from "@t3tools/contracts/brand";
 import { historyResponseItems } from "@t3tools/provider-core/server/handoffBudget";
 import { makeProviderFailure } from "@t3tools/provider-core/server/failure";
 import {
@@ -1147,7 +1148,7 @@ describe("CodexAdapterV2 session initialize", () => {
       assert.instanceOf(failure.cause, ProviderSetupError);
       assert.equal(
         failure.cause.message,
-        "Codex 0.144.3 does not work with this T3 Code release. Update Codex to >=0.159.0, then retry.",
+        `Codex 0.144.3 does not work with this ${BRAND.displayName} release. Update Codex to >=0.159.0, then retry.`,
       );
     }).pipe(
       Effect.scoped,

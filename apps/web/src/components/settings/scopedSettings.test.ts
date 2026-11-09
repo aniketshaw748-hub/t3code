@@ -6,6 +6,7 @@ import {
   ProviderInstanceId,
   type ServerSettings,
 } from "@t3tools/contracts";
+import { BRAND } from "@t3tools/contracts/brand";
 import { describe, expect, it, vi } from "vite-plus/test";
 import { applyServerSettingsPatch } from "@t3tools/shared/serverSettings";
 import * as Cause from "effect/Cause";
@@ -264,7 +265,7 @@ describe("scoped settings writes", () => {
     const unsupported = [
       {
         label: server.label,
-        message: "This environment does not support this setting. Update T3 Code on it.",
+        message: `This environment does not support this setting. Update ${BRAND.displayName} on it.`,
       },
     ];
 

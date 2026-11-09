@@ -1,4 +1,5 @@
 // @effect-diagnostics nodeBuiltinImport:off -- Bundled Wayland helper installed only by explicit setup.
+import { BRAND } from "@t3tools/contracts/brand";
 import * as NodeChildProcess from "node:child_process";
 import * as NodeFSP from "node:fs/promises";
 import * as NodeOS from "node:os";
@@ -96,7 +97,7 @@ export class HyprlandCaptureSetup {
       const bundle = await regularFile(this.paths.bundle);
       if (!bundle)
         throw new Error(
-          "The Hyprland capture helper is missing from this build. Update or reinstall T3 Code.",
+          `The Hyprland capture helper is missing from this build. Update or reinstall ${BRAND.displayName}.`,
         );
       if (!installed.equals(bundle))
         return {

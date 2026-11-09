@@ -1,3 +1,4 @@
+import { BRAND } from "@t3tools/contracts/brand";
 import {
   ANTIGRAVITY_DEFAULT_MODEL,
   type AntigravityAuthMethod,
@@ -115,7 +116,7 @@ export function antigravitySessionMeta(
 export function antigravityClientInfo(version: string | null | undefined) {
   const parsed = parseAntigravityVersion(version);
   return parsed !== undefined && compareVersions(parsed, OPEN_MODEL_ACCESS_RELEASE) >= 0
-    ? { name: "t3-code", title: "T3 Code", version: packageJson.version }
+    ? { name: "t3-code", title: BRAND.displayName, version: packageJson.version }
     : { name: "zed", version: "0.0.0" };
 }
 

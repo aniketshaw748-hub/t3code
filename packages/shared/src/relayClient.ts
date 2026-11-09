@@ -1,3 +1,4 @@
+import { BRAND } from "@t3tools/contracts/brand";
 // @effect-diagnostics-next-line nodeBuiltinImport:off -- FileSystem.remove cannot remove an empty directory nonrecursively.
 import * as NodeFSP from "node:fs/promises";
 import * as Cache from "effect/Cache";
@@ -593,7 +594,7 @@ export const makeCloudflaredRelayClient = Effect.fn("cloudflared.make")(function
     if (!releaseAsset) {
       return yield* new RelayClientInstallError({
         reason: "unsupported_platform",
-        message: `T3 Code does not provide a managed relay client binary for ${platform}-${arch}.`,
+        message: `${BRAND.displayName} does not provide a managed relay client binary for ${platform}-${arch}.`,
       });
     }
 

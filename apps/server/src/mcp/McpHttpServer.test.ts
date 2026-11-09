@@ -1,3 +1,4 @@
+import { BRAND } from "@t3tools/contracts/brand";
 import * as Orchestrator from "../orchestration-v2/Orchestrator.ts";
 import * as ProjectionStore from "../orchestration-v2/ProjectionStore.ts";
 import * as ThreadManagementService from "../orchestration-v2/ThreadManagementService.ts";
@@ -536,7 +537,10 @@ it.effect("refuses preview tools to a client outside a thread before they run", 
       );
     expect(click.isError).toBe(true);
     expect(click.content).toEqual([
-      { type: "text", text: expect.stringContaining("needs an agent running inside T3 Code") },
+      {
+        type: "text",
+        text: expect.stringContaining(`needs an agent running inside ${BRAND.displayName}`),
+      },
     ]);
   }).pipe(Effect.provide(layerTest)),
 );

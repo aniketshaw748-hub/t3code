@@ -1,10 +1,12 @@
-const DEFAULT_MARKETING_SITE_URL = "https://t3.codes";
+import { BRAND } from "@t3tools/contracts/brand";
 
-function resolveMarketingSiteUrl(override: string | undefined): URL {
+/** A site serving /legal, /privacy-policy, /terms-of-service and /security-policy, if one is set. */
+function resolveMarketingSiteUrl(override: string | undefined): URL | null {
   try {
-    const url = new URL(override?.trim() || DEFAULT_MARKETING_SITE_URL);
+    if (!override?.trim()) return null;
+    const url = new URL(override.trim());
     if (url.protocol !== "https:" && url.protocol !== "http:") {
-      return new URL(DEFAULT_MARKETING_SITE_URL);
+      return null;
     }
 
     url.search = "";
@@ -12,14 +14,17 @@ function resolveMarketingSiteUrl(override: string | undefined): URL {
     url.pathname = `${url.pathname.replace(/\/+$/, "")}/`;
     return url;
   } catch {
-    return new URL(DEFAULT_MARKETING_SITE_URL);
+    return null;
   }
 }
 
 const MARKETING_SITE_URL = resolveMarketingSiteUrl(process.env.EXPO_PUBLIC_MARKETING_SITE_URL);
 
+/** Without a marketing site, every legal document is the brand's privacy policy. */
 function marketingSiteDocumentUrl(path: string): string {
-  return new URL(path, MARKETING_SITE_URL).toString();
+  return MARKETING_SITE_URL
+    ? new URL(path, MARKETING_SITE_URL).toString()
+    : BRAND.links.privacyPolicy;
 }
 
 const PRIVACY_POLICY_URL = marketingSiteDocumentUrl("privacy-policy");

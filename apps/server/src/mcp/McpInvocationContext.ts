@@ -1,3 +1,4 @@
+import { BRAND } from "@t3tools/contracts/brand";
 import {
   type AuthMcpClientAccess,
   type EnvironmentId,
@@ -217,7 +218,7 @@ export const requireThreadMcpCapability = <const C extends "preview" | "device">
 const threadCallerRequired = (operation: string) =>
   new OrchestratorMcpFailure({
     code: "thread_credential_required",
-    message: `${operation} acts as the calling T3 thread, so it needs an agent running inside T3 Code. This MCP client signed in from outside a thread.`,
+    message: `${operation} acts as the calling ${BRAND.displayName} thread, so it needs an agent running inside ${BRAND.displayName}. This MCP client signed in from outside a thread.`,
   });
 
 export type McpThreadInvocationScope = McpInvocationScope & { readonly thread: McpThreadCaller };

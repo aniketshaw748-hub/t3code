@@ -1,3 +1,4 @@
+import { BRAND } from "@t3tools/contracts/brand";
 import { OrchestrationDispatchCommandError } from "@t3tools/contracts";
 import * as Context from "effect/Context";
 import * as SecureRandom from "effect/crypto/SecureRandom";
@@ -1731,7 +1732,7 @@ export const layerWsRpc = (
               if (racedImport !== null) return { threadId, imported: false } as const;
               return yield* new AcpRegistryOperationError({
                 reason: "session_import_failed",
-                message: "Could not create a T3 thread for the ACP session.",
+                message: `Could not create a ${BRAND.displayName} thread for the ACP session.`,
                 cause: launched.failure,
               });
             }
@@ -1772,7 +1773,7 @@ export const layerWsRpc = (
             if (importedThread !== null) {
               return yield* new AcpRegistryOperationError({
                 reason: "session_delete_failed",
-                message: "Delete the imported T3 thread before deleting its native ACP session.",
+                message: `Delete the imported ${BRAND.displayName} thread before deleting its native ACP session.`,
               });
             }
             yield* manager.deleteSession({

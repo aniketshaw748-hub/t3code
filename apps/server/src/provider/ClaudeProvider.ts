@@ -1,3 +1,4 @@
+import { BRAND } from "@t3tools/contracts/brand";
 import {
   type ClaudeSettings,
   type ModelCapabilities,
@@ -544,7 +545,7 @@ export const checkClaudeProviderStatus = Effect.fn("checkClaudeProviderStatus")(
         version: null,
         status: "warning",
         auth: { status: "unknown" },
-        message: "Claude is disabled in T3 Code settings.",
+        message: `Claude is disabled in ${BRAND.displayName} settings.`,
       },
     });
   }
@@ -766,7 +767,7 @@ export const makePendingClaudeProvider = Effect.fn("ClaudeProvider.makePendingCl
           version: null,
           status: "warning",
           auth: { status: "unknown" },
-          message: "Claude is disabled in T3 Code settings.",
+          message: `Claude is disabled in ${BRAND.displayName} settings.`,
         },
       });
     }

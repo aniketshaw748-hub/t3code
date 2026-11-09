@@ -1,3 +1,4 @@
+import { BRAND } from "@t3tools/contracts/brand";
 import type {
   EnvironmentProject,
   EnvironmentThreadShell,
@@ -67,7 +68,7 @@ export function buildShowcaseAgentActivity(
     });
   }
   return {
-    title: "T3 Code",
+    title: BRAND.displayName,
     subtitle: "Agent work in progress",
     activeCount: rows.filter((row) => ACTIVE_PHASES.has(row.phase)).length,
     updatedAt: new Date(now).toISOString(),

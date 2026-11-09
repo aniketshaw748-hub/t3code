@@ -16,6 +16,7 @@ import {
   supportsDesktopAppUpdate,
 } from "~/versionSkew";
 import type { ServerUpdateOutcome, ServerUpdateTarget } from "../ServerUpdateAction";
+import { BRAND } from "@t3tools/contracts/brand";
 
 export interface UpdateEverythingMachine {
   readonly environmentId: EnvironmentId;
@@ -297,7 +298,7 @@ export function collectChannelSwitchTargets(
       compareSemverVersions(release.version, serverVersion) <= 0
     ) {
       skip(
-        `run \`t3 update --channel ${release.channel === "nightly" ? "nightly" : "stable"} --allow-downgrade\` there`,
+        `run \`${BRAND.cliName} update --channel ${release.channel === "nightly" ? "nightly" : "stable"} --allow-downgrade\` there`,
       );
       continue;
     }

@@ -1,3 +1,4 @@
+import { BRAND } from "./brand.ts";
 import * as Schema from "effect/Schema";
 import * as Struct from "effect/Struct";
 
@@ -143,7 +144,7 @@ export type ManagedPolicySummary = typeof ManagedPolicySummary.Type;
 
 /** The message every surface shows when the policy stops an update. */
 export function managedUpdatesMessage(organization: string): string {
-  return `${organization} manages T3 Code updates.`;
+  return `${organization} manages ${BRAND.displayName} updates.`;
 }
 
 /** The message when the policy allows only stable releases. */

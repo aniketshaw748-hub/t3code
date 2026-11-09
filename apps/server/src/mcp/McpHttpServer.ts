@@ -1,3 +1,4 @@
+import { BRAND } from "@t3tools/contracts/brand";
 import * as Cause from "effect/Cause";
 import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
@@ -106,7 +107,7 @@ const unauthorized = (input: {
   return HttpServerResponse.jsonUnsafe(
     {
       error: "invalid_mcp_credential",
-      message: "A valid T3 Code MCP credential is required.",
+      message: `A valid ${BRAND.displayName} MCP credential is required.`,
     },
     {
       status: 401,
@@ -1228,7 +1229,7 @@ export const layerInProcessMcpServer = McpServer.middleware<{
 
 export const layerMcpTransport = <RA, RE, RR>(registrations: Layer.Layer<RA, RE, RR>) =>
   McpServer.layerHttp({
-    name: "T3 Code",
+    name: BRAND.displayName,
     version: packageJson.version,
     path: "/mcp",
     protocols: [McpProtocol.v2025_06_18],

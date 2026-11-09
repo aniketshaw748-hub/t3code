@@ -1,3 +1,4 @@
+import { BRAND } from "@t3tools/contracts/brand";
 import * as Dialog from "../../components/ui/Dialog";
 import {
   AuthRelayWriteScope,
@@ -345,7 +346,7 @@ function ConfiguredSettingsNotificationsRouteScreen() {
 
     Dialog.alert(
       "Disable notifications",
-      "Open system Settings to disable notifications for T3 Code.",
+      `Open system Settings to disable notifications for ${BRAND.displayName}.`,
       [
         { text: "Cancel", style: "cancel" },
         { text: "Open Settings", onPress: () => void Linking.openSettings() },
@@ -477,7 +478,7 @@ function ConfiguredSettingsNotificationsRouteScreen() {
                 void openAndroidLiveUpdateSettings().catch(() => {
                   Dialog.alert(
                     "Couldn't open Settings",
-                    "Open Android Settings, select T3 Code, then enable Live Updates in Notifications.",
+                    `Open Android Settings, select ${BRAND.displayName}, then enable Live Updates in Notifications.`,
                   );
                 });
               }}

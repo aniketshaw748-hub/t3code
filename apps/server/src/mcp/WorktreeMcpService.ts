@@ -1,3 +1,4 @@
+import { BRAND } from "@t3tools/contracts/brand";
 import {
   CommandId,
   type GitCommandError,
@@ -84,7 +85,7 @@ const make = Effect.gen(function* () {
       ? Effect.fail(
           failure(
             "thread_credential_required",
-            "Worktree handoff and status act as the calling T3 thread, so they need an agent running inside T3 Code.",
+            `Worktree handoff and status act as the calling ${BRAND.displayName} thread, so they need an agent running inside ${BRAND.displayName}.`,
           ),
         )
       : Effect.succeed(scope as McpThreadInvocationScope);

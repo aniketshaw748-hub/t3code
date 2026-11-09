@@ -1,4 +1,5 @@
 import { EnvironmentId, MessageId, ThreadId } from "@t3tools/contracts";
+import { BRAND } from "@t3tools/contracts/brand";
 import { serializeAssistantCitation } from "@t3tools/shared/assistantCitations";
 import * as DateTime from "effect/DateTime";
 import type { ComponentProps } from "react";
@@ -170,7 +171,7 @@ it("shows who sent a queued message and folds automation and agent prompts", asy
   await page.getByRole("button", { name: "Open thread" }).click({ force: true });
   expect(onOpenThread).toHaveBeenCalledExactlyOnceWith("thread:lead");
 
-  await expect.element(page.getByText("Sent by T3 Code")).toBeVisible();
+  await expect.element(page.getByText(`Sent by ${BRAND.displayName}`)).toBeVisible();
   await expect.element(page.getByText("Continue where you left off.")).toBeVisible();
 });
 

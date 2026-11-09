@@ -1,3 +1,4 @@
+import { BRAND } from "@t3tools/contracts/brand";
 import { assert, describe, it } from "@effect/vitest";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
@@ -149,7 +150,7 @@ describe("DesktopWslBackend", () => {
 
       yield* recordOwnershipFailure();
       const refusal = yield* backend.lastPreflightError;
-      assert.include(Option.getOrThrow(refusal), "Another T3 Code server");
+      assert.include(Option.getOrThrow(refusal), `Another ${BRAND.displayName} server`);
       yield* backend.reconcile;
       assert.equal(startCount, 1);
       assert.deepEqual(yield* backend.lastPreflightError, refusal);

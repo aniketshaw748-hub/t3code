@@ -67,6 +67,7 @@ import {
 } from "../ServerUpdateAction";
 import { CloudEnvironmentConnectRows } from "../cloud/CloudEnvironmentConnectList";
 import { useT3ConnectAuthPrompt } from "../clerk/useT3ConnectAuthPrompt";
+import { BRAND } from "@t3tools/contracts/brand";
 
 type SavedBackendListRowProps = {
   environment: EnvironmentPresentation;
@@ -687,7 +688,7 @@ function ConfiguredCloudLinkRow({
       ) : linkRevoked ? (
         <SettingsRow
           title={searchableSetting("t3-connect").title}
-          description="This environment was removed from T3 Connect. Run `t3 connect link` on the host to link it again."
+          description={`This environment was removed from T3 Connect. Run \`${BRAND.cliName} connect link\` on the host to link it again.`}
         />
       ) : null}
       {signedOut && isElectron ? null : (

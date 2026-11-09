@@ -40,6 +40,7 @@ import { SettingsPageContainer, SettingsSection } from "./settingsLayout";
 import { useAtomCommand } from "../../state/use-atom-command";
 import { useSettingsScope } from "./SettingsScopeContext";
 import { TelemetryExportSettings } from "./TelemetryExportSettings";
+import { BRAND } from "@t3tools/contracts/brand";
 
 const NUMBER_FORMAT = new Intl.NumberFormat();
 
@@ -998,7 +999,7 @@ function DiagnosticsSettingsBody() {
           <StatBlock
             label="CPU Time"
             value={resourceData ? formatCpuTime(resourceData.totalCpuSecondsApprox) : "..."}
-            tooltip="Approximate active CPU time for the T3 server root process and its descendants during the selected window. It grows only while sampled processes use CPU and older samples leave as the window moves."
+            tooltip={`Approximate active CPU time for the ${BRAND.displayName} server root process and its descendants during the selected window. It grows only while sampled processes use CPU and older samples leave as the window moves.`}
           />
           <StatBlock
             label="Samples"

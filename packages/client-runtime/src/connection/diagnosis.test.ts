@@ -2,6 +2,7 @@ import {
   RelayEnvironmentEndpointUnavailableError,
   type RelayProtectedError,
 } from "@t3tools/contracts/relay";
+import { BRAND } from "@t3tools/contracts/brand";
 import { describe, expect, it } from "@effect/vitest";
 
 import { presentConnectionDiagnosis } from "./diagnosis.ts";
@@ -55,7 +56,7 @@ const results = (state: SupervisorConnectionState, via?: "relay" | "direct") =>
 describe("presentConnectionDiagnosis", () => {
   it("tells a working tunnel apart from T3 Code not answering", () => {
     expect(diagnose(backoff(unavailable("origin_unreachable")))?.headline).toBe(
-      "Tunnel works, but T3 Code on Mac mini did not answer",
+      `Tunnel works, but ${BRAND.displayName} on Mac mini did not answer`,
     );
     expect(results(backoff(unavailable("origin_unreachable")), "direct")).toEqual([
       "device:ok",

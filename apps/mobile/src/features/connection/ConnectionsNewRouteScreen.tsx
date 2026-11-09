@@ -1,3 +1,4 @@
+import { BRAND } from "@t3tools/contracts/brand";
 import { ListRow } from "../../components/ui/ListRow";
 import * as Dialog from "../../components/ui/Dialog";
 import { ScreenScrollView as ScrollView } from "../../components/ui/ScreenScrollView";
@@ -343,7 +344,7 @@ function PairingScanCard(props: {
           )}
         </View>
         <Text className={cn("text-center text-sm", light ? "text-black/70" : "text-white/80")}>
-          Scan the code from t3 pair or desktop Connections settings
+          Scan the code from {BRAND.cliName} pair or desktop Connections settings
         </Text>
       </View>
     </Pressable>

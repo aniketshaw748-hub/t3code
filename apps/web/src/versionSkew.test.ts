@@ -1,4 +1,5 @@
 import { EnvironmentId } from "@t3tools/contracts";
+import { BRAND } from "@t3tools/contracts/brand";
 import type { ServerUpdateState } from "@t3tools/client-runtime/state/server";
 import { beforeEach, describe, expect, it, vi } from "vite-plus/test";
 
@@ -16,8 +17,7 @@ import {
   resolveVersionMismatch,
 } from "./versionSkew";
 
-const MISMATCH_HINT =
-  "Version mismatch. Try syncing the client and server to the same T3 Code version.";
+const MISMATCH_HINT = `Version mismatch. Try syncing the client and server to the same ${BRAND.displayName} version.`;
 
 describe("versionSkew", () => {
   it("updates only the proven npm prefix and safely quotes its path", () => {

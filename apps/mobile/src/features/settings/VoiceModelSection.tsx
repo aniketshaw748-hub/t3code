@@ -1,3 +1,4 @@
+import { BRAND } from "@t3tools/contracts/brand";
 import { useAtomRefresh, useAtomValue } from "@effect/atom-react";
 import { useNavigation } from "@react-navigation/native";
 import {
@@ -296,7 +297,7 @@ export function VoiceModelSection(props: {
       footer={
         voice.canManage
           ? undefined
-          : `This connection can’t change settings on ${props.label}. Add a transcription model using T3 Code on that machine.`
+          : `This connection can’t change settings on ${props.label}. Add a transcription model using ${BRAND.displayName} on that machine.`
       }
     >
       <ListRow

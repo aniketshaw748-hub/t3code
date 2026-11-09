@@ -10,12 +10,12 @@ import { isElectron } from "../../env";
 import { StandalonePage, StandalonePageHeader } from "../ui/standalone-page";
 import { resolveClerkSignInProps } from "../clerk/authRedirect";
 import { Button } from "../ui/button";
+import { BRAND } from "@t3tools/contracts/brand";
 
 const invalidLinkMessage = {
   context: "Authorization request",
   title: "This connect link is incomplete",
-  description:
-    "The link is missing its authorization request. Re-run `t3 connect` in your terminal and open the freshly printed URL.",
+  description: `The link is missing its authorization request. Re-run \`${BRAND.cliName} connect\` in your terminal and open the freshly printed URL.`,
 } as const;
 
 export function ConnectCliAuthorizeSurface() {

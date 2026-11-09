@@ -1,3 +1,4 @@
+import { BRAND } from "@t3tools/contracts/brand";
 import { useNavigation } from "@react-navigation/native";
 import { useEffect } from "react";
 import { BackHandler, Keyboard } from "react-native";
@@ -54,10 +55,10 @@ export function PullRequestToolbar(props: {
   }, [searching, closeSearch, navigation, isTabActive]);
   return (
     <AppBar
-      title="T3 Code"
+      title={BRAND.displayName}
       titleContent={
         <WorkspaceBrandTitle
-          accessibilityLabel="T3 Code, Pull requests"
+          accessibilityLabel={`${BRAND.displayName}, Pull requests`}
           onOpenEnvironments={() => openSettings(navigation, "SettingsEnvironments")}
         />
       }

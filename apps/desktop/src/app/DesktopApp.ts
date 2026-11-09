@@ -1,3 +1,4 @@
+import { BRAND } from "@t3tools/contracts/brand";
 import * as Cause from "effect/Cause";
 import * as Config from "effect/Config";
 import * as Effect from "effect/Effect";
@@ -143,7 +144,7 @@ const handleFatalStartupError = Effect.fn("desktop.startup.handleFatalStartupErr
   const wasQuitting = yield* Ref.getAndSet(state.quitting, true);
   if (!wasQuitting) {
     yield* electronDialog.showErrorBox(
-      "T3 Code failed to start",
+      `${BRAND.displayName} failed to start`,
       `Stage: ${stage}\n${message}${detail}`,
     );
   }

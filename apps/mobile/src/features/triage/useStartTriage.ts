@@ -1,3 +1,4 @@
+import { BRAND } from "@t3tools/contracts/brand";
 import { pipe } from "effect/Function";
 import {
   isAtomCommandInterrupted,
@@ -20,7 +21,7 @@ import {
 } from "../../state/use-composer-drafts";
 import { useSelectWorkspaceDetail } from "../layout/workspace/useSelectWorkspaceDetail";
 
-const CLI_COMMAND = "npx t3 triage";
+const CLI_COMMAND = `npx ${BRAND.cliName} triage`;
 
 /**
  * In-app `t3 triage`, as on web: the server writes the session files and

@@ -1,3 +1,4 @@
+import { BRAND } from "@t3tools/contracts/brand";
 import * as Context from "effect/Context";
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
@@ -124,7 +125,7 @@ export const layer = Layer.effect(
           );
           yield* electronDialog.showErrorBox(
             "WSL backend is still unavailable",
-            `${reason}\n\nT3 Code will use the Windows backend for this launch and retry WSL the next time the app starts.`,
+            `${reason}\n\n${BRAND.displayName} will use the Windows backend for this launch and retry WSL the next time the app starts.`,
           );
           yield* appSettings.applyWslWindowsFallbackInMemory;
           return true;
@@ -135,7 +136,7 @@ export const layer = Layer.effect(
         });
         yield* electronDialog.showErrorBox(
           "WSL backend couldn't start",
-          `${reason}\n\nFalling back to the Windows backend so T3 Code can open. Re-enable the WSL backend from Settings > Sharing & access once the WSL distro is fixed.`,
+          `${reason}\n\nFalling back to the Windows backend so ${BRAND.displayName} can open. Re-enable the WSL backend from Settings > Sharing & access once the WSL distro is fixed.`,
         );
         // Clear wslOnly too so enabling WSL cannot restore a failed mode.
         // Keep the in-memory fallback if persistence fails.
@@ -176,8 +177,8 @@ export const layer = Layer.effect(
       onStateDirOwned: () =>
         electronDialog
           .showErrorBox(
-            "This T3 home is unavailable",
-            "Another T3 Code server, such as the background service, is using this data directory, or an older background service is set up for it. Stop that server or try `t3 update`. If the older launcher cannot update, run `t3 service uninstall` and optionally reinstall with `t3 service install` from a current CLI. Use `npx t3@latest` if `t3` is missing or outdated, and pass `--base-dir` with the service's T3 home to each command. Then reopen T3 Code. You can also set a separate T3CODE_HOME and pair with the running server.",
+            `This ${BRAND.displayName} home is unavailable`,
+            `Another ${BRAND.displayName} server, such as the background service, is using this data directory, or an older background service is set up for it. Stop that server or try \`${BRAND.cliName} update\`. If the older launcher cannot update, run \`${BRAND.cliName} service uninstall\` and optionally reinstall with \`${BRAND.cliName} service install\` from a current CLI. Use \`npx ${BRAND.cliName}@latest\` if \`${BRAND.cliName}\` is missing or outdated, and pass \`--base-dir\` with the service's ${BRAND.displayName} home to each command. Then reopen ${BRAND.displayName}. You can also set a separate T3CODE_HOME and pair with the running server.`,
           )
           .pipe(Effect.andThen(electronApp.quit)),
     });

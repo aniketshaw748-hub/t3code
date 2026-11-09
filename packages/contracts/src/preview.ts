@@ -1,3 +1,4 @@
+import { BRAND } from "./brand.ts";
 import { Schema } from "effect";
 import { NonNegativeInt, PositiveInt, ThreadId, TrimmedNonEmptyString } from "./baseSchemas.ts";
 import { BROWSER_PROFILE_MAX_COUNT, BrowserProfile, BrowserProfileId } from "./browserProfile.ts";
@@ -337,7 +338,7 @@ export class PreviewStopLocalServerError extends Schema.TaggedError<PreviewStopL
       case "not-found":
         return "This server is no longer running.";
       case "shared-group":
-        return "This server shares a process group with T3 Code, an agent, or a terminal shell, so it can't be stopped on its own.";
+        return `This server shares a process group with ${BRAND.displayName}, an agent, or a terminal shell, so it can't be stopped on its own.`;
       case "unsupported":
         return "Stopping servers is not supported on this environment's platform.";
       case "signal-failed":

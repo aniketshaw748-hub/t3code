@@ -1,4 +1,5 @@
 // @effect-diagnostics nodeBuiltinImport:off - OAuth loopback listener uses Node APIs.
+import { BRAND } from "@t3tools/contracts/brand";
 import * as NodeHttp from "node:http";
 import {
   ProviderSetupError,
@@ -602,7 +603,7 @@ export const makeCodexChatGptAuth = Effect.fn("makeCodexChatGptAuth")(function* 
               ? { prompt: "consent" }
               : {}),
           }
-        : { agent_name_hint: "T3 Code" }),
+        : { agent_name_hint: BRAND.displayName }),
       ext_agent_host_id: hostId,
       response_type: "code",
       redirect_uri: redirectUri,

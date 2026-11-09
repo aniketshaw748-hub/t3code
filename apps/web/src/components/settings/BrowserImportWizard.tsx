@@ -36,6 +36,7 @@ import {
   type WizardTargetSelection,
   type WizardStep,
 } from "./browserImportWizard.logic";
+import { BRAND } from "@t3tools/contracts/brand";
 
 export type { WizardTarget } from "./browserImportWizard.logic";
 
@@ -263,11 +264,13 @@ function FullDiskAccessStep({
   return (
     <>
       <DialogHeader>
-        <DialogTitle>Let T3 Code read {source.name}&rsquo;s cookies</DialogTitle>
+        <DialogTitle>
+          Let {BRAND.displayName} read {source.name}&rsquo;s cookies
+        </DialogTitle>
         <DialogDescription>
-          To import cookies from {source.name}, T3 Code needs Full Disk Access. Turn it on in System
-          Settings, then come back to finish the import. You can revoke it again once the import is
-          done.
+          To import cookies from {source.name}, {BRAND.displayName} needs Full Disk Access. Turn it
+          on in System Settings, then come back to finish the import. You can revoke it again once
+          the import is done.
         </DialogDescription>
       </DialogHeader>
       <DialogPanel>
@@ -297,8 +300,8 @@ function FullDiskAccessStep({
         {!permission.isReady(["fullDiskAccess"]) ? (
           <p className="mt-3 text-xs text-muted-foreground">
             {stillRequired
-              ? "Access is still required. Quit and reopen T3 Code if you just allowed it, then retry the import."
-              : "If access doesn't update after you allow it, quit and reopen T3 Code, then retry the import."}
+              ? `Access is still required. Quit and reopen ${BRAND.displayName} if you just allowed it, then retry the import.`
+              : `If access doesn't update after you allow it, quit and reopen ${BRAND.displayName}, then retry the import.`}
           </p>
         ) : null}
       </DialogPanel>

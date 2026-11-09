@@ -1,3 +1,4 @@
+import { BRAND } from "@t3tools/contracts/brand";
 import { ScreenScrollView as ScrollView } from "../../components/ui/ScreenScrollView";
 import { useAtomSet, useAtomValue } from "@effect/atom-react";
 import { AsyncResult } from "effect/reactivity";
@@ -302,7 +303,7 @@ export function SettingsVoiceRouteScreen() {
             <Text className="px-2 text-sm text-foreground-muted">
               {permission === "ask"
                 ? "Allow microphone access to record and to see your microphones."
-                : "Turn on microphone access for T3 Code in Settings to use voice input."}
+                : `Turn on microphone access for ${BRAND.displayName} in Settings to use voice input.`}
             </Text>
           </>
         ) : null}

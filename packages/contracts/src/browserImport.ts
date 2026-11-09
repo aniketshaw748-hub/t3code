@@ -1,3 +1,4 @@
+import { BRAND } from "./brand.ts";
 import * as Schema from "effect/Schema";
 import { TrimmedNonEmptyString } from "./baseSchemas.ts";
 import { BrowserProfileId } from "./browserProfile.ts";
@@ -81,8 +82,7 @@ const BROWSER_IMPORT_UNAVAILABLE_COPY: Readonly<Record<BrowserImportUnavailableR
   needsKeychainApproval: "Needs Keychain access to read its cookies.",
   keychainItemMissing:
     "No encryption key in your Keychain. Sign in to that browser once, then retry.",
-  needsFullDiskAccess:
-    "Give T3 Code Full Disk Access in System Settings → Privacy & Security, then retry.",
+  needsFullDiskAccess: `Give ${BRAND.displayName} Full Disk Access in System Settings → Privacy & Security, then retry.`,
   browserRunning: "Quit the browser first so its cookie database can be read.",
   unsupportedPlatform: "Importing from this browser isn't possible on this platform.",
 };

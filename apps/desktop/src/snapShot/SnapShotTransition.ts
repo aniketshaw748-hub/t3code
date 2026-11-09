@@ -1,3 +1,4 @@
+import { BRAND } from "@t3tools/contracts/brand";
 import * as Effect from "effect/Effect";
 import type * as Fiber from "effect/Fiber";
 
@@ -114,7 +115,7 @@ function createWindow(
     resizable: false,
     show: false,
     skipTaskbar: true,
-    title: "T3 Code Snapshot Animation",
+    title: `${BRAND.displayName} Snapshot Animation`,
     transparent: true,
     webPreferences: {
       backgroundThrottling: false,

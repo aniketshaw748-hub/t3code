@@ -11,6 +11,7 @@ import type {
   ConnectionHop,
   SupervisorConnectionState,
 } from "./model.ts";
+import { BRAND } from "@t3tools/contracts/brand";
 
 export type ConnectionHopResult = "ok" | "failed" | "unchecked";
 
@@ -102,7 +103,7 @@ function headline(host: string, located: Located, failure: ConnectionAttemptErro
     case "session_pending":
       return "This device is still loading its T3 Connect sign-in";
     case "outdated":
-      return `${host} runs an older T3 Code`;
+      return `${host} runs an older ${BRAND.displayName}`;
     case "clock_skew":
       return "This device's clock is off";
     case "not_linked":
@@ -117,9 +118,9 @@ function headline(host: string, located: Located, failure: ConnectionAttemptErro
     case "tunnel_down":
       return `${host}'s tunnel is offline`;
     case "origin_unreachable":
-      return `Tunnel works, but T3 Code on ${host} did not answer`;
+      return `Tunnel works, but ${BRAND.displayName} on ${host} did not answer`;
     case "invalid_response":
-      return `T3 Code on ${host} sent an unexpected answer`;
+      return `${BRAND.displayName} on ${host} sent an unexpected answer`;
     case "dns":
       return `${host}'s tunnel address did not resolve`;
     case "tls":
@@ -148,23 +149,23 @@ function headline(host: string, located: Located, failure: ConnectionAttemptErro
         : `T3 Connect could not reach ${host}'s tunnel`;
     case "server":
       return failure?.reason === "authentication" || failure?.reason === "permission"
-        ? `T3 Code on ${host} did not accept this device`
-        : `T3 Code on ${host} did not answer`;
+        ? `${BRAND.displayName} on ${host} did not accept this device`
+        : `${BRAND.displayName} on ${host} did not answer`;
   }
 }
 
 function steps(host: string, located: Located, failure: ConnectionAttemptError | null): string[] {
-  const checkHost = `On ${host}, check Settings > Sharing & access or run \`t3 connect status\`.`;
+  const checkHost = `On ${host}, check Settings > Sharing & access or run \`${BRAND.cliName} connect status\`.`;
   switch (located.cause) {
     case "offline":
-      return ["Connect this device to the internet. T3 Code reconnects on its own."];
+      return [`Connect this device to the internet. ${BRAND.displayName} reconnects on its own.`];
     case "session_pending":
       return [
-        "Wait a moment. T3 Code retries on its own.",
-        "If it keeps waiting, reload or restart T3 Code on this device.",
+        `Wait a moment. ${BRAND.displayName} retries on its own.`,
+        `If it keeps waiting, reload or restart ${BRAND.displayName} on this device.`,
       ];
     case "outdated":
-      return [`Update T3 Code on ${host}.`];
+      return [`Update ${BRAND.displayName} on ${host}.`];
     case "clock_skew":
       return [`Turn on automatic date and time on this device and on ${host}, then retry.`];
     case "not_linked":
@@ -173,10 +174,10 @@ function steps(host: string, located: Located, failure: ConnectionAttemptError |
         `On ${host}, open Settings > Sharing & access and turn T3 Connect on.`,
       ];
     case "tunnel_pending":
-      return ["Wait a minute. T3 Code retries on its own.", checkHost];
+      return [`Wait a minute. ${BRAND.displayName} retries on its own.`, checkHost];
     case "relay_error":
       return [
-        "Wait a few minutes. T3 Code retries on its own.",
+        `Wait a few minutes. ${BRAND.displayName} retries on its own.`,
         "If it keeps failing, copy the diagnostics and report it.",
       ];
     case "tunnel_not_enabled":
@@ -184,13 +185,13 @@ function steps(host: string, located: Located, failure: ConnectionAttemptError |
     case "released":
     case "tunnel_down":
       return [
-        `Make sure ${host} is awake and T3 Code is running on it.`,
+        `Make sure ${host} is awake and ${BRAND.displayName} is running on it.`,
         checkHost,
         `A VPN or Tailscale exit node on ${host} can block the tunnel (port 7844). Turn it off or allow the tunnel.`,
       ];
     case "origin_unreachable":
     case "invalid_response":
-      return [`Open or restart T3 Code on ${host}.`, checkHost];
+      return [`Open or restart ${BRAND.displayName} on ${host}.`, checkHost];
     // The relay saw these on its way to the host, so the fix is on the host.
     case "dns":
     case "tls":
@@ -204,7 +205,7 @@ function steps(host: string, located: Located, failure: ConnectionAttemptError |
   switch (located.hop) {
     case "device":
       return [
-        "Restart T3 Code on this device.",
+        `Restart ${BRAND.displayName} on this device.`,
         `If it keeps failing, remove ${host} from this device and add it again.`,
       ];
     case "relay":
@@ -225,7 +226,7 @@ function steps(host: string, located: Located, failure: ConnectionAttemptError |
         : [`Make sure ${host} is awake and online.`, checkHost];
     case "server":
       return [
-        `Make sure T3 Code is running on ${host}.`,
+        `Make sure ${BRAND.displayName} is running on ${host}.`,
         "Retry. If it keeps failing, copy the diagnostics.",
       ];
   }
@@ -298,7 +299,7 @@ function hopLabel(hop: ConnectionHop, host: string): string {
     case "tunnel":
       return `${host} tunnel`;
     case "server":
-      return `T3 Code on ${host}`;
+      return `${BRAND.displayName} on ${host}`;
   }
 }
 
@@ -369,7 +370,7 @@ const HOP_MARK = { ok: "ok", failed: "FAILED", unchecked: "not checked" } as con
 /** One plain-text block for bug reports. */
 export function connectionDiagnosisText(hostLabel: string, diagnosis: ConnectionDiagnosis): string {
   return [
-    `T3 Code connection to ${hostLabel}: ${diagnosis.headline}`,
+    `${BRAND.displayName} connection to ${hostLabel}: ${diagnosis.headline}`,
     "",
     ...diagnosis.hops.map((hop) => `${hop.label}: ${HOP_MARK[hop.result]}`),
     "",

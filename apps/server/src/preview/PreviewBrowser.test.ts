@@ -2,6 +2,7 @@ import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import * as Layer from "effect/Layer";
 import { expect, it } from "@effect/vitest";
+import { BRAND } from "@t3tools/contracts/brand";
 import * as HostProcess from "@t3tools/shared/HostProcess";
 import * as Digest from "effect/crypto/Digest";
 import type * as Duration from "effect/Duration";
@@ -172,7 +173,11 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))("PreviewBrowser",
       const error = yield* browser.executable.pipe(Effect.flip);
 
       expect(error._tag).toBe("PreviewBrowserInstallError");
-      expect(error.message).toMatch(/^T3 could not install its headless browser: .+ Try again\.$/);
+      expect(error.message).toMatch(
+        new RegExp(
+          `^${BRAND.displayName} could not install its headless browser: .+ Try again\\.$`,
+        ),
+      );
       expect(yield* fs.readDirectory(installRoot)).toEqual([]);
       yield* browser.executable.pipe(Effect.flip);
       expect(requests).toHaveLength(2);

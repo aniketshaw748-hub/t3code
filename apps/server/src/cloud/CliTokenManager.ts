@@ -1,4 +1,5 @@
 // @effect-diagnostics nodeBuiltinImport:off - The CLI loopback OAuth callback is a Node HTTP boundary.
+import { BRAND } from "@t3tools/contracts/brand";
 import * as NodeHttp from "node:http";
 
 import * as NodeHttpServer from "@effect/platform-node/NodeHttpServer";
@@ -218,7 +219,7 @@ export class CloudCliCredentialRefreshError extends Schema.TaggedError<CloudCliC
     return this.requiresLogin
       ? `Could not refresh the T3 Connect CLI credential${
           this.oauthErrorCode === undefined ? "" : ` (OAuth error: ${this.oauthErrorCode})`
-        }. Run \`t3 connect login\` to authorize again.`
+        }. Run \`${BRAND.cliName} connect login\` to authorize again.`
       : "Could not refresh the T3 Connect CLI credential.";
   }
 }

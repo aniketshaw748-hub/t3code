@@ -1,3 +1,4 @@
+import { BRAND } from "@t3tools/contracts/brand";
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, it } from "@effect/vitest";
@@ -224,7 +225,7 @@ it.effect.each([
       const error = yield* manager.getExisting.pipe(Effect.flip);
       assert.instanceOf(error, CliTokenManager.CloudCliCredentialRefreshError);
       assert.equal(error.requiresLogin, requiresLogin);
-      assert.equal(error.message.includes("t3 connect login"), requiresLogin);
+      assert.equal(error.message.includes(`${BRAND.cliName} connect login`), requiresLogin);
       assert.equal(error.message.includes("OAuth error: invalid_grant"), diagnostic);
       assert.notInclude(error.message, "private");
       assert.equal(error.message.includes("OAuth error:"), diagnostic);

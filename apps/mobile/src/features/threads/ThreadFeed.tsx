@@ -1,3 +1,4 @@
+import { BRAND } from "@t3tools/contracts/brand";
 import { Button } from "../../components/ui/Button";
 import * as Dialog from "../../components/ui/Dialog";
 import { useOpenPullRequest } from "../../native/useOpenPullRequest";
@@ -1991,7 +1992,7 @@ function renderFeedEntry(
         >
           {presentation.attribution === "t3code" ? (
             <Text className="mb-1 pr-1 font-t3-medium text-2xs text-foreground-muted opacity-60">
-              Sent by T3 Code
+              Sent by {BRAND.displayName}
             </Text>
           ) : null}
           {presentation.guestName !== undefined ? (
