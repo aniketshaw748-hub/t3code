@@ -45,6 +45,7 @@ import {
 } from "./agentLiveActivity";
 import { resolveCloudPublicConfig } from "../cloud/publicConfig";
 import { supportsAgentAwarenessPush } from "./capabilities";
+import { setAgentAwarenessRelayMode } from "./relayMode";
 import { makeRelayDeviceRegistrationRequest, resolveApsEnvironment } from "./registrationPayload";
 
 const REMOTE_ACTIVITY_REGISTRATION_RETRY_MS = 15_000;
@@ -118,31 +119,6 @@ export function subscribeAgentAwarenessRegistrationStatus(listener: () => void):
     registrationStatusListeners.delete(listener);
   };
 }
-/**
- * Whether a T3 Connect account owns this device's notifications. "none" lets the direct
- * registrar register with paired hosts; a soft provider release keeps the current mode.
- */
-export type AgentAwarenessRelayMode = "unknown" | "relay" | "none";
-let relayMode: AgentAwarenessRelayMode = "unknown";
-const relayModeListeners = new Set<() => void>();
-
-function setRelayMode(next: AgentAwarenessRelayMode): void {
-  if (relayMode === next) return;
-  relayMode = next;
-  for (const listener of relayModeListeners) listener();
-}
-
-export function getAgentAwarenessRelayMode(): AgentAwarenessRelayMode {
-  return relayMode;
-}
-
-export function subscribeAgentAwarenessRelayMode(listener: () => void): () => void {
-  relayModeListeners.add(listener);
-  return () => {
-    relayModeListeners.delete(listener);
-  };
-}
-
 let activeLiveActivityRegistrationRetry: ReturnType<typeof setTimeout> | null = null;
 let relayTokenProvider: (() => Promise<string | null>) | null = null;
 let relayTokenProviderIdentity: string | null = null;
@@ -231,10 +207,10 @@ export function setAgentAwarenessRelayTokenProvider(
     void clearAgentAwarenessRegistrationRecord().catch((error: unknown) => {
       logRegistrationError("clear registration record on sign-out failed", error);
     });
-    setRelayMode("none");
+    setAgentAwarenessRelayMode("none");
     return;
   }
-  setRelayMode("relay");
+  setAgentAwarenessRelayMode("relay");
   ensurePushTokenListener();
   ensureAppStateListener();
   runRegistrationInBackground(
@@ -277,47 +253,47 @@ function iosMajorVersion(): number {
   return Number.isFinite(major) ? major : 18;
 }
 
-export const nativePushTokenRegistration = Effect.fn(
-  "remoteRegistration.nativePushTokenRegistration",
-)(function* (observedPushToken?: string) {
-  if (!canRegisterPushNotifications() || !supportsAgentAwarenessPush()) {
-    return { notificationsEnabled: false, pushToken: null };
-  }
-  const permissions = yield* Effect.tryPromise({
-    try: () => Notifications.getPermissionsAsync(),
-    catch: (cause) =>
-      new AgentAwarenessOperationError({
-        operation: "read-notification-permissions",
-        cause,
-      }),
-  });
-  if (!permissions.granted) {
-    return { notificationsEnabled: false, pushToken: null };
-  }
-  if (observedPushToken) {
-    return { notificationsEnabled: true, pushToken: observedPushToken };
-  }
-  const token = yield* Effect.tryPromise({
-    try: () => Notifications.getDevicePushTokenAsync(),
-    catch: (cause) =>
-      new AgentAwarenessOperationError({
-        operation: "read-native-push-token",
-        cause,
-      }),
-  }).pipe(
-    Effect.tapError((error) =>
-      Effect.sync(() => {
-        logRegistrationError("native push token lookup failed", error);
-      }),
-    ),
-    Effect.orElseSucceed(() => null),
-  );
-  const pushToken =
-    token?.type === Platform.OS && typeof token.data === "string" && token.data.trim().length > 0
-      ? token.data.trim()
-      : null;
-  return { notificationsEnabled: pushToken !== null, pushToken };
-});
+const nativePushTokenRegistration = Effect.fn("remoteRegistration.nativePushTokenRegistration")(
+  function* (observedPushToken?: string) {
+    if (!canRegisterPushNotifications() || !supportsAgentAwarenessPush()) {
+      return { notificationsEnabled: false, pushToken: null };
+    }
+    const permissions = yield* Effect.tryPromise({
+      try: () => Notifications.getPermissionsAsync(),
+      catch: (cause) =>
+        new AgentAwarenessOperationError({
+          operation: "read-notification-permissions",
+          cause,
+        }),
+    });
+    if (!permissions.granted) {
+      return { notificationsEnabled: false, pushToken: null };
+    }
+    if (observedPushToken) {
+      return { notificationsEnabled: true, pushToken: observedPushToken };
+    }
+    const token = yield* Effect.tryPromise({
+      try: () => Notifications.getDevicePushTokenAsync(),
+      catch: (cause) =>
+        new AgentAwarenessOperationError({
+          operation: "read-native-push-token",
+          cause,
+        }),
+    }).pipe(
+      Effect.tapError((error) =>
+        Effect.sync(() => {
+          logRegistrationError("native push token lookup failed", error);
+        }),
+      ),
+      Effect.orElseSucceed(() => null),
+    );
+    const pushToken =
+      token?.type === Platform.OS && typeof token.data === "string" && token.data.trim().length > 0
+        ? token.data.trim()
+        : null;
+    return { notificationsEnabled: pushToken !== null, pushToken };
+  },
+);
 
 const relayToken = Effect.fn("remoteRegistration.relayToken")(function* (
   operation: "read-device-registration-relay-token" | "read-live-activity-registration-relay-token",

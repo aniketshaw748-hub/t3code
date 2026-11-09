@@ -16,11 +16,19 @@ import { loadPreferences } from "../../persistence/imperative";
 import * as MobileStorage from "../../persistence/mobile-storage";
 import { configureAndroidAgentNotifications } from "./androidNotifications";
 import { supportsAgentAwarenessPush } from "./capabilities";
-import {
-  getAgentAwarenessRelayMode,
-  nativePushTokenRegistration,
-  subscribeAgentAwarenessRelayMode,
-} from "./remoteRegistration";
+import { getAgentAwarenessRelayMode, subscribeAgentAwarenessRelayMode } from "./relayMode";
+
+/** The FCM token when notifications are allowed; null otherwise. */
+const readPushToken = (observedPushToken: string | undefined) =>
+  Effect.promise(async () => {
+    const permissions = await Notifications.getPermissionsAsync().catch(() => null);
+    if (!permissions?.granted) return null;
+    if (observedPushToken) return observedPushToken;
+    const token = await Notifications.getDevicePushTokenAsync().catch(() => null);
+    return token?.type === "android" && typeof token.data === "string" && token.data.trim()
+      ? token.data.trim()
+      : null;
+  });
 
 const REGISTER_TIMEOUT_MS = 15_000;
 // Each registration repaints the card from the host; unchanged ones only refresh this often.
@@ -131,7 +139,7 @@ export const layer = Layer.effectDiscard(
       );
       const liveActivitiesEnabled = preferences.liveActivitiesEnabled !== false;
       configureAndroidAgentNotifications(deviceId, DIRECT_PUSH_USER_ID, liveActivitiesEnabled);
-      const { pushToken } = yield* nativePushTokenRegistration(observedPushToken);
+      const pushToken = yield* readPushToken(observedPushToken);
       if (!pushToken) {
         setAll({ state: "permission-needed" });
         return;
