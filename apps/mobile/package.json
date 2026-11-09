@@ -178,6 +178,9 @@
         "expo-video",
         "expo-network",
         "expo-sharing"
+      ],
+      "exclude": [
+        "expo-observe"
       ]
     }
   },
