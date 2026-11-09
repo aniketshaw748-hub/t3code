@@ -1,10 +1,11 @@
 import { workspaceAreaProps } from "../lib/workspaceFocus";
 import { RefreshIcon } from "~/components/ui/refresh-icon";
 import { scopeProjectRef } from "@t3tools/client-runtime/environment";
-import { createFileRoute, useRouter } from "@tanstack/react-router";
+import { createFileRoute, Navigate, useRouter } from "@tanstack/react-router";
 import { useEffect, useEffectEvent, useRef, useState } from "react";
 
 import { isElectron } from "../env";
+import { useClientSettings, useClientSettingsHydrated } from "../hooks/useSettings";
 import { NoProjectsHero } from "../components/NoProjectsHero";
 import { sortScopedProjectsForSidebar } from "../components/Sidebar.logic";
 import { Button } from "../components/ui/button";
@@ -24,6 +25,12 @@ import { useEnvironments } from "../state/environments";
 function ChatIndexRouteView() {
   const { authGateState } = Route.useRouteContext();
   const { environments, isReady } = useEnvironments();
+  const appMode = useClientSettings((settings) => settings.appMode);
+  const hydrated = useClientSettingsHydrated();
+
+  // The home page follows the mode the user last chose; wait to know it before opening a draft.
+  if (!hydrated) return null;
+  if (appMode === "work") return <Navigate to="/work" replace />;
 
   if (authGateState.status === "hosted-static") {
     if (!isReady) return null;

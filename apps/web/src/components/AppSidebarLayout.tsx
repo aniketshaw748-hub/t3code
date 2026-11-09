@@ -40,6 +40,8 @@ import {
 import { BackgroundThreadAnnouncer } from "./BackgroundThreadAnnouncer";
 import { HistorySwipeNavigation } from "./HistorySwipeNavigation";
 import ThreadSidebar from "./Sidebar";
+import { isWorkPath } from "./work/workPaths";
+import { WorkSidebar } from "./work/WorkSidebar";
 import { SidebarBrandWidthProbe } from "./sidebar/SidebarChrome";
 import { isAppModalPage } from "./sidebar/mainAppLocation";
 import type { SidebarRouteReveal } from "./sidebar/routeReveal";
@@ -469,7 +471,11 @@ export function AppSidebarLayout({ children }: { children: ReactNode }) {
           }}
           style={windowControlsInsetStyle}
         >
-          <ThreadSidebar routeReveal={sidebarRouteReveal} />
+          {isWorkPath(pathname) ? (
+            <WorkSidebar />
+          ) : (
+            <ThreadSidebar routeReveal={sidebarRouteReveal} />
+          )}
           <SidebarRail onDoubleClick={resetSidebarWidth} />
         </Sidebar>
         {children}

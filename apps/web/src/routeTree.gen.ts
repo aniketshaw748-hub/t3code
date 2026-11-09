@@ -14,6 +14,7 @@ import { Route as PairRouteImport } from './routes/pair'
 import { Route as GuestRouteImport } from './routes/guest'
 import { Route as ConnectAgentRouteImport } from './routes/connect-agent'
 import { Route as ConnectRouteImport } from './routes/connect'
+import { Route as BubbleRouteImport } from './routes/bubble'
 import { Route as ChatRouteImport } from './routes/_chat'
 import { Route as ChatIndexRouteImport } from './routes/_chat.index'
 import { Route as ProjectsProjectKeyRouteImport } from './routes/projects.$projectKey'
@@ -21,6 +22,7 @@ import { Route as ChatUsageRouteImport } from './routes/_chat.usage'
 import { Route as ChatSettingsRouteImport } from './routes/_chat.settings'
 import { Route as ChatPullRequestsRouteImport } from './routes/_chat.pull-requests'
 import { Route as ChatNewRouteImport } from './routes/_chat.new'
+import { Route as ChatWorkIndexRouteImport } from './routes/_chat.work.index'
 import { Route as ThreadsEnvironmentIdThreadIdRouteImport } from './routes/threads.$environmentId.$threadId'
 import { Route as ChatSettingsWorktreesRouteImport } from './routes/_chat.settings.worktrees'
 import { Route as ChatSettingsVoiceRouteImport } from './routes/_chat.settings.voice'
@@ -51,6 +53,7 @@ import { Route as ChatSettingsAccessRouteImport } from './routes/_chat.settings.
 import { Route as ChatSettingsAboutRouteImport } from './routes/_chat.settings.about'
 import { Route as ChatDraftDraftIdRouteImport } from './routes/_chat.draft.$draftId'
 import { Route as ChatEnvironmentIdThreadIdRouteImport } from './routes/_chat.$environmentId.$threadId'
+import { Route as ChatWorkEnvironmentIdProjectIdRouteImport } from './routes/_chat.work.$environmentId.$projectId'
 
 const WelcomeRoute = WelcomeRouteImport.update({
   id: '/welcome',
@@ -75,6 +78,11 @@ const ConnectAgentRoute = ConnectAgentRouteImport.update({
 const ConnectRoute = ConnectRouteImport.update({
   id: '/connect',
   path: '/connect',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const BubbleRoute = BubbleRouteImport.update({
+  id: '/bubble',
+  path: '/bubble',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ChatRoute = ChatRouteImport.update({
@@ -109,6 +117,11 @@ const ChatPullRequestsRoute = ChatPullRequestsRouteImport.update({
 const ChatNewRoute = ChatNewRouteImport.update({
   id: '/new',
   path: '/new',
+  getParentRoute: () => ChatRoute,
+} as any)
+const ChatWorkIndexRoute = ChatWorkIndexRouteImport.update({
+  id: '/work/',
+  path: '/work/',
   getParentRoute: () => ChatRoute,
 } as any)
 const ThreadsEnvironmentIdThreadIdRoute =
@@ -267,9 +280,16 @@ const ChatEnvironmentIdThreadIdRoute =
     path: '/$environmentId/$threadId',
     getParentRoute: () => ChatRoute,
   } as any)
+const ChatWorkEnvironmentIdProjectIdRoute =
+  ChatWorkEnvironmentIdProjectIdRouteImport.update({
+    id: '/work/$environmentId/$projectId',
+    path: '/work/$environmentId/$projectId',
+    getParentRoute: () => ChatRoute,
+  } as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof ChatIndexRoute
+  '/bubble': typeof BubbleRoute
   '/connect': typeof ConnectRoute
   '/connect-agent': typeof ConnectAgentRoute
   '/guest': typeof GuestRoute
@@ -310,8 +330,11 @@ export interface FileRoutesByFullPath {
   '/settings/voice': typeof ChatSettingsVoiceRoute
   '/settings/worktrees': typeof ChatSettingsWorktreesRoute
   '/threads/$environmentId/$threadId': typeof ThreadsEnvironmentIdThreadIdRoute
+  '/work/': typeof ChatWorkIndexRoute
+  '/work/$environmentId/$projectId': typeof ChatWorkEnvironmentIdProjectIdRoute
 }
 export interface FileRoutesByTo {
+  '/bubble': typeof BubbleRoute
   '/connect': typeof ConnectRoute
   '/connect-agent': typeof ConnectAgentRoute
   '/guest': typeof GuestRoute
@@ -353,10 +376,13 @@ export interface FileRoutesByTo {
   '/settings/voice': typeof ChatSettingsVoiceRoute
   '/settings/worktrees': typeof ChatSettingsWorktreesRoute
   '/threads/$environmentId/$threadId': typeof ThreadsEnvironmentIdThreadIdRoute
+  '/work': typeof ChatWorkIndexRoute
+  '/work/$environmentId/$projectId': typeof ChatWorkEnvironmentIdProjectIdRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/_chat': typeof ChatRouteWithChildren
+  '/bubble': typeof BubbleRoute
   '/connect': typeof ConnectRoute
   '/connect-agent': typeof ConnectAgentRoute
   '/guest': typeof GuestRoute
@@ -398,11 +424,14 @@ export interface FileRoutesById {
   '/_chat/settings/voice': typeof ChatSettingsVoiceRoute
   '/_chat/settings/worktrees': typeof ChatSettingsWorktreesRoute
   '/threads/$environmentId/$threadId': typeof ThreadsEnvironmentIdThreadIdRoute
+  '/_chat/work/': typeof ChatWorkIndexRoute
+  '/_chat/work/$environmentId/$projectId': typeof ChatWorkEnvironmentIdProjectIdRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
     | '/'
+    | '/bubble'
     | '/connect'
     | '/connect-agent'
     | '/guest'
@@ -443,8 +472,11 @@ export interface FileRouteTypes {
     | '/settings/voice'
     | '/settings/worktrees'
     | '/threads/$environmentId/$threadId'
+    | '/work/'
+    | '/work/$environmentId/$projectId'
   fileRoutesByTo: FileRoutesByTo
   to:
+    | '/bubble'
     | '/connect'
     | '/connect-agent'
     | '/guest'
@@ -486,9 +518,12 @@ export interface FileRouteTypes {
     | '/settings/voice'
     | '/settings/worktrees'
     | '/threads/$environmentId/$threadId'
+    | '/work'
+    | '/work/$environmentId/$projectId'
   id:
     | '__root__'
     | '/_chat'
+    | '/bubble'
     | '/connect'
     | '/connect-agent'
     | '/guest'
@@ -530,10 +565,13 @@ export interface FileRouteTypes {
     | '/_chat/settings/voice'
     | '/_chat/settings/worktrees'
     | '/threads/$environmentId/$threadId'
+    | '/_chat/work/'
+    | '/_chat/work/$environmentId/$projectId'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   ChatRoute: typeof ChatRouteWithChildren
+  BubbleRoute: typeof BubbleRoute
   ConnectRoute: typeof ConnectRoute
   ConnectAgentRoute: typeof ConnectAgentRoute
   GuestRoute: typeof GuestRoute
@@ -578,6 +616,13 @@ declare module '@tanstack/react-router' {
       path: '/connect'
       fullPath: '/connect'
       preLoaderRoute: typeof ConnectRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/bubble': {
+      id: '/bubble'
+      path: '/bubble'
+      fullPath: '/bubble'
+      preLoaderRoute: typeof BubbleRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/_chat': {
@@ -627,6 +672,13 @@ declare module '@tanstack/react-router' {
       path: '/new'
       fullPath: '/new'
       preLoaderRoute: typeof ChatNewRouteImport
+      parentRoute: typeof ChatRoute
+    }
+    '/_chat/work/': {
+      id: '/_chat/work/'
+      path: '/work'
+      fullPath: '/work/'
+      preLoaderRoute: typeof ChatWorkIndexRouteImport
       parentRoute: typeof ChatRoute
     }
     '/threads/$environmentId/$threadId': {
@@ -839,6 +891,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ChatEnvironmentIdThreadIdRouteImport
       parentRoute: typeof ChatRoute
     }
+    '/_chat/work/$environmentId/$projectId': {
+      id: '/_chat/work/$environmentId/$projectId'
+      path: '/work/$environmentId/$projectId'
+      fullPath: '/work/$environmentId/$projectId'
+      preLoaderRoute: typeof ChatWorkEnvironmentIdProjectIdRouteImport
+      parentRoute: typeof ChatRoute
+    }
   }
 }
 
@@ -914,6 +973,8 @@ interface ChatRouteChildren {
   ChatIndexRoute: typeof ChatIndexRoute
   ChatEnvironmentIdThreadIdRoute: typeof ChatEnvironmentIdThreadIdRoute
   ChatDraftDraftIdRoute: typeof ChatDraftDraftIdRoute
+  ChatWorkIndexRoute: typeof ChatWorkIndexRoute
+  ChatWorkEnvironmentIdProjectIdRoute: typeof ChatWorkEnvironmentIdProjectIdRoute
 }
 
 const ChatRouteChildren: ChatRouteChildren = {
@@ -924,12 +985,15 @@ const ChatRouteChildren: ChatRouteChildren = {
   ChatIndexRoute: ChatIndexRoute,
   ChatEnvironmentIdThreadIdRoute: ChatEnvironmentIdThreadIdRoute,
   ChatDraftDraftIdRoute: ChatDraftDraftIdRoute,
+  ChatWorkIndexRoute: ChatWorkIndexRoute,
+  ChatWorkEnvironmentIdProjectIdRoute: ChatWorkEnvironmentIdProjectIdRoute,
 }
 
 const ChatRouteWithChildren = ChatRoute._addFileChildren(ChatRouteChildren)
 
 const rootRouteChildren: RootRouteChildren = {
   ChatRoute: ChatRouteWithChildren,
+  BubbleRoute: BubbleRoute,
   ConnectRoute: ConnectRoute,
   ConnectAgentRoute: ConnectAgentRoute,
   GuestRoute: GuestRoute,

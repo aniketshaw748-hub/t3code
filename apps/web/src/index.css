@@ -230,6 +230,8 @@ html[data-mobile-composer-route-transition="true"]::view-transition-old(t3-mobil
   --animate-stash-pulse-row: stash-pulse-row 1400ms;
   --animate-stash-pulse-row-alt: stash-pulse-row-alt 1400ms;
   --animate-stash-pulse-count: stash-pulse-count 1400ms step-start;
+  /* Two finite nudges when the desktop bubble starts waiting on the user. */
+  --animate-bubble-nudge: bubble-nudge 640ms ease-out 2;
   --color-warning-foreground: var(--warning-foreground);
   --color-warning: var(--warning);
   --color-warning-surface: var(--warning-surface);
@@ -248,6 +250,18 @@ html[data-mobile-composer-route-transition="true"]::view-transition-old(t3-mobil
   --color-info-foreground: var(--info-foreground);
   --color-info: var(--info);
   --color-guest: var(--guest);
+  --color-work-canvas: var(--work-canvas);
+  --color-work-panel: var(--work-panel);
+  --color-work-raised: var(--work-raised);
+  --color-work-line: var(--work-line);
+  --color-work-ink: var(--work-ink);
+  --color-work-muted: var(--work-muted);
+  --color-work-highlight: var(--work-highlight);
+  --color-work-highlight-ink: var(--work-highlight-ink);
+  --color-work-status-open: var(--work-status-open);
+  --color-work-status-fixing: var(--work-status-fixing);
+  --color-work-status-fixed: var(--work-status-fixed);
+  --color-work-status-resolved: var(--work-status-resolved);
   --color-guest-foreground: var(--guest-foreground);
   --color-guest-surface: var(--guest-surface);
   --color-destructive-foreground: var(--destructive-foreground);
@@ -309,6 +323,15 @@ html[data-mobile-composer-route-transition="true"]::view-transition-old(t3-mobil
     }
     100% {
       opacity: 1;
+    }
+  }
+  @keyframes bubble-nudge {
+    from,
+    to {
+      scale: 1;
+    }
+    40% {
+      scale: 1.09;
     }
   }
   @keyframes stash-pulse-row {
@@ -1274,6 +1297,38 @@ html[data-mobile-composer-route-transition="true"]::view-transition-old(t3-mobil
     --sidebar-stage-fade: var(--card);
     /* Row metadata sits a step below read titles (75% white). */
     --secondary-label: #8f8f8f;
+  }
+}
+
+/* Work mode's review palette: near-black neutrals with white as the only highlight, after Flask.
+   Light theme keeps the same roles on near-white. Note statuses use soft tags, not an accent. */
+:root {
+  --work-canvas: var(--color-neutral-100);
+  --work-panel: var(--color-white);
+  --work-raised: var(--color-neutral-50);
+  --work-line: var(--color-neutral-200);
+  --work-ink: var(--color-neutral-900);
+  --work-muted: var(--color-neutral-500);
+  --work-highlight: var(--color-neutral-900);
+  --work-highlight-ink: var(--color-white);
+  --work-status-open: var(--color-amber-600);
+  --work-status-fixing: var(--color-sky-600);
+  --work-status-fixed: var(--color-violet-600);
+  --work-status-resolved: var(--color-emerald-600);
+
+  @variant dark {
+    --work-canvas: #0b0b0b;
+    --work-panel: #151515;
+    --work-raised: #1c1c1c;
+    --work-line: #262626;
+    --work-ink: #ededed;
+    --work-muted: #8a8a8a;
+    --work-highlight: #ffffff;
+    --work-highlight-ink: #0b0b0b;
+    --work-status-open: #f5b94d;
+    --work-status-fixing: #7cc4f8;
+    --work-status-fixed: #c4a5ff;
+    --work-status-resolved: #6fd8a6;
   }
 }
 
@@ -2581,4 +2636,11 @@ code {
 [data-workspace-area]:focus-visible {
   outline: 2px solid var(--ring);
   outline-offset: -2px;
+}
+
+/* The desktop bubble window is transparent: only its disc and panels paint, and the boot
+   script's inline background must not fill the window. */
+html[data-surface="bubble"],
+html[data-surface="bubble"] body {
+  background: transparent !important;
 }

@@ -1,4 +1,5 @@
 import type { EnvironmentId, ManagedPolicySummary, ProviderDriverKind } from "@t3tools/contracts";
+import { BRAND } from "@t3tools/contracts/brand";
 
 import { useServerConfigs } from "./entities";
 import { usePrimaryEnvironmentId } from "./environments";
@@ -30,10 +31,14 @@ export function firstManagedDenial(
   return undefined;
 }
 
-/** What usage-data notices say when the policy turns product analytics off. */
-export function managedTelemetryOffMessage(
-  policy: ManagedPolicySummary | undefined,
-): string | undefined {
+/**
+ * What usage-data notices say when product analytics are off: a build without an analytics key
+ * never collects them, and a policy can turn them off. Undefined means they are collected.
+ */
+export function telemetryOffMessage(policy: ManagedPolicySummary | undefined): string | undefined {
+  if (BRAND.analytics.posthogKey === undefined) {
+    return `${BRAND.displayName} doesn't collect usage data.`;
+  }
   return policy?.limits?.telemetry === false
     ? `${policy.organization} turned off anonymous usage data.`
     : undefined;

@@ -21,9 +21,10 @@ import * as Schema from "effect/Schema";
 
 import { isGitImport, parseTurnDiffFilesFromNumstat } from "../checkpointing/Diffs.ts";
 import * as CheckpointStore from "../checkpointing/CheckpointStore.ts";
+import { HIDDEN_REFS_ROOT } from "../vcs/hiddenRefs.ts";
 import * as IdAllocator from "@t3tools/provider-core/server/IdAllocator";
 
-const CHECKPOINT_REFS_PREFIX = "refs/t3/orchestration-v2/checkpoints";
+const CHECKPOINT_REFS_PREFIX = `${HIDDEN_REFS_ROOT}/orchestration-v2/checkpoints`;
 const ROOT_CHECKPOINT_SCOPE_NAME = "root";
 
 export class CheckpointRootScopePrepareError extends Schema.TaggedError<CheckpointRootScopePrepareError>()(

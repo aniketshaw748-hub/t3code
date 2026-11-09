@@ -52,6 +52,8 @@ import * as EnvironmentHandlers from "./toolkits/environment/handlers.ts";
 import { ProjectToolkit } from "./toolkits/project/tools.ts";
 import * as ProjectHandlers from "./toolkits/project/handlers.ts";
 import { AttachmentToolkit } from "./toolkits/attachment/tools.ts";
+import { DeliverablesToolkit } from "./toolkits/deliverables/tools.ts";
+import * as DeliverablesHandlers from "./toolkits/deliverables/handlers.ts";
 import * as AttachmentHandlers from "./toolkits/attachment/handlers.ts";
 import { ThreadToolkit } from "./toolkits/thread/tools.ts";
 import * as ThreadHandlers from "./toolkits/thread/handlers.ts";
@@ -1188,6 +1190,11 @@ export const layerAttachmentToolkit = toolkitRegistration(
   AttachmentHandlers.layer,
 );
 
+const layerDeliverablesToolkit = toolkitRegistration(
+  DeliverablesToolkit,
+  DeliverablesHandlers.layer,
+);
+
 export const layerPullRequestsToolkit = toolkitRegistration(
   PullRequestsToolkit,
   PullRequestsHandlers.layer,
@@ -1250,6 +1257,7 @@ export const layerTools = Layer.mergeAll(
   layerPullRequestsToolkit,
   layerDeviceToolkit,
   layerHtmlToolkit,
+  layerDeliverablesToolkit,
 );
 
 export const layer = layerMcpTransport(layerTools);

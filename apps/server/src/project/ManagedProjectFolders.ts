@@ -3,6 +3,7 @@ import {
   CommandId,
   type GitManagerServiceError,
   ProjectId,
+  type ProjectKind,
   type ThreadId,
   VcsProcessSpawnError,
 } from "@t3tools/contracts";
@@ -100,7 +101,10 @@ export class ManagedProjectFolders extends Context.Service<
     }) => Effect.Effect<Option.Option<string>, ScratchFolderError>;
     readonly namedProjectsRoot: string;
     /** Removes failed/cancelled creations' folders only while no project owns them. */
-    readonly createNamedProject: (input: { readonly name: string }) => Effect.Effect<
+    readonly createNamedProject: (input: {
+      readonly name: string;
+      readonly kind?: ProjectKind | undefined;
+    }) => Effect.Effect<
       {
         readonly projectId: ProjectId;
         readonly workspaceRoot: string;
@@ -453,6 +457,15 @@ const make = Effect.gen(function* () {
         ),
         Effect.mapError((cause) => new NamedProjectCreateError({ workspaceRoot, cause })),
       );
+    if (input.kind === "work") {
+      yield* projects
+        .update({
+          commandId: CommandId.make(`named-project-kind:${id}`),
+          projectId: project.id,
+          kind: "work",
+        })
+        .pipe(Effect.mapError((cause) => new NamedProjectCreateError({ workspaceRoot, cause })));
+    }
     return {
       projectId: project.id,
       workspaceRoot,

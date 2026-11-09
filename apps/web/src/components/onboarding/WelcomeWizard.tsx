@@ -63,7 +63,7 @@ import { readProjects, waitForProject } from "../../state/entities";
 import { useEnvironments, usePrimaryEnvironment } from "../../state/environments";
 import {
   managedInstanceLocks,
-  managedTelemetryOffMessage,
+  telemetryOffMessage,
   usePrimaryManagedPolicy,
 } from "../../state/managedPolicy";
 import {
@@ -320,7 +320,7 @@ function ConnectionStep({
   readonly onPaired: (environmentId: EnvironmentId) => void;
 }) {
   const { environments } = useEnvironments();
-  const telemetryOff = managedTelemetryOffMessage(usePrimaryManagedPolicy());
+  const telemetryOff = telemetryOffMessage(usePrimaryManagedPolicy());
   const cloudEnabled = hasCloudPublicConfig();
   const directEnvironments = environments.filter(
     (environment) => !cloudEnabled || !isOnboardingRelayEnvironment(environment),

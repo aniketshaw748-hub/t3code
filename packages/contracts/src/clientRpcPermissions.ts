@@ -72,6 +72,18 @@ export const CLIENT_GUARDED_RPC_SCOPES = {
   [WS_METHODS.peerLinksUnlink]: AuthAccessWriteScope,
   // A link lets every agent here reach the other environment: Settings' bar.
   [WS_METHODS.peerLinksAnswerRequest]: AuthAccessWriteScope,
+  // Approving lets the agent spend the user's credits.
+  [WS_METHODS.spendApprovalsAnswer]: AuthOrchestrationOperateScope,
+  // Registering snapshots the workspace into Git; undo and restore rewrite its files.
+  [WS_METHODS.deliverablesRegisterVersion]: AuthOrchestrationOperateScope,
+  [WS_METHODS.deliverablesUndo]: AuthOrchestrationOperateScope,
+  [WS_METHODS.deliverablesRedo]: AuthOrchestrationOperateScope,
+  [WS_METHODS.deliverablesRestore]: AuthOrchestrationOperateScope,
+  [WS_METHODS.deliverableNotesCreate]: AuthOrchestrationOperateScope,
+  [WS_METHODS.deliverableNotesMarkSent]: AuthOrchestrationOperateScope,
+  [WS_METHODS.deliverableNotesSetStatus]: AuthOrchestrationOperateScope,
+  [WS_METHODS.deliverableNotesDelete]: AuthOrchestrationOperateScope,
+  [WS_METHODS.deliverableReviewSetStatus]: AuthOrchestrationOperateScope,
 } as const;
 export type ClientGuardedRpcTag = keyof typeof CLIENT_GUARDED_RPC_SCOPES;
 

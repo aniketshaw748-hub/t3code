@@ -380,6 +380,35 @@ import {
   ScheduledTaskMutationResult,
 } from "./scheduledTask.ts";
 import { SecretRequestAnswerInput, SecretRequestError } from "./secretRequest.ts";
+import { SpendApprovalAnswerInput, SpendApprovalError } from "./spendApproval.ts";
+import {
+  DeliverableCompareInput,
+  DeliverableComparison,
+  DeliverableError,
+  DeliverableRef,
+  DeliverableRegisterVersionInput,
+  DeliverableRegisterVersionResult,
+  DeliverableRendition,
+  DeliverableRestoreInput,
+  DeliverableRestoreResult,
+  DeliverableVersionGraph,
+  DeliverableVersionRef,
+  DeliverableVersionsResult,
+  DeliverablesListInput,
+  DeliverablesListResult,
+} from "./deliverables.ts";
+import {
+  DeliverableNote,
+  DeliverableNoteCreateInput,
+  DeliverableNoteError,
+  DeliverableNoteRef,
+  DeliverableNoteSetStatusInput,
+  DeliverableNotesMarkSentInput,
+  DeliverableNotesResult,
+  DeliverableReviewStatusSetInput,
+  WorkProjectSnapshot,
+  WorkProjectSubscribeInput,
+} from "./deliverableNotes.ts";
 import {
   ProjectCloneActionInput,
   ProjectCloneActionResult,
@@ -549,6 +578,22 @@ export const WS_METHODS = {
   scheduledTasksRunNow: "scheduledTasks.runNow",
   scheduledTasksRotateWebhookToken: "scheduledTasks.rotateWebhookToken",
   secretsAnswerRequest: "secrets.answerRequest",
+  spendApprovalsAnswer: "spendApprovals.answer",
+  deliverablesList: "deliverables.list",
+  deliverablesVersions: "deliverables.versions",
+  deliverablesRendition: "deliverables.rendition",
+  deliverablesCompare: "deliverables.compare",
+  deliverablesRegisterVersion: "deliverables.registerVersion",
+  deliverablesVersionGraph: "deliverables.versionGraph",
+  deliverablesUndo: "deliverables.undo",
+  deliverablesRedo: "deliverables.redo",
+  deliverablesRestore: "deliverables.restore",
+  deliverableNotesCreate: "deliverableNotes.create",
+  deliverableNotesMarkSent: "deliverableNotes.markSent",
+  deliverableNotesSetStatus: "deliverableNotes.setStatus",
+  deliverableNotesDelete: "deliverableNotes.delete",
+  deliverableReviewSetStatus: "deliverableReview.setStatus",
+  workSubscribeProject: "work.subscribeProject",
   guestShareCreate: "guestShare.create",
   scheduledTasksListWebhookDeliveries: "scheduledTasks.listWebhookDeliveries",
   scheduledTasksGetWebhookDelivery: "scheduledTasks.getWebhookDelivery",
@@ -1995,6 +2040,104 @@ const WsSecretsAnswerRequestRpc = Rpc.make(WS_METHODS.secretsAnswerRequest, {
   error: Schema.Union([SecretRequestError, EnvironmentAuthorizationError]),
 });
 
+const WsSpendApprovalsAnswerRpc = Rpc.make(WS_METHODS.spendApprovalsAnswer, {
+  payload: SpendApprovalAnswerInput,
+  error: Schema.Union([SpendApprovalError, EnvironmentAuthorizationError]),
+});
+
+const DeliverableRpcError = Schema.Union([DeliverableError, EnvironmentAuthorizationError]);
+
+const WsDeliverablesListRpc = Rpc.make(WS_METHODS.deliverablesList, {
+  payload: DeliverablesListInput,
+  success: DeliverablesListResult,
+  error: DeliverableRpcError,
+});
+
+const WsDeliverablesVersionsRpc = Rpc.make(WS_METHODS.deliverablesVersions, {
+  payload: DeliverableRef,
+  success: DeliverableVersionsResult,
+  error: DeliverableRpcError,
+});
+
+const WsDeliverablesRenditionRpc = Rpc.make(WS_METHODS.deliverablesRendition, {
+  payload: DeliverableVersionRef,
+  success: DeliverableRendition,
+  error: DeliverableRpcError,
+});
+
+const WsDeliverablesCompareRpc = Rpc.make(WS_METHODS.deliverablesCompare, {
+  payload: DeliverableCompareInput,
+  success: DeliverableComparison,
+  error: DeliverableRpcError,
+});
+
+const WsDeliverablesRegisterVersionRpc = Rpc.make(WS_METHODS.deliverablesRegisterVersion, {
+  payload: DeliverableRegisterVersionInput,
+  success: DeliverableRegisterVersionResult,
+  error: DeliverableRpcError,
+});
+
+const WsDeliverablesVersionGraphRpc = Rpc.make(WS_METHODS.deliverablesVersionGraph, {
+  payload: DeliverableRef,
+  success: DeliverableVersionGraph,
+  error: DeliverableRpcError,
+});
+
+const WsDeliverablesUndoRpc = Rpc.make(WS_METHODS.deliverablesUndo, {
+  payload: DeliverableRef,
+  success: DeliverableRestoreResult,
+  error: DeliverableRpcError,
+});
+
+const WsDeliverablesRedoRpc = Rpc.make(WS_METHODS.deliverablesRedo, {
+  payload: DeliverableRef,
+  success: DeliverableRestoreResult,
+  error: DeliverableRpcError,
+});
+
+const WsDeliverablesRestoreRpc = Rpc.make(WS_METHODS.deliverablesRestore, {
+  payload: DeliverableRestoreInput,
+  success: DeliverableRestoreResult,
+  error: DeliverableRpcError,
+});
+
+const DeliverableNoteRpcError = Schema.Union([DeliverableNoteError, EnvironmentAuthorizationError]);
+
+const WsDeliverableNotesCreateRpc = Rpc.make(WS_METHODS.deliverableNotesCreate, {
+  payload: DeliverableNoteCreateInput,
+  success: DeliverableNote,
+  error: DeliverableNoteRpcError,
+});
+
+const WsDeliverableNotesMarkSentRpc = Rpc.make(WS_METHODS.deliverableNotesMarkSent, {
+  payload: DeliverableNotesMarkSentInput,
+  success: DeliverableNotesResult,
+  error: DeliverableNoteRpcError,
+});
+
+const WsDeliverableNotesSetStatusRpc = Rpc.make(WS_METHODS.deliverableNotesSetStatus, {
+  payload: DeliverableNoteSetStatusInput,
+  success: DeliverableNote,
+  error: DeliverableNoteRpcError,
+});
+
+const WsDeliverableNotesDeleteRpc = Rpc.make(WS_METHODS.deliverableNotesDelete, {
+  payload: DeliverableNoteRef,
+  error: DeliverableNoteRpcError,
+});
+
+const WsDeliverableReviewSetStatusRpc = Rpc.make(WS_METHODS.deliverableReviewSetStatus, {
+  payload: DeliverableReviewStatusSetInput,
+  error: DeliverableNoteRpcError,
+});
+
+const WsWorkSubscribeProjectRpc = Rpc.make(WS_METHODS.workSubscribeProject, {
+  payload: WorkProjectSubscribeInput,
+  success: WorkProjectSnapshot,
+  error: DeliverableNoteRpcError,
+  stream: true,
+});
+
 const WsScheduledTasksListWebhookDeliveriesRpc = Rpc.make(
   WS_METHODS.scheduledTasksListWebhookDeliveries,
   {
@@ -2097,6 +2240,22 @@ export const WsRpcGroup = RpcGroup.make(
   WsScheduledTasksRunNowRpc,
   WsScheduledTasksRotateWebhookTokenRpc,
   WsSecretsAnswerRequestRpc,
+  WsSpendApprovalsAnswerRpc,
+  WsDeliverablesListRpc,
+  WsDeliverablesVersionsRpc,
+  WsDeliverablesRenditionRpc,
+  WsDeliverablesCompareRpc,
+  WsDeliverablesRegisterVersionRpc,
+  WsDeliverablesVersionGraphRpc,
+  WsDeliverablesUndoRpc,
+  WsDeliverablesRedoRpc,
+  WsDeliverablesRestoreRpc,
+  WsDeliverableNotesCreateRpc,
+  WsDeliverableNotesMarkSentRpc,
+  WsDeliverableNotesSetStatusRpc,
+  WsDeliverableNotesDeleteRpc,
+  WsDeliverableReviewSetStatusRpc,
+  WsWorkSubscribeProjectRpc,
   WsScheduledTasksListWebhookDeliveriesRpc,
   WsScheduledTasksGetWebhookDeliveryRpc,
   WsServerReportClientActivityRpc,

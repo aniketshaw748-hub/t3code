@@ -35,6 +35,7 @@ vi.mock("electron", async (importOriginal) => ({
 }));
 
 import * as DesktopAssets from "../app/DesktopAssets.ts";
+import * as DesktopBubble from "../bubble/DesktopBubble.ts";
 import * as DesktopConfig from "../app/DesktopConfig.ts";
 import * as DesktopEnvironment from "../app/DesktopEnvironment.ts";
 import * as DesktopState from "../app/DesktopState.ts";
@@ -262,6 +263,7 @@ function layerTest(input: {
         }
         return { settings: desktopSettings, changed };
       }),
+    setBubblePosition: () => Effect.die("unexpected bubble position update"),
     setServerExposureMode: () => Effect.die("unexpected server exposure update"),
     setTailscaleServe: () => Effect.die("unexpected Tailscale Serve update"),
     setUpdateChannel: () => Effect.die("unexpected update channel change"),
@@ -336,6 +338,7 @@ function layerTest(input: {
           installSessionHandlers: () => {},
           attachGuest: () => () => {},
         }),
+        Layer.mock(DesktopBubble.DesktopBubble)({ attachMainWindow: () => Effect.void }),
         Layer.mock(PreviewManager.PreviewManager)({
           getBrowserSession: () => Effect.succeed({} as Electron.Session),
           setMainWindow: input.setPreviewMainWindow ?? (() => Effect.void),
@@ -446,6 +449,7 @@ const makeSplashScenario = (createOutcomes: readonly (Electron.BrowserWindow | n
             installSessionHandlers: () => {},
             attachGuest: () => () => {},
           }),
+          Layer.mock(DesktopBubble.DesktopBubble)({ attachMainWindow: () => Effect.void }),
           Layer.mock(PreviewManager.PreviewManager)({
             getBrowserSession: () => Effect.succeed({} as Electron.Session),
             setMainWindow: () => Effect.void,

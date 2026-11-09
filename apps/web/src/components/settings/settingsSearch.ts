@@ -796,6 +796,13 @@ export const SETTINGS_SEARCH_ITEMS = [
     desktopOnly: true,
   },
   {
+    id: "bubble-when-minimized",
+    title: "Bubble when minimized",
+    to: "/settings/general",
+    searchTerms: ["floating chat head running agents progress always on top minimize window"],
+    desktopOnly: true,
+  },
+  {
     id: "text-generation-model",
     title: "Text generation model",
     to: "/settings/threads",
