@@ -566,6 +566,10 @@
     "./work/starters": {
       "types": "./src/work/workStarters.ts",
       "default": "./src/work/workStarters.ts"
+    },
+    "./work/anchors": {
+      "types": "./src/work/workAnchors.ts",
+      "default": "./src/work/workAnchors.ts"
     }
   },
   "scripts": {

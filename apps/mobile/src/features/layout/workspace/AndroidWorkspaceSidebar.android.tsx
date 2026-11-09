@@ -6,6 +6,7 @@ import { useNavigationState } from "@react-navigation/native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useAndroidControlSizing } from "../../../components/ui/useAndroidControlSizing";
 import { FLOATING_TABS } from "./floating-workspace-tabs";
+import { isWorkspacePageTab } from "./workspace-tabs-state";
 import { View } from "react-native";
 import { ScreenContent } from "../../../components/ui/ScreenContent";
 import { PullRequestsScreen } from "../../pull-requests/PullRequestsScreen";
@@ -30,7 +31,8 @@ export function AndroidWorkspaceSidebar() {
   const selectedPullRequest = useNavigationState(selectedPullRequestKey);
   // Settings and Usage cover the sidebar.
   const coveredByPage =
-    (useAndroidWorkspaceRoot()?.settingsOpen ?? false) || workspace.state.selectedTab === "usage";
+    (useAndroidWorkspaceRoot()?.settingsOpen ?? false) ||
+    isWorkspacePageTab(workspace.state.selectedTab);
   const bottomClearance = floatingTabsEnabled
     ? insets.bottom + FLOATING_TABS.bottom + FLOATING_TABS.edge + fabSize
     : 16;
