@@ -27,7 +27,7 @@ import {
   settlePromise,
   squashAtomCommandFailure,
 } from "@t3tools/client-runtime/state/runtime";
-import { supportsAgentAwarenessPush } from "../agent-awareness/capabilities";
+import { isPushConfigured, supportsAgentAwarenessPush } from "../agent-awareness/capabilities";
 import {
   openAndroidLiveUpdateSettings,
   supportsAndroidLiveUpdateSettings,
@@ -110,16 +110,19 @@ function useDeviceRegistered(): boolean {
 }
 
 export function SettingsNotificationsRouteScreen() {
-  if (!hasCloudPublicConfig()) {
+  const unavailableReason = !isPushConfigured()
+    ? "Push notifications aren't configured for this build. It was made without a Firebase config, so agent notifications and activity updates can't reach this device."
+    : !hasCloudPublicConfig()
+      ? "Notifications require T3 Connect in this app build."
+      : null;
+  if (unavailableReason) {
     return (
       <SettingsScreen title="Notifications">
         <ScrollView
           contentInsetAdjustmentBehavior="automatic"
           contentContainerClassName="px-5 pt-4"
         >
-          <Text className="text-base text-foreground-muted">
-            Notifications require T3 Connect in this app build.
-          </Text>
+          <Text className="text-base text-foreground-muted">{unavailableReason}</Text>
         </ScrollView>
       </SettingsScreen>
     );

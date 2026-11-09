@@ -23,6 +23,7 @@ import { deriveProjectGroupLabel } from "@t3tools/client-runtime/state/project-g
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { hasCloudPublicConfig } from "../cloud/publicConfig";
+import { isPushConfigured } from "../agent-awareness/capabilities";
 import { useAdaptiveWorkspaceLayout } from "../layout/adaptive-workspace-context";
 import { useSavedRemoteConnections } from "../../state/use-remote-environment-registry";
 import { SettingsRow } from "./components/SettingsRow";
@@ -130,12 +131,7 @@ function ConfiguredSettingsRouteScreen() {
           onPress: () => navigation.navigate("SettingsAuth"),
         },
         environmentsRow(Object.keys(savedConnectionsById).length),
-        {
-          id: "SettingsNotifications",
-          icon: "bell.badge",
-          label: "Notifications",
-          target: "SettingsNotifications",
-        },
+        notificationsRow(),
       ]}
     />
   );
@@ -143,7 +139,22 @@ function ConfiguredSettingsRouteScreen() {
 
 function LocalSettingsRouteScreen() {
   const { savedConnectionsById } = useSavedRemoteConnections();
-  return <SettingsList connections={[environmentsRow(Object.keys(savedConnectionsById).length)]} />;
+  return (
+    <SettingsList
+      connections={[environmentsRow(Object.keys(savedConnectionsById).length), notificationsRow()]}
+    />
+  );
+}
+
+// Listed even when unavailable, so the screen can say why this build has no notifications.
+function notificationsRow(): SettingsListRow {
+  return {
+    id: "SettingsNotifications",
+    icon: "bell.badge",
+    label: "Notifications",
+    ...(isPushConfigured() ? {} : { value: "Not configured", valuePosition: "trailing" as const }),
+    target: "SettingsNotifications",
+  };
 }
 
 function environmentsRow(count: number): SettingsListRow {

@@ -16,6 +16,11 @@ export type WorkspaceTab = NavigationTab;
 export type WorkspaceSearchTab = WorkspaceTab | "settings";
 export type WorkspaceSearchMode = "resting" | "active" | "expanded";
 
+/** Usage and Work are one page each: no list beside a detail column, and no search. */
+export function isWorkspacePageTab(tab: WorkspaceTab | "settings"): tab is "usage" | "work" {
+  return tab === "usage" || tab === "work";
+}
+
 /** Settings, Chats and pull requests pair a list with a detail column; Usage is one page. */
 export function workspaceUsesColumns(tab: WorkspaceTab, settingsOpen = false) {
   return settingsOpen || tab === "threads" || tab === "pullRequests";
@@ -44,6 +49,7 @@ export function initialWorkspaceTabsState(): WorkspaceTabsState {
     selectionRevision: 0,
     tabs: {
       threads: emptyTab(),
+      work: emptyTab(),
       pullRequests: emptyTab(),
       usage: emptyTab(),
       settings: emptyTab(),

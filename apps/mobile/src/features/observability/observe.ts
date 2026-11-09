@@ -1,11 +1,12 @@
 import Constants from "expo-constants";
-import { Observe } from "expo-observe";
+import { observe } from "./observeClient";
 
 // Importing expo-observe installs its global JS error handler; reports leave only through the relay.
 const relayUrl: unknown = Constants.expoConfig?.extra?.relay?.url;
 const appVariant: unknown = Constants.expoConfig?.extra?.appVariant;
 
-export const crashReportingAvailable = typeof relayUrl === "string" && relayUrl.trim() !== "";
+export const crashReportingAvailable =
+  observe !== null && typeof relayUrl === "string" && relayUrl.trim() !== "";
 
 interface PromiseRejectionTracker {
   readonly enablePromiseRejectionTracker?: (options: {
@@ -19,7 +20,7 @@ if (!__DEV__) {
   const hermes: PromiseRejectionTracker | undefined = Reflect.get(globalThis, "HermesInternal");
   hermes?.enablePromiseRejectionTracker?.({
     allRejections: true,
-    onUnhandled: (_id, rejection) => Observe.reportError(rejection),
+    onUnhandled: (_id, rejection) => observe?.reportError(rejection),
   });
 }
 
@@ -31,10 +32,10 @@ export async function setCrashReportsEnabled(enabled: boolean) {
   const configuration = ++latestConfiguration;
   const dispatchingEnabled = crashReportingAvailable && enabled;
   if (dispatchingEnabled) {
-    await Observe.dispatchEvents();
+    await observe?.dispatchEvents();
     if (configuration !== latestConfiguration) return;
   }
-  Observe.configure({
+  observe?.configure({
     dispatchingEnabled,
     ...(typeof appVariant === "string" ? { environment: appVariant } : {}),
   });
