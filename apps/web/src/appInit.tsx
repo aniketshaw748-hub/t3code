@@ -10,6 +10,8 @@ import { startBrowserProfileReporting } from "./browser/BrowserProfileReporter";
 import { startPreviewTitleRecording } from "./browserHistoryStore";
 import { retainThreadOverlaysForThread } from "./components/chat/threadOverlayRetention";
 import { startBackgroundThreadAnnouncements } from "./components/BackgroundThreadAnnouncer";
+import { startBubbleHost } from "./components/bubble/bubbleHost";
+import { startBubbleThreadOpening } from "./components/bubble/bubbleThreadOpening";
 import { startSshPasswordPromptQueue } from "./components/desktop/SshPasswordPromptDialog";
 import { startHostFreezeToasts } from "./components/HostFreezeToastCoordinator";
 import { startKeybindingsUpdateToasts } from "./components/KeybindingsUpdateToast";
@@ -22,6 +24,7 @@ import { startSlowRpcRequestToasts } from "./components/SlowRpcRequestToastCoord
 import { startThreadNotifications } from "./components/ThreadNotificationCoordinator";
 import { startGuideRunNotifications } from "./components/pullRequest/guide/PullRequestGuideRunCoordinator";
 import { APP_BASE_NAME, APP_DISPLAY_NAME, APP_STAGE_LABEL } from "./branding";
+import { isBubblePage } from "./bubblePage";
 import { resolveServerBackedAppDisplayName } from "./branding.logic";
 import { isElectron } from "./env";
 import {
@@ -172,6 +175,16 @@ export function startAppServices(): AppRouter {
   // Electron loads the app from a file-backed shell, so hash history avoids path resolution issues.
   const router = getRouter(isElectron ? createHashHistory() : createBrowserHistory());
 
+  if (isBubblePage()) {
+    // A second renderer beside the main window, which owns notifications, previews and drafts.
+    document.documentElement.dataset.surface = "bubble";
+    startClientAppearance();
+    startHostEnvironmentLookup();
+    startEnvironmentThemeRepaint();
+    startBubbleHost();
+    return router;
+  }
+
   if (isElectron) {
     syncDocumentElectronPlatformClasses(navigator.platform);
     syncDocumentWindowControlsOverlayClass();
@@ -218,6 +231,7 @@ export function startAppServices(): AppRouter {
   startLegacyThreadMigrationToast();
   startPermissionUpdateNotices(router);
   startThreadNotifications(appAtomRegistry, router);
+  if (isElectron) startBubbleThreadOpening(router);
   startGuideRunNotifications(appAtomRegistry, router);
   if (isElectron) startDesktopUpdateLaunchNotice();
 

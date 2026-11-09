@@ -1,6 +1,7 @@
 import { RouterProvider } from "@tanstack/react-router";
 
 import { ElectronBrowserHost } from "./browser/ElectronBrowserHost";
+import { isBubblePage } from "./bubblePage";
 import { QuitHoldOverlay } from "./components/QuitHoldOverlay";
 import { AppAtomRegistryProvider } from "./rpc/atomRegistry";
 import type { AppRouter } from "./router";
@@ -10,8 +11,13 @@ export function AppRoot({ router }: { readonly router: AppRouter }) {
   return (
     <AppAtomRegistryProvider>
       <RouterProvider router={router} />
-      <ElectronBrowserHost />
-      <QuitHoldOverlay />
+      {/* The bubble window must not host previews; the main window already does. */}
+      {isBubblePage() ? null : (
+        <>
+          <ElectronBrowserHost />
+          <QuitHoldOverlay />
+        </>
+      )}
     </AppAtomRegistryProvider>
   );
 }

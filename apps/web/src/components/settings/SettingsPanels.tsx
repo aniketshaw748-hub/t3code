@@ -565,6 +565,9 @@ export function useSettingsRestore(onRestored?: () => void) {
       ? ["Delete confirmation"]
       : []),
     ...(settings.confirmQuit !== DEFAULT_UNIFIED_SETTINGS.confirmQuit ? ["Quit shortcut"] : []),
+    ...(settings.showBubbleWhenMinimized !== DEFAULT_UNIFIED_SETTINGS.showBubbleWhenMinimized
+      ? ["Bubble when minimized"]
+      : []),
     ...(isTextGenerationModelDirty ? ["Text generation model"] : []),
     ...(settings.threadTitleInstructions !== DEFAULT_UNIFIED_SETTINGS.threadTitleInstructions
       ? ["Thread title instructions"]
@@ -673,6 +676,7 @@ export function useSettingsRestore(onRestored?: () => void) {
       confirmThreadDelete: DEFAULT_UNIFIED_SETTINGS.confirmThreadDelete,
       confirmThreadUnpin: DEFAULT_UNIFIED_SETTINGS.confirmThreadUnpin,
       confirmQuit: DEFAULT_UNIFIED_SETTINGS.confirmQuit,
+      showBubbleWhenMinimized: DEFAULT_UNIFIED_SETTINGS.showBubbleWhenMinimized,
       textGenerationModelSelection: DEFAULT_UNIFIED_SETTINGS.textGenerationModelSelection,
       threadTitleInstructions: DEFAULT_UNIFIED_SETTINGS.threadTitleInstructions,
       fontFamilySans: DEFAULT_UNIFIED_SETTINGS.fontFamilySans,
@@ -1024,6 +1028,34 @@ export function GeneralSettingsPanel() {
                   ))}
                 </SelectPopup>
               </Select>
+            }
+          />
+        ) : null}
+        {isElectron ? (
+          <SettingsRow
+            {...searchableSetting("bubble-when-minimized")}
+            description="While the window is minimized, a floating bubble shows running threads and lets you reply."
+            resetAction={
+              settings.showBubbleWhenMinimized !==
+              DEFAULT_UNIFIED_SETTINGS.showBubbleWhenMinimized ? (
+                <SettingResetButton
+                  label="bubble when minimized"
+                  onClick={() =>
+                    updateSettings({
+                      showBubbleWhenMinimized: DEFAULT_UNIFIED_SETTINGS.showBubbleWhenMinimized,
+                    })
+                  }
+                />
+              ) : null
+            }
+            control={
+              <Switch
+                checked={settings.showBubbleWhenMinimized}
+                onCheckedChange={(checked) =>
+                  updateSettings({ showBubbleWhenMinimized: Boolean(checked) })
+                }
+                aria-label="Show bubble when minimized"
+              />
             }
           />
         ) : null}
