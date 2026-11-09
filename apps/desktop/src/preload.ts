@@ -328,6 +328,37 @@ contextBridge.exposeInMainWorld("desktopBridge", {
       };
     },
   },
+  bubble: {
+    ready: () => ipcRenderer.invoke(IpcChannels.BUBBLE_READY_CHANNEL),
+    resize: (size) => ipcRenderer.invoke(IpcChannels.BUBBLE_RESIZE_CHANNEL, size),
+    setInteractive: (interactive) =>
+      ipcRenderer.invoke(IpcChannels.BUBBLE_SET_INTERACTIVE_CHANNEL, interactive),
+    dragStart: () => ipcRenderer.invoke(IpcChannels.BUBBLE_DRAG_START_CHANNEL),
+    dragMove: () => ipcRenderer.invoke(IpcChannels.BUBBLE_DRAG_MOVE_CHANNEL),
+    dragEnd: (options) => ipcRenderer.invoke(IpcChannels.BUBBLE_DRAG_END_CHANNEL, options),
+    openThread: (target) => ipcRenderer.invoke(IpcChannels.BUBBLE_OPEN_THREAD_CHANNEL, target),
+    restoreApp: () => ipcRenderer.invoke(IpcChannels.BUBBLE_RESTORE_APP_CHANNEL),
+    onState: (listener) => {
+      const wrappedListener = (_event: Electron.IpcRendererEvent, state: unknown) => {
+        if (typeof state !== "object" || state === null) return;
+        listener(state as Parameters<typeof listener>[0]);
+      };
+      ipcRenderer.on(IpcChannels.BUBBLE_STATE_CHANNEL, wrappedListener);
+      return () => {
+        ipcRenderer.removeListener(IpcChannels.BUBBLE_STATE_CHANNEL, wrappedListener);
+      };
+    },
+  },
+  onBubbleOpenThread: (listener) => {
+    const wrappedListener = (_event: Electron.IpcRendererEvent, target: unknown) => {
+      if (typeof target !== "object" || target === null) return;
+      listener(target as Parameters<typeof listener>[0]);
+    };
+    ipcRenderer.on(IpcChannels.BUBBLE_OPEN_THREAD_REQUEST_CHANNEL, wrappedListener);
+    return () => {
+      ipcRenderer.removeListener(IpcChannels.BUBBLE_OPEN_THREAD_REQUEST_CHANNEL, wrappedListener);
+    };
+  },
   preview: {
     setForwardedShortcuts: (shortcuts) =>
       ipcRenderer.invoke(IpcChannels.PREVIEW_SET_FORWARDED_SHORTCUTS_CHANNEL, shortcuts),
