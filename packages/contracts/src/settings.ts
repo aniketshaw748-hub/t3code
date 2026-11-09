@@ -386,7 +386,12 @@ export const VoiceTranscriptionDestination = Schema.Union([
 ]);
 export type VoiceTranscriptionDestination = typeof VoiceTranscriptionDestination.Type;
 
+/** `work` shows decks, videos and images instead of code: the shelf and project screens. */
+export const AppMode = Schema.Literals(["code", "work"]);
+export type AppMode = typeof AppMode.Type;
+
 export const ClientSettingsSchema = Schema.Struct({
+  appMode: AppMode.pipe(Schema.withDecodingDefault(Effect.succeed("code" as const))),
   notificationMode: NotificationMode.pipe(
     Schema.withDecodingDefault(Effect.succeed("off" as const)),
   ),
@@ -1856,6 +1861,7 @@ export function requiredScopesForProjectMutation(
 }
 
 export const ClientSettingsPatch = Schema.Struct({
+  appMode: Schema.optionalKey(AppMode),
   notificationMode: Schema.optionalKey(NotificationMode),
   inAppNotificationsEnabled: Schema.optionalKey(Schema.Boolean),
   diffColorScheme: Schema.optionalKey(DiffColorScheme),
