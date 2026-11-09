@@ -433,9 +433,11 @@ export class MacDesktopBuildPrerequisitesMissingError extends Schema.TaggedError
 const WINDOWS_DESKTOP_BUILD_PREREQUISITES = [
   { id: "rust", description: "Rust/Cargo and the requested MSVC Rust target" },
   { id: "python", description: "Python 3 for node-gyp" },
+  { id: "msvc", description: "Visual Studio Build Tools with C++ and the Windows SDK" },
   {
-    id: "msvc",
-    description: "Visual Studio Build Tools with C++, Windows SDK, and Spectre libraries",
+    id: "spectre",
+    description:
+      "MSVC Spectre-mitigated libraries, needed because node-pty has no prebuild for this architecture",
   },
   { id: "tar", description: "tar to inspect the bundled WSL runtime archive" },
 ] as const;
@@ -1008,6 +1010,11 @@ export const DESKTOP_FILE_EXCLUSIONS = [
   "!apps/desktop/prod-resources/wsl-runtime.tar.gz.sha256",
   "!apps/desktop/gnome-extension",
   "!apps/desktop/gnome-extension/**/*",
+  // Staging copies of the monitor; the app runs the extraResources copy beside app.asar.
+  "!apps/desktop/prod-resources/resource-monitor",
+  "!apps/desktop/prod-resources/resource-monitor/**/*",
+  "!apps/desktop/resources/resource-monitor",
+  "!apps/desktop/resources/resource-monitor/**/*",
 ] as const;
 // Windows terminal helpers cannot run on macOS and slow signing and notarization.
 export const MAC_FILE_EXCLUSIONS = [
@@ -1053,17 +1060,39 @@ export const WINDOWS_SERVER_ASAR_IGNORE_GLOBS = [
   "**/*.map",
 ] as const;
 
-export function resolveWindowsServerAsarIgnoreGlobs(arch: typeof BuildArch.Type) {
+/** Packages built for the Windows architectures the payload cannot load, like `ffi-rs-win32-ia32-msvc`. */
+export function windowsForeignArchPackageGlobs(arch: typeof BuildArch.Type) {
+  const foreign = arch === "arm64" ? ["x64", "ia32"] : ["arm64", "ia32"];
+  return foreign.flatMap((other) => [
+    `**/node_modules/*-win32-${other}-*`,
+    `**/node_modules/*-win32-${other}-*/**`,
+    `**/node_modules/@*/*-win32-${other}-*`,
+    `**/node_modules/@*/*-win32-${other}-*/**`,
+  ]);
+}
+
+export function resolveWindowsServerAsarIgnoreGlobs(
+  arch: typeof BuildArch.Type,
+  options: { readonly nodePtyPrebuilt: boolean } = { nodePtyPrebuilt: true },
+) {
   const unusedArch = arch === "arm64" ? "x64" : "arm64";
   const unusedPrebuild = `**/node_modules/node-pty/prebuilds/win32-${unusedArch}`;
-  const unusedConpty = `**/node_modules/node-pty/third_party/conpty/*/win10-${unusedArch}`;
+  // node-pty loads conpty.dll beside the addon it loads. With a prebuild, build/Release holds
+  // only post-install copies of conpty, and third_party/conpty is always those copies' source.
+  const nodePtyCopies = [
+    "**/node_modules/node-pty/third_party/conpty",
+    "**/node_modules/node-pty/third_party/conpty/**",
+    ...(options.nodePtyPrebuilt
+      ? ["**/node_modules/node-pty/build", "**/node_modules/node-pty/build/**"]
+      : []),
+  ];
 
   return [
     ...WINDOWS_SERVER_ASAR_IGNORE_GLOBS,
     unusedPrebuild,
     `${unusedPrebuild}/**`,
-    unusedConpty,
-    `${unusedConpty}/**`,
+    ...nodePtyCopies,
+    ...windowsForeignArchPackageGlobs(arch),
   ];
 }
 
@@ -2005,32 +2034,82 @@ export const preflightMacDesktopBuild = Effect.fn("preflightMacDesktopBuild")(fu
   }
 });
 
-function windowsVswherePrerequisiteScript(arch: typeof BuildArch.Type): string {
+function windowsVswherePrerequisiteScript(
+  arch: typeof BuildArch.Type,
+  check: "toolchain" | "spectre",
+): string {
   const toolComponents =
     arch === "arm64"
       ? ["Microsoft.VisualStudio.Component.VC.Tools.ARM64"]
       : ["Microsoft.VisualStudio.Component.VC.Tools.x86.x64"];
   const spectreArch = arch === "arm64" ? "arm64" : "x64";
-  return [
+  const toolchain = [
     "$vswhere = Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio\\Installer\\vswhere.exe'",
     "if (!(Test-Path $vswhere)) { exit 1 }",
     `$install = & $vswhere -latest -products * -requires ${toolComponents.join(" ")} -property installationPath`,
     "if (!$install) { exit 1 }",
-    "$kitsRoot = Get-ItemPropertyValue 'HKLM:\\SOFTWARE\\Microsoft\\Windows Kits\\Installed Roots' -Name KitsRoot10 -ErrorAction SilentlyContinue",
-    "if (!$kitsRoot -or !(Test-Path (Join-Path $kitsRoot 'Lib'))) { exit 1 }",
+    // The SDK registers under WOW6432Node; the 64-bit key can name a Program Files root holding
+    // only other kits (App Certification Kit), so accept whichever root has the libraries.
+    "$kitsRoots = @('HKLM:\\SOFTWARE\\Microsoft\\Windows Kits\\Installed Roots', 'HKLM:\\SOFTWARE\\WOW6432Node\\Microsoft\\Windows Kits\\Installed Roots') | ForEach-Object { Get-ItemPropertyValue $_ -Name KitsRoot10 -ErrorAction SilentlyContinue }",
+    "if (!($kitsRoots | Where-Object { $_ -and (Test-Path (Join-Path $_ 'Lib')) })) { exit 1 }",
     "$msvcToolset = Get-ChildItem (Join-Path $install 'VC\\Tools\\MSVC') -Directory | Sort-Object { [version]$_.Name } -Descending | Select-Object -First 1",
     "if (!$msvcToolset) { exit 1 }",
-    `if (!(Test-Path (Join-Path $msvcToolset.FullName 'lib\\spectre\\${spectreArch}'))) { exit 1 }`,
-  ].join("; ");
+  ];
+  return (
+    check === "toolchain"
+      ? toolchain
+      : [
+          ...toolchain,
+          `if (!(Test-Path (Join-Path $msvcToolset.FullName 'lib\\spectre\\${spectreArch}'))) { exit 1 }`,
+        ]
+  ).join("; ");
 }
 
+/**
+ * node-pty compiles with Spectre mitigation, so MSVC's Spectre libraries matter only when it has
+ * no prebuild for the target and the staged install falls back to node-gyp.
+ */
+export const nodePtyBuildsFromSource = Effect.fn("nodePtyBuildsFromSource")(function* (input: {
+  readonly repoRoot: string;
+  readonly arch: typeof BuildArch.Type;
+}) {
+  const fs = yield* FileSystem.FileSystem;
+  const path = yield* Path.Path;
+  const buildFromSource = yield* Config.Boolean("npm_config_build_from_source").pipe(
+    Config.withDefault(false),
+  );
+  if (buildFromSource) return true;
+  const prebuild = path.join(
+    input.repoRoot,
+    "apps/server/node_modules/node-pty/prebuilds",
+    `win32-${input.arch}`,
+    "conpty.node",
+  );
+  return !(yield* fs.exists(prebuild).pipe(Effect.orElseSucceed(() => false)));
+});
+
 export const preflightWindowsDesktopBuild = Effect.fn("preflightWindowsDesktopBuild")(
-  function* (input: { readonly arch: typeof BuildArch.Type; readonly bundlesWslRuntime: boolean }) {
+  function* (input: {
+    readonly arch: typeof BuildArch.Type;
+    readonly bundlesWslRuntime: boolean;
+    readonly nodePtyBuildsFromSource: boolean;
+  }) {
     const rustTarget = resolveResourceMonitorRustTargets("win", input.arch)[0]!;
     const reuseResourceMonitor = yield* Config.Boolean(
       "T3CODE_DESKTOP_REUSE_RESOURCE_MONITOR",
     ).pipe(Config.withDefault(false));
     const python = yield* resolvePythonForNodeGyp();
+    const vswhereProbe = (check: "toolchain" | "spectre") =>
+      desktopBuildProbeSucceeds(
+        ChildProcess.make("powershell.exe", [
+          "-NoLogo",
+          "-NoProfile",
+          "-NonInteractive",
+          "-Command",
+          windowsVswherePrerequisiteScript(input.arch, check),
+        ]),
+        "Visual Studio Build Tools",
+      );
     const checks = yield* Effect.all(
       {
         rust: reuseResourceMonitor
@@ -2040,18 +2119,8 @@ export const preflightWindowsDesktopBuild = Effect.fn("preflightWindowsDesktopBu
               rustTargetIsInstalled(rustTarget),
             ]).pipe(Effect.map(([cargo, target]) => cargo && target)),
         python: Effect.succeed(python !== undefined),
-        msvc: reuseResourceMonitor
-          ? Effect.succeed(true)
-          : desktopBuildProbeSucceeds(
-              ChildProcess.make("powershell.exe", [
-                "-NoLogo",
-                "-NoProfile",
-                "-NonInteractive",
-                "-Command",
-                windowsVswherePrerequisiteScript(input.arch),
-              ]),
-              "Visual Studio Build Tools",
-            ),
+        msvc: reuseResourceMonitor ? Effect.succeed(true) : vswhereProbe("toolchain"),
+        spectre: input.nodePtyBuildsFromSource ? vswhereProbe("spectre") : Effect.succeed(true),
         tar: input.bundlesWslRuntime
           ? desktopBuildProbeSucceeds(ChildProcess.make("tar.exe", ["--version"]), "tar")
           : Effect.succeed(true),
@@ -2821,7 +2890,7 @@ export const createBuildConfig = Effect.fn("createBuildConfig")(function* (
         ? resolveMacFileExclusions(arch)
         : platform === "linux"
           ? LINUX_FILE_EXCLUSIONS
-          : []),
+          : windowsForeignArchPackageGlobs(arch ?? "x64").map((glob) => `!${glob}`)),
     ],
     directories: {
       buildResources: "apps/desktop/resources",
@@ -3071,6 +3140,14 @@ export const packWindowsServerAsar = Effect.fn("packWindowsServerAsar")(function
 }) {
   const fs = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
+  const nodePtyPrebuilt = yield* fs.exists(
+    path.join(
+      input.sourceDir,
+      "node_modules/node-pty/prebuilds",
+      `win32-${input.arch}`,
+      "conpty.node",
+    ),
+  );
   // Unpack/sign only Windows PE addons; packages also carry foreign prebuilds that Authenticode cannot sign.
   const unpackGlobs: string[] = [...WINDOWS_SERVER_ASAR_UNPACK_GLOBS];
   for (const entry of yield* fs.readDirectory(input.sourceDir, { recursive: true })) {
@@ -3097,7 +3174,7 @@ export const packWindowsServerAsar = Effect.fn("packWindowsServerAsar")(function
         // glob 13 (@electron/asar 4) resolves ignores against cwd; anchor them at the source.
         globOptions: {
           cwd: input.sourceDir,
-          ignore: resolveWindowsServerAsarIgnoreGlobs(input.arch),
+          ignore: resolveWindowsServerAsarIgnoreGlobs(input.arch, { nodePtyPrebuilt }),
         },
       }),
     catch: (cause) => new WindowsServerSidecarPackError({ asarPath: input.asarPath, cause }),
@@ -3620,6 +3697,10 @@ const buildDesktopArtifactUnlocked = Effect.fn("buildDesktopArtifactUnlocked")(f
       bundlesWslRuntime: bundlesWslRuntime({
         platform: options.platform,
         runtimeArchivePath: options.wslRuntime,
+      }),
+      nodePtyBuildsFromSource: yield* nodePtyBuildsFromSource({
+        repoRoot,
+        arch: options.arch,
       }),
     });
   }

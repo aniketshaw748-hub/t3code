@@ -766,7 +766,12 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
           "node_modules/node-pty/third_party/conpty/1.0.0/win10-x64/OpenConsole.exe",
           "node_modules/node-pty/third_party/conpty/1.0.0/win10-arm64/OpenConsole.exe",
           "node_modules/node-pty/prebuilds/win32-x64/pty.node",
+          "node_modules/node-pty/prebuilds/win32-x64/conpty.node",
           "node_modules/node-pty/prebuilds/linux-x64/pty.node",
+          // node-pty's post-install copies of conpty, unused beside a prebuild.
+          "node_modules/node-pty/build/Release/conpty/OpenConsole.exe",
+          "node_modules/@yuuang/ffi-rs-win32-ia32-msvc/ffi-rs.win32-ia32-msvc.node",
+          "node_modules/@yuuang/ffi-rs-win32-x64-msvc/ffi-rs.win32-x64-msvc.node",
         ];
 
         for (const nativeFile of nativeFiles) {
@@ -805,9 +810,32 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
         assert.isFalse(
           yield* fs.exists(path.join(unpackedRoot, "node_modules/node-pty/prebuilds/win32-arm64")),
         );
-        assert.isFalse(
+        for (const dropped of [
+          "node_modules/node-pty/third_party",
+          "node_modules/node-pty/build",
+          "node_modules/@yuuang/ffi-rs-win32-ia32-msvc",
+        ]) {
+          assert.isFalse(yield* fs.exists(path.join(unpackedRoot, dropped)), dropped);
+        }
+        assert.isTrue(
           yield* fs.exists(
-            path.join(unpackedRoot, "node_modules/node-pty/third_party/conpty/1.0.0/win10-arm64"),
+            path.join(
+              unpackedRoot,
+              "node_modules/@yuuang/ffi-rs-win32-x64-msvc/ffi-rs.win32-x64-msvc.node",
+            ),
+          ),
+        );
+
+        // Built from source, the addon and its conpty live in build/Release, so they stay.
+        const builtDir = path.join(tempDir, "built");
+        const builtAddon = path.join(builtDir, "node_modules/node-pty/build/Release/conpty.node");
+        yield* fs.makeDirectory(path.dirname(builtAddon), { recursive: true });
+        yield* fs.writeFileString(builtAddon, "MZ");
+        const builtAsar = path.join(tempDir, "built.asar");
+        yield* packWindowsServerAsar({ sourceDir: builtDir, asarPath: builtAsar, arch: "x64" });
+        assert.isTrue(
+          yield* fs.exists(
+            path.join(`${builtAsar}.unpacked`, "node_modules/node-pty/build/Release/conpty.node"),
           ),
         );
       }),
@@ -836,6 +864,7 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
         const error = yield* preflightWindowsDesktopBuild({
           arch: "x64",
           bundlesWslRuntime: true,
+          nodePtyBuildsFromSource: false,
         }).pipe(
           Effect.provide(
             Layer.merge(
@@ -852,6 +881,57 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
         assert.deepStrictEqual(error.missing, ["rust", "python", "msvc"]);
         assert.equal(error.rustTarget, "x86_64-pc-windows-msvc");
         assert.include(error.message, "Visual Studio Build Tools components");
+      }),
+    ),
+  );
+
+  it.effect("asks for Spectre libraries only when node-pty must build from source", () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const fs = yield* FileSystem.FileSystem;
+        const path = yield* Path.Path;
+        const tempDir = yield* fs.makeTempDirectoryScoped({ prefix: "t3-windows-preflight-" });
+        const pythonPath = path.join(tempDir, "python.exe");
+        yield* fs.writeFileString(pythonPath, "python");
+        // Spectre libraries are missing; the resource monitor is reused, so Rust is not probed.
+        const spawner = Layer.succeed(
+          ChildProcessSpawner.ChildProcessSpawner,
+          ChildProcessSpawner.make((command) => {
+            const childProcess = command as unknown as {
+              readonly command: string;
+              readonly args: ReadonlyArray<string>;
+            };
+            const spectreProbe =
+              childProcess.command === "powershell.exe" &&
+              childProcess.args.some((arg) => arg.includes("lib\\spectre"));
+            return Effect.succeed(mockProcess(spectreProbe ? 1 : 0));
+          }),
+        );
+        const preflight = (nodePtyBuildsFromSource: boolean) =>
+          preflightWindowsDesktopBuild({
+            arch: "x64",
+            bundlesWslRuntime: false,
+            nodePtyBuildsFromSource,
+          }).pipe(
+            Effect.provide(
+              Layer.merge(
+                spawner,
+                ConfigProvider.layer(
+                  ConfigProvider.fromEnv({
+                    env: {
+                      npm_config_python: pythonPath,
+                      T3CODE_DESKTOP_REUSE_RESOURCE_MONITOR: "true",
+                    },
+                  }),
+                ),
+              ),
+            ),
+          );
+
+        yield* preflight(false);
+        const error = yield* preflight(true).pipe(Effect.flip);
+        assert.instanceOf(error, WindowsDesktopBuildPrerequisitesMissingError);
+        assert.deepStrictEqual(error.missing, ["spectre"]);
       }),
     ),
   );
@@ -877,6 +957,7 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
         yield* preflightWindowsDesktopBuild({
           arch: "x64",
           bundlesWslRuntime: true,
+          nodePtyBuildsFromSource: false,
         }).pipe(
           Effect.provide(
             Layer.merge(
@@ -925,6 +1006,7 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
         const error = yield* preflightWindowsDesktopBuild({
           arch: "x64",
           bundlesWslRuntime: false,
+          nodePtyBuildsFromSource: false,
         }).pipe(
           Effect.provide(
             Layer.merge(

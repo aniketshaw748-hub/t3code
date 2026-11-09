@@ -342,14 +342,20 @@ rustup target add aarch64-apple-darwin x86_64-apple-darwin
 ### Windows installer prerequisites
 
 Install Rust, Python 3, and Visual Studio Build Tools with **Desktop development with C++**.
-Include the Windows SDK and the MSVC build tools and Spectre-mitigated libraries for the target
-architecture. Add its Rust target:
+Include the Windows SDK and the MSVC build tools for the target architecture; Rust links the
+resource monitor with them. The MSVC Spectre-mitigated libraries are needed only when node-pty
+has no prebuild for the target and compiles from source (or `npm_config_build_from_source` is
+set); the build checks for them only then. Add the Rust target:
 
 ```powershell
 rustup target add x86_64-pc-windows-msvc
 # For an ARM64 installer:
 rustup target add aarch64-pc-windows-msvc
 ```
+
+The build's bundle self-check refuses to pass while a `node_modules` folder sits above the temp
+directory, such as `%USERPROFILE%\node_modules` left by an npm install in the home folder. Remove
+it, or point `TMPDIR`, `TEMP` and `TMP` at a folder without one for the build.
 
 NSIS is downloaded by electron-builder. WSL support additionally needs the Linux CLI archive
 passed as `--wsl-runtime`; see the
