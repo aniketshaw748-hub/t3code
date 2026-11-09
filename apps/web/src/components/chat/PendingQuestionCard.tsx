@@ -22,6 +22,7 @@ import { useAtomCommand } from "../../state/use-atom-command";
 import { useOrchestrationCommand } from "../../state/use-orchestration-command";
 import { Button } from "../ui/button";
 import { Textarea } from "../ui/textarea";
+import { ComposerRequestCard } from "./ComposerRequestCard";
 
 /**
  * An agent's question, answerable where it shows: pick an option or type an answer. Surfaces
@@ -69,116 +70,121 @@ export function PendingQuestionCard(props: {
   };
 
   return (
-    <section
-      aria-label="The agent has a question"
-      className="flex min-w-0 flex-col gap-3 rounded-xl border border-border/60 bg-card p-3"
-    >
-      <p className="flex items-center gap-2 text-xs font-medium text-foreground">
-        <MessageCircleQuestionMarkIcon className="size-3.5 shrink-0 text-warning" aria-hidden />
-        The agent has a question
-      </p>
-      {request.questions.map((question) => (
-        <div key={question.id} className="flex min-w-0 flex-col gap-1.5">
-          <p className="text-sm wrap-anywhere text-foreground">{question.question}</p>
-          {question.options.length > 0 ? (
-            <div className="flex flex-wrap gap-1">
-              {question.options.map((option) => {
-                const value = option.value ?? option.label;
-                const selected = isPendingUserInputOptionSelected(
-                  question,
-                  drafts[question.id],
-                  value,
-                );
-                return (
-                  <Button
-                    key={value}
-                    size="xs"
-                    variant={selected ? "contrast" : "outline"}
-                    aria-pressed={selected}
-                    disabled={!answerable || pending}
-                    title={option.description}
-                    onClick={() =>
-                      setEdits((current) => ({
-                        ...current,
-                        [question.id]: togglePendingUserInputOptionSelection(
-                          question,
-                          drafts[question.id],
-                          value,
-                        ),
-                      }))
+    <div className="overflow-hidden rounded-card surface-panel">
+      <ComposerRequestCard.Root role="region" aria-label="The agent has a question">
+        <ComposerRequestCard.Header
+          icon={<MessageCircleQuestionMarkIcon className="text-warning-foreground" />}
+          title="The agent has a question"
+        />
+        {request.questions.map((question) => (
+          <ComposerRequestCard.Body key={question.id}>
+            <div className="flex min-w-0 flex-col gap-1.5">
+              <p className="wrap-anywhere">{question.question}</p>
+              {question.options.length > 0 ? (
+                <div className="flex flex-wrap gap-1">
+                  {question.options.map((option) => {
+                    const value = option.value ?? option.label;
+                    const selected = isPendingUserInputOptionSelected(
+                      question,
+                      drafts[question.id],
+                      value,
+                    );
+                    return (
+                      <Button
+                        key={value}
+                        size="xs"
+                        variant={selected ? "default" : "secondary"}
+                        aria-pressed={selected}
+                        disabled={!answerable || pending}
+                        title={option.description}
+                        onClick={() =>
+                          setEdits((current) => ({
+                            ...current,
+                            [question.id]: togglePendingUserInputOptionSelection(
+                              question,
+                              drafts[question.id],
+                              value,
+                            ),
+                          }))
+                        }
+                      >
+                        {option.label}
+                      </Button>
+                    );
+                  })}
+                </div>
+              ) : null}
+              {question.allowCustomAnswer === false ? null : (
+                <Textarea
+                  size="sm"
+                  rows={1}
+                  disabled={!answerable || pending}
+                  aria-label={`Answer: ${question.question}`}
+                  placeholder={question.options.length > 0 ? "Or type an answer" : "Type an answer"}
+                  value={drafts[question.id]?.customAnswer ?? ""}
+                  onChange={(event) => {
+                    const customAnswer = event.currentTarget.value;
+                    setEdits((current) => ({
+                      ...current,
+                      [question.id]: setPendingUserInputCustomAnswer(
+                        question,
+                        drafts[question.id],
+                        customAnswer,
+                      ),
+                    }));
+                  }}
+                  onKeyDown={(event) => {
+                    if (
+                      event.key === "Enter" &&
+                      !event.shiftKey &&
+                      !event.nativeEvent.isComposing
+                    ) {
+                      event.preventDefault();
+                      void run("answer");
                     }
-                  >
-                    {option.label}
-                  </Button>
-                );
-              })}
+                  }}
+                />
+              )}
             </div>
-          ) : null}
-          {question.allowCustomAnswer === false ? null : (
-            <Textarea
-              size="sm"
-              rows={1}
-              disabled={!answerable || pending}
-              aria-label={`Answer: ${question.question}`}
-              placeholder={question.options.length > 0 ? "Or type an answer" : "Type an answer"}
-              value={drafts[question.id]?.customAnswer ?? ""}
-              onChange={(event) => {
-                const customAnswer = event.currentTarget.value;
-                setEdits((current) => ({
-                  ...current,
-                  [question.id]: setPendingUserInputCustomAnswer(
-                    question,
-                    drafts[question.id],
-                    customAnswer,
-                  ),
-                }));
-              }}
-              onKeyDown={(event) => {
-                if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) {
-                  event.preventDefault();
-                  void run("answer");
-                }
-              }}
-            />
-          )}
-        </div>
-      ))}
-      {error === null ? null : (
-        <p role="alert" className="text-xs text-destructive">
-          {error}
-        </p>
-      )}
-      <div className="flex flex-wrap items-center justify-end gap-2">
-        {props.onOpenFull === undefined ? null : (
-          <Button size="xs" variant="ghost-muted" onClick={props.onOpenFull}>
-            Open the chat
-          </Button>
-        )}
-        {request.dismissible ? (
-          <Button
-            size="xs"
-            variant="ghost-muted"
-            disabled={pending}
-            onClick={() => void run("dismiss")}
-          >
-            Dismiss
-          </Button>
-        ) : null}
-        {answerable ? (
-          <Button
-            size="xs"
-            variant="contrast"
-            disabled={pending || answers === null}
-            onClick={() => void run("answer")}
-          >
-            {pending ? "Sending…" : "Answer"}
-          </Button>
-        ) : (
-          <p className="text-xs text-muted-foreground">
-            This question can no longer be answered here.
+          </ComposerRequestCard.Body>
+        ))}
+        {error === null ? null : (
+          <p role="alert" className="px-2.5 text-meta text-error-foreground">
+            {error}
           </p>
         )}
-      </div>
-    </section>
+        <ComposerRequestCard.Footer>
+          {props.onOpenFull === undefined ? null : (
+            <Button size="xs" variant="ghost-muted" onClick={props.onOpenFull}>
+              Open the chat
+            </Button>
+          )}
+          {request.dismissible ? (
+            <Button
+              size="xs"
+              variant="ghost-muted"
+              disabled={pending}
+              onClick={() => void run("dismiss")}
+            >
+              Dismiss
+            </Button>
+          ) : null}
+          {answerable ? (
+            <Button
+              size="xs"
+              variant="default"
+              disabled={pending || answers === null}
+              onClick={() => void run("answer")}
+            >
+              {pending ? "Sending…" : "Answer"}
+            </Button>
+          ) : (
+            <p className="text-meta text-muted-foreground">
+              This question can no longer be answered here.
+            </p>
+          )}
+        </ComposerRequestCard.Footer>
+      </ComposerRequestCard.Root>
+    </div>
   );
 }

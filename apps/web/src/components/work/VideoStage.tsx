@@ -70,14 +70,14 @@ export function VideoStage(props: {
     const notes = props.notes.filter((note) => marker.noteIds.includes(note.id));
     const first = notes[0];
     const count = notes.length > 1 ? ` (+${notes.length - 1} more)` : "";
-    return `${formatTimecode(marker.time)} · ${first?.body ?? "Note"}${count}`;
+    return `${formatTimecode(marker.time)}: ${first?.body ?? "Note"}${count}`;
   };
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       <div ref={boxRef} className="relative flex min-h-0 flex-1 items-center justify-center">
         <div
-          className="relative overflow-hidden rounded-xl bg-black"
+          className="relative overflow-hidden rounded-card bg-black"
           style={box === null ? { width: "100%", aspectRatio: props.aspect } : box}
         >
           {props.sourceUrl === null ? null : (

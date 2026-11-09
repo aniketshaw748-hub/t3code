@@ -11,7 +11,7 @@ const STACK_OFFSETS = [0, 6, 8] as const;
 
 const TONE_RING: Record<BubbleThreadTone | "idle", string> = {
   attention: "stroke-warning",
-  working: "stroke-primary",
+  working: "stroke-info",
   failed: "stroke-destructive",
   done: "stroke-success",
   idle: "stroke-transparent",
@@ -19,7 +19,7 @@ const TONE_RING: Record<BubbleThreadTone | "idle", string> = {
 
 const TONE_EDGE: Record<BubbleThreadTone, string> = {
   attention: "border-warning/70",
-  working: "border-primary/50",
+  working: "border-info/50",
   failed: "border-destructive/60",
   done: "border-success/60",
 };
@@ -50,7 +50,7 @@ export function BubbleDisc(props: {
       type="button"
       data-bubble-hit
       aria-label={props.label}
-      className="relative size-16 shrink-0 cursor-grab touch-none select-none rounded-full outline-none active:cursor-grabbing focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset"
+      className="relative size-16 shrink-0 cursor-grab touch-none select-none active:cursor-grabbing"
       onPointerDown={props.onPointerDown}
       onPointerMove={props.onPointerMove}
       onPointerUp={props.onPointerUp}
@@ -76,7 +76,7 @@ export function BubbleDisc(props: {
         key={summary.attentionCount}
         aria-hidden
         className={cn(
-          "absolute inset-2 flex items-center justify-center rounded-full border border-border bg-popover shadow-lg",
+          "absolute inset-2 flex items-center justify-center rounded-full surface-popover",
           summary.attentionCount > 0 && "motion-safe:animate-bubble-nudge",
         )}
       >
@@ -119,7 +119,7 @@ export function BubbleDisc(props: {
         <span
           aria-hidden
           className={cn(
-            "absolute top-0.5 flex h-[18px] min-w-[18px] items-center justify-center rounded-full px-1 text-2xs font-semibold tabular-nums shadow-sm ring-2 ring-popover",
+            "absolute top-0.5 flex h-[18px] min-w-[18px] items-center justify-center rounded-full px-1 text-caption tabular-nums shadow-sm ring-2 ring-popover",
             props.horizontal === "end" ? "left-0.5" : "right-0.5",
             summary.attentionCount > 0
               ? "bg-warning text-black"

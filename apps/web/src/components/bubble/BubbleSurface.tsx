@@ -244,7 +244,7 @@ function BubbleUi({ sinceMs }: { readonly sinceMs: number }) {
         <div
           data-bubble-hit
           className={cn(
-            "flex min-h-0 flex-col overflow-hidden rounded-2xl border border-border bg-popover text-popover-foreground shadow-xl select-text",
+            "flex min-h-0 flex-col overflow-hidden rounded-2xl surface-popover text-popover-foreground select-text",
             "transition-[opacity,scale,translate] duration-160 ease-out motion-reduce:transition-none starting:scale-[0.97] starting:opacity-0",
             host.horizontal === "end" ? "origin-right" : "origin-left",
           )}

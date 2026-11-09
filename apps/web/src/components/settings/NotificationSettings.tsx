@@ -11,7 +11,6 @@ import { Select, SelectItem, SelectPopup, SelectTrigger, SelectValue } from "../
 import { SettingsRow } from "./settingsLayout";
 import { searchableSetting } from "./settingsSearch";
 import { useScopedSettings, useUpdateScopedSettings } from "./useScopedSettings";
-import { BRAND } from "@t3tools/contracts/brand";
 
 export function NotificationSettings() {
   const mode = useScopedSettings((settings) => settings.notificationMode);

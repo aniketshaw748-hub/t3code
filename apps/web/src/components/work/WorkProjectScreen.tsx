@@ -39,6 +39,7 @@ import { useEnvironmentScope } from "../../state/session";
 import { useAtomCommand } from "../../state/use-atom-command";
 import { workEnvironment } from "../../state/work";
 import type { SpendApprovalItem } from "../chat/SpendApprovalCard";
+import { Badge } from "../ui/badge";
 import { Button } from "../ui/button";
 import { SidebarInset } from "../ui/sidebar";
 import { toastManager } from "../ui/toast";
@@ -383,7 +384,7 @@ export function WorkProjectScreen(props: {
       return (
         <CanvasMessage>
           {busy
-            ? `The agent is drafting${progress.step === null ? "" : ` · ${progress.step.toLowerCase()}`}. The first version appears here when it saves one.`
+            ? `The agent is drafting${progress.step === null ? "" : ` (${progress.step.toLowerCase()})`}. The first version appears here when it saves one.`
             : "Nothing here yet. Tell the agent what to make in Notes & chat."}
         </CanvasMessage>
       );
@@ -481,7 +482,7 @@ export function WorkProjectScreen(props: {
 
   return (
     <SidebarInset className="h-dvh min-h-0 overflow-hidden">
-      <div className="flex min-h-0 flex-1 flex-col bg-work-canvas text-work-ink">
+      <div className="flex min-h-0 flex-1 flex-col text-foreground">
         <WorkspacePageHeader electron={isElectron}>
           <Button
             variant="ghost"
@@ -491,7 +492,7 @@ export function WorkProjectScreen(props: {
           >
             <ChevronLeftIcon />
           </Button>
-          <h1 className="min-w-0 truncate text-sm font-medium">{project?.title ?? "Project"}</h1>
+          <h1 className="min-w-0 truncate text-label">{project?.title ?? "Project"}</h1>
           {deliverables.length > 1 ? (
             <ToggleGroup
               aria-label="Deliverable"
@@ -514,13 +515,15 @@ export function WorkProjectScreen(props: {
             </ToggleGroup>
           ) : null}
           {viewed !== null ? (
-            <span className="shrink-0 rounded-md bg-work-raised px-1.5 py-0.5 font-mono text-2xs ring-1 ring-work-line">
+            <Badge variant="secondary" size="lg">
               V{viewed.ordinal}
-              {viewed.id === currentVersionId ? " · current" : ""}
-            </span>
+              {viewed.id === currentVersionId ? " (current)" : ""}
+            </Badge>
           ) : null}
           {meta ? (
-            <span className="hidden shrink-0 text-xs text-work-muted sm:inline">{meta}</span>
+            <span className="hidden shrink-0 text-meta text-muted-foreground sm:inline">
+              {meta}
+            </span>
           ) : null}
           {viewed?.selfCheck ? <SelfCheckBadge result={viewed.selfCheck} /> : null}
           <span className="flex-1" />
@@ -530,7 +533,7 @@ export function WorkProjectScreen(props: {
                 Back to current
               </Button>
               <Button
-                variant="outline"
+                variant="secondary"
                 size="xs"
                 aria-disabled={history.restoreBlockedReason !== null || undefined}
                 title={history.restoreBlockedReason ?? undefined}
@@ -621,7 +624,7 @@ export function WorkProjectScreen(props: {
             onTab={setTab}
             changes={
               deliverable === null || viewed === null ? (
-                <p className="text-sm text-work-muted">No versions yet.</p>
+                <p className="text-body text-muted-foreground">No versions yet.</p>
               ) : (
                 <WhatChanged
                   environmentId={environmentId}
@@ -660,8 +663,8 @@ export function WorkProjectScreen(props: {
 
 function CanvasMessage({ children }: { readonly children: React.ReactNode }) {
   return (
-    <div className="flex min-h-0 flex-1 items-center justify-center rounded-xl border border-dashed border-work-line p-8 text-center">
-      <p className="max-w-md text-sm text-work-muted">{children}</p>
+    <div className="flex min-h-0 flex-1 items-center justify-center rounded-card surface-card p-8 text-center">
+      <p className="max-w-md text-body text-muted-foreground">{children}</p>
     </div>
   );
 }

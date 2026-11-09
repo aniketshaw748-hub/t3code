@@ -7,6 +7,7 @@ import {
   ClapperboardIcon,
   FileTextIcon,
   ImagesIcon,
+  LayoutGridIcon,
   PresentationIcon,
   SparklesIcon,
   type LucideIcon,
@@ -17,6 +18,7 @@ import { isElectron } from "../../env";
 import { usePrimaryEnvironmentId } from "../../state/environments";
 import type { EnvironmentProject } from "@t3tools/client-runtime/state/shell";
 import { Button } from "../ui/button";
+import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "../ui/empty";
 import { SidebarInset } from "../ui/sidebar";
 import { WorkspacePageHeader } from "../WorkspacePageHeader";
 import { useStartWorkProject } from "./useWorkActions";
@@ -54,10 +56,10 @@ export function WorkShelf() {
   };
   return (
     <SidebarInset className="h-dvh min-h-0 overflow-hidden">
-      <div className="flex min-h-0 flex-1 flex-col bg-work-canvas text-work-ink">
+      <div className="flex min-h-0 flex-1 flex-col text-foreground">
         <WorkspacePageHeader electron={isElectron}>
-          <h1 className="text-sm font-medium">Work</h1>
-          <span className="text-xs text-work-muted">
+          <h1 className="text-label">Work</h1>
+          <span className="text-meta text-muted-foreground">
             {projects.length === 1 ? "1 project" : `${projects.length} projects`}
           </span>
         </WorkspacePageHeader>
@@ -69,7 +71,7 @@ export function WorkShelf() {
                 return (
                   <Button
                     key={starter.id}
-                    variant="outline"
+                    variant="secondary"
                     size="sm"
                     disabled={environmentId === null || starting !== null}
                     onClick={() => void onStart(starter)}
@@ -81,12 +83,19 @@ export function WorkShelf() {
               })}
             </section>
             {projects.length === 0 ? (
-              <div className="flex flex-col items-center gap-2 rounded-2xl border border-dashed border-work-line px-6 py-16 text-center">
-                <p className="text-sm font-medium">No Work projects yet</p>
-                <p className="max-w-sm text-sm text-work-muted">
-                  Start a deck, a video or an image set above. The agent drafts it, and you review
-                  it here with notes pinned to the moment or slide.
-                </p>
+              <div className="rounded-card surface-card">
+                <Empty size="compact">
+                  <EmptyMedia variant="icon">
+                    <LayoutGridIcon />
+                  </EmptyMedia>
+                  <EmptyHeader>
+                    <EmptyTitle>No Work projects yet</EmptyTitle>
+                    <EmptyDescription>
+                      Start a deck, a video or an image set above. The agent drafts it, and you
+                      review it here with notes pinned to the moment or slide.
+                    </EmptyDescription>
+                  </EmptyHeader>
+                </Empty>
               </div>
             ) : (
               <ul className="grid grid-cols-[repeat(auto-fill,minmax(15rem,1fr))] gap-5">
@@ -128,11 +137,11 @@ function WorkProjectCard({ project }: { readonly project: EnvironmentProject }) 
     <Link
       to="/work/$environmentId/$projectId"
       params={{ environmentId: project.environmentId, projectId: project.id }}
-      className="group flex flex-col gap-2.5 rounded-xl outline-hidden focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-work-highlight"
+      className="group flex flex-col gap-2.5 rounded-card outline-none focus-visible:outline-solid focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-ring"
     >
-      <div className="relative flex aspect-video items-center justify-center overflow-hidden rounded-xl border border-work-line bg-work-panel">
+      <div className="relative flex aspect-video items-center justify-center overflow-hidden rounded-card surface-panel">
         {poster === null ? (
-          <Icon aria-hidden className="size-8 text-work-muted" strokeWidth={1.5} />
+          <Icon aria-hidden className="size-8 text-muted-foreground" strokeWidth={1.5} />
         ) : (
           <img
             src={poster}
@@ -143,7 +152,7 @@ function WorkProjectCard({ project }: { readonly project: EnvironmentProject }) 
         )}
       </div>
       <div className="flex min-w-0 flex-col gap-1.5 px-0.5">
-        <span className="truncate text-sm font-medium">{project.title}</span>
+        <span className="truncate text-label">{project.title}</span>
         <div className="flex min-w-0">
           <ShelfStatusChip kind={status.kind} label={status.label} />
         </div>

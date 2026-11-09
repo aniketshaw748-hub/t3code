@@ -31,7 +31,7 @@ export function StillCanvas(props: {
   return (
     <div ref={boxRef} className="relative flex min-h-0 flex-1 items-center justify-center">
       <div
-        className="relative overflow-hidden rounded-xl border border-work-line bg-work-panel"
+        className="relative overflow-hidden rounded-card surface-panel"
         style={box === null ? { width: "100%", aspectRatio: aspect } : box}
       >
         {src === null ? null : (

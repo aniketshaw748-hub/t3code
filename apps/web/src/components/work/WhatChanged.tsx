@@ -27,12 +27,12 @@ interface WhatChangedProps {
 function VersionSummary({ version }: { readonly version: DeliverableVersion }) {
   if (!version.summary) return null;
   if (version.summaryDetail === undefined) {
-    return <p className="text-sm text-work-muted">{version.summary}</p>;
+    return <p className="text-body text-muted-foreground">{version.summary}</p>;
   }
   return (
-    <details className="text-sm text-work-muted">
+    <details className="text-body text-muted-foreground">
       <summary className="cursor-pointer">{version.summary}</summary>
-      <p className="mt-1 text-xs whitespace-pre-line">{version.summaryDetail}</p>
+      <p className="mt-1 text-meta whitespace-pre-line">{version.summaryDetail}</p>
     </details>
   );
 }
@@ -42,9 +42,7 @@ export function WhatChanged(props: WhatChangedProps) {
   if (props.parent === null) {
     return (
       <div className="flex flex-col gap-2">
-        <p className="text-sm font-medium text-work-ink">
-          V{props.version.ordinal} is the first version
-        </p>
+        <p className="text-label text-foreground">V{props.version.ordinal} is the first version</p>
         <VersionSummary version={props.version} />
       </div>
     );
@@ -65,9 +63,13 @@ function Comparison(props: WhatChangedProps & { readonly parent: DeliverableVers
   return (
     <div className="flex flex-col gap-3">
       <div className="flex flex-col gap-1">
-        <p className="text-sm font-medium text-work-ink">
-          V{props.parent.ordinal} → V{props.version.ordinal}
-          {comparison === null ? "" : ` · ${comparison.headline}`}
+        <p className="flex min-w-0 flex-wrap items-baseline gap-x-2 text-label text-foreground">
+          <span>
+            V{props.parent.ordinal} → V{props.version.ordinal}
+          </span>
+          {comparison === null ? null : (
+            <span className="text-muted-foreground">{comparison.headline}</span>
+          )}
         </p>
         <VersionSummary version={props.version} />
       </div>
@@ -95,7 +97,7 @@ function Comparison(props: WhatChangedProps & { readonly parent: DeliverableVers
         </ul>
       ) : null}
       <div>
-        <Button variant="outline" size="xs" onClick={props.onCompare}>
+        <Button variant="secondary" size="xs" onClick={props.onCompare}>
           <SplitIcon />
           Compare side by side
         </Button>

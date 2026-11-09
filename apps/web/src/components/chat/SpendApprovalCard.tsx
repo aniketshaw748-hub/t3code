@@ -11,6 +11,7 @@ import { useRef, useState } from "react";
 import { serverEnvironment } from "../../state/server";
 import { useAtomCommand } from "../../state/use-atom-command";
 import { Button } from "../ui/button";
+import { ComposerRequestCard } from "./ComposerRequestCard";
 import { WorkLogRow } from "./WorkLog";
 
 export type SpendApprovalItem = Extract<
@@ -41,13 +42,16 @@ export function SpendApprovalCard(props: {
       <WorkLogRow
         data-v2-item-type={item.type}
         icon={<Icon className="size-3.5 text-icon-muted" aria-hidden />}
-        label={
-          <>
-            {item.description} · {formatSpendAmount(item.estimate)} ·{" "}
-            {item.approvalStatus === "pending"
-              ? "Waiting for an answer in the original thread"
-              : ANSWERED_LABEL[item.approvalStatus]}
-          </>
+        label={item.description}
+        trailing={
+          <span className="flex shrink-0 items-center gap-2 text-dim-foreground">
+            <span className="tabular-nums">{formatSpendAmount(item.estimate)}</span>
+            <span>
+              {item.approvalStatus === "pending"
+                ? "Waiting for an answer in the original thread"
+                : ANSWERED_LABEL[item.approvalStatus]}
+            </span>
+          </span>
         }
       />
     );
@@ -89,57 +93,57 @@ function PendingSpendApproval(props: {
   };
   const details = spendApprovalDetails(item);
   return (
-    <section
-      data-v2-item-type={item.type}
-      aria-label="Approve before spending"
-      className="flex min-w-0 flex-col gap-3 rounded-xl border border-border/60 bg-card p-4"
-    >
-      <div className="flex min-w-0 items-start gap-3">
-        <CoinsIcon className="mt-0.5 size-4 shrink-0 text-muted-foreground" aria-hidden />
-        <div className="flex min-w-0 flex-1 flex-col gap-1">
-          <p className="text-sm font-medium wrap-anywhere text-foreground">{item.description}</p>
-          <p className="text-sm text-muted-foreground">
-            Costs about{" "}
-            <span className="font-medium text-foreground">{formatSpendAmount(item.estimate)}</span>
+    <div data-v2-item-type={item.type} className="overflow-hidden rounded-card surface-panel">
+      <ComposerRequestCard.Root role="region" aria-label="Approve before spending">
+        <ComposerRequestCard.Header
+          icon={<CoinsIcon className="text-warning-foreground" />}
+          title="Approve before spending"
+          sub={`About ${formatSpendAmount(item.estimate)}`}
+        />
+        <ComposerRequestCard.Body>
+          <p className="wrap-anywhere">{item.description}</p>
+        </ComposerRequestCard.Body>
+        {details.length > 0 ? (
+          <ComposerRequestCard.Well>
+            <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 p-2 text-meta">
+              {details.map(([key, value]) => (
+                <div key={key} className="contents">
+                  <dt className="text-muted-foreground">{key}</dt>
+                  <dd className="min-w-0 wrap-anywhere text-foreground">{value}</dd>
+                </div>
+              ))}
+            </dl>
+          </ComposerRequestCard.Well>
+        ) : null}
+        {error === null ? null : (
+          <p role="alert" className="px-2.5 text-meta text-error-foreground">
+            {error}
           </p>
-        </div>
-      </div>
-      {details.length > 0 ? (
-        <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 text-xs">
-          {details.map(([key, value]) => (
-            <div key={key} className="contents">
-              <dt className="text-muted-foreground">{key}</dt>
-              <dd className="min-w-0 wrap-anywhere text-foreground">{value}</dd>
-            </div>
-          ))}
-        </dl>
-      ) : null}
-      {error === null ? null : (
-        <p role="alert" className="text-xs text-destructive">
-          {error}
-        </p>
-      )}
-      <div className="flex items-center justify-end gap-2">
-        <Button
-          size="sm"
-          variant="ghost-muted"
-          disabled={!canAnswer || pending !== null}
-          onClick={() => void send("decline")}
-        >
-          Decline
-        </Button>
-        <Button
-          size="sm"
-          variant="contrast"
-          disabled={!canAnswer || pending !== null}
-          onClick={() => void send("approve")}
-        >
-          {pending === "approve" ? "Approving…" : "Approve"}
-        </Button>
-      </div>
-      {canAnswer ? null : (
-        <p className="text-xs text-muted-foreground">This connection can't approve spending.</p>
-      )}
-    </section>
+        )}
+        <ComposerRequestCard.Footer>
+          {canAnswer ? null : (
+            <p className="me-auto text-meta text-muted-foreground">
+              This connection can't approve spending.
+            </p>
+          )}
+          <Button
+            size="sm"
+            variant="ghost-muted"
+            disabled={!canAnswer || pending !== null}
+            onClick={() => void send("decline")}
+          >
+            Decline
+          </Button>
+          <Button
+            size="sm"
+            variant="default"
+            disabled={!canAnswer || pending !== null}
+            onClick={() => void send("approve")}
+          >
+            {pending === "approve" ? "Approving…" : "Approve"}
+          </Button>
+        </ComposerRequestCard.Footer>
+      </ComposerRequestCard.Root>
+    </div>
   );
 }

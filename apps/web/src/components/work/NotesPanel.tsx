@@ -39,14 +39,16 @@ import { useAtomCommand } from "../../state/use-atom-command";
 import { RelativeTime } from "../RelativeTime";
 import { PendingRequestCards } from "../chat/PendingRequestCards";
 import { SpendApprovalCard, type SpendApprovalItem } from "../chat/SpendApprovalCard";
-import { Button } from "../ui/button";
+import { Button, ContentButton, InlineButton } from "../ui/button";
 import { Textarea } from "../ui/textarea";
+import { Badge } from "../ui/badge";
+import { StatusDot } from "../ui/status-dot";
 import { Toggle, ToggleGroup } from "../ui/toggle-group";
 import type { Drawing } from "./DrawOverlay";
 import { isThreadBusy, useThreadMessages, useWorkAssetUrl } from "./useWorkData";
 import { scopeThreadRef } from "@t3tools/client-runtime/environment";
 import { WorkThreadChat } from "./WorkThreadChat";
-import { NoteStatusTag, noteStatusDotClass } from "./WorkStatusChip";
+import { NoteStatusTag, noteStatusDotClass, noteStatusTone } from "./WorkStatusChip";
 
 export type NotesTab = "notes" | "changes" | "chat";
 
@@ -101,10 +103,18 @@ export function NotesPanel(props: {
   const unsent = props.notes.filter(
     (note) => note.status === "open" && note.sentMessageId === null,
   );
-  const tabs: ReadonlyArray<{ readonly id: NotesTab; readonly label: string }> = [
+  const tabs: ReadonlyArray<{ readonly id: NotesTab; readonly label: ReactNode }> = [
     {
       id: "notes",
-      label: props.notes.length === 0 ? "Notes & chat" : `Notes & chat · ${props.notes.length}`,
+      label:
+        props.notes.length === 0 ? (
+          "Notes & chat"
+        ) : (
+          <>
+            Notes & chat
+            <span className="text-dim-foreground tabular-nums">{props.notes.length}</span>
+          </>
+        ),
     },
     { id: "changes", label: "What changed" },
     { id: "chat", label: "Full chat" },
@@ -112,31 +122,30 @@ export function NotesPanel(props: {
   return (
     <aside
       aria-label="Notes and chat"
-      className="flex min-h-0 w-full flex-col border-t border-work-line bg-work-panel lg:w-[24rem] lg:shrink-0 lg:border-t-0 lg:border-l"
+      className="flex min-h-0 w-full flex-col border-t border-border bg-card lg:w-[24rem] lg:shrink-0 lg:border-t-0 lg:border-l"
     >
-      <div role="tablist" aria-label="Panel" className="flex shrink-0 items-center gap-1 px-3 pt-3">
-        {tabs.map((tab) => (
-          <button
-            key={tab.id}
-            type="button"
-            role="tab"
-            aria-selected={props.tab === tab.id}
-            onClick={() => props.onTab(tab.id)}
-            className={cn(
-              "rounded-md px-2.5 py-1 text-xs font-medium outline-hidden focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-work-highlight",
-              props.tab === tab.id
-                ? "bg-work-raised text-work-ink"
-                : "text-work-muted hover:text-work-ink",
-            )}
-          >
-            {tab.label}
-          </button>
-        ))}
-      </div>
+      <nav aria-label="Panel" className="flex shrink-0 px-3 pt-3">
+        <ToggleGroup
+          className="w-full"
+          size="segmented-wide"
+          variant="segmented"
+          value={[props.tab]}
+          onValueChange={(next) => {
+            const tab = tabs.find((candidate) => candidate.id === next[0]);
+            if (tab) props.onTab(tab.id);
+          }}
+        >
+          {tabs.map((tab) => (
+            <Toggle key={tab.id} value={tab.id}>
+              {tab.label}
+            </Toggle>
+          ))}
+        </ToggleGroup>
+      </nav>
       {props.tab === "chat" ? (
-        <div role="tabpanel" className="min-h-0 flex-1">
+        <div className="min-h-0 flex-1">
           {props.thread === null ? (
-            <p className="p-4 text-sm text-work-muted">
+            <p className="p-4 text-body text-muted-foreground">
               The conversation starts with your first note.
             </p>
           ) : (
@@ -144,14 +153,12 @@ export function NotesPanel(props: {
           )}
         </div>
       ) : props.tab === "changes" ? (
-        <div role="tabpanel" className="min-h-0 flex-1 overflow-y-auto p-4">
-          {props.changes}
-        </div>
+        <div className="min-h-0 flex-1 overflow-y-auto p-4">{props.changes}</div>
       ) : (
-        <div role="tabpanel" className="flex min-h-0 flex-1 flex-col">
+        <div className="flex min-h-0 flex-1 flex-col">
           {summary.length > 0 ? (
             <div className="flex shrink-0 flex-col gap-2 px-4 pt-3">
-              <div aria-hidden className="flex h-1.5 overflow-hidden rounded-full bg-work-line">
+              <div aria-hidden className="flex h-1.5 overflow-hidden rounded-full bg-border">
                 {summary.map((segment) => (
                   <span
                     key={segment.status}
@@ -160,13 +167,10 @@ export function NotesPanel(props: {
                   />
                 ))}
               </div>
-              <ul className="flex flex-wrap gap-x-3 gap-y-1 text-2xs text-work-muted">
+              <ul className="flex flex-wrap gap-x-3 gap-y-1 text-caption text-muted-foreground">
                 {summary.map((segment) => (
                   <li key={segment.status} className="inline-flex items-center gap-1.5">
-                    <span
-                      aria-hidden
-                      className={cn("size-1.5 rounded-full", noteStatusDotClass(segment.status))}
-                    />
+                    <StatusDot tone={noteStatusTone(segment.status)} />
                     {segment.label}
                   </li>
                 ))}
@@ -191,7 +195,7 @@ export function NotesPanel(props: {
             ))}
             {unsent.length > 1 && props.canOperate ? (
               <Button
-                variant="outline"
+                variant="secondary"
                 size="xs"
                 className="self-start"
                 disabled={props.sending}
@@ -202,7 +206,7 @@ export function NotesPanel(props: {
               </Button>
             ) : null}
             {sorted.length === 0 && props.spendApprovals.length === 0 && props.thread === null ? (
-              <p className="py-6 text-center text-sm text-work-muted">
+              <p className="py-6 text-center text-body text-muted-foreground">
                 Leave a note: type below, talk, or draw on the frame. It pins to the moment you are
                 on.
               </p>
@@ -259,10 +263,8 @@ function Avatar({
     <span
       aria-hidden
       className={cn(
-        "flex size-6 shrink-0 items-center justify-center rounded-full text-2xs font-semibold",
-        agent
-          ? "bg-work-highlight text-work-highlight-ink"
-          : "bg-work-raised text-work-ink ring-1 ring-work-line",
+        "flex size-6 shrink-0 items-center justify-center rounded-full text-caption",
+        agent ? "bg-primary text-primary-foreground" : "surface-raised text-foreground",
       )}
     >
       {children}
@@ -293,65 +295,65 @@ function NoteCard(props: {
     <article
       aria-label={`${author}: ${note.body}`}
       className={cn(
-        "flex flex-col gap-2 rounded-xl border border-work-line bg-work-canvas/60 p-3",
+        "flex flex-col gap-2 rounded-card surface-card p-3",
         note.status === "resolved" && "opacity-70",
       )}
     >
       <header className="flex min-w-0 items-center gap-2">
         <Avatar>{author.slice(0, 1).toUpperCase()}</Avatar>
-        <span className="min-w-0 truncate text-xs font-medium text-work-ink">{author}</span>
-        <span className="shrink-0 text-2xs text-work-muted">
+        <span className="min-w-0 truncate text-meta text-foreground">{author}</span>
+        <span className="shrink-0 text-caption text-muted-foreground">
           <RelativeTime timestamp={DateTime.formatIso(note.createdAt)} />
         </span>
         <span className="flex-1" />
-        <button
-          type="button"
+        <Button
+          size="chip"
+          variant="secondary"
+          className="shrink-0"
           onClick={props.onFocus}
           aria-label={`Go to ${describeAnchor(note.anchor, props.kind)}`}
-          className="shrink-0 rounded-md bg-work-raised px-1.5 py-0.5 font-mono text-2xs text-work-ink outline-hidden ring-1 ring-work-line hover:bg-work-line focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-work-highlight"
         >
-          {chip}
-        </button>
+          <span className="font-mono">{chip}</span>
+        </Button>
         <NoteStatusTag status={display.status}>{display.label}</NoteStatusTag>
       </header>
-      <p className="text-sm whitespace-pre-wrap text-work-ink">{note.body}</p>
+      <p className="text-body whitespace-pre-wrap text-foreground">{note.body}</p>
       {note.snapshotUrl !== null ? (
-        <button
-          type="button"
+        <ContentButton
+          variant="panel"
+          className="self-start"
           onClick={props.onFocus}
-          className="self-start overflow-hidden rounded-md ring-1 ring-work-line outline-hidden focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-work-highlight"
           aria-label="Show where this note points"
         >
           <NoteSnapshot environmentId={props.environmentId} url={note.snapshotUrl} />
-        </button>
+        </ContentButton>
       ) : null}
       {props.failure !== null ? (
-        <p className="flex min-w-0 items-start gap-1.5 text-xs text-work-ink">
-          <CircleAlertIcon className="mt-px size-3.5 shrink-0 text-work-status-open" aria-hidden />
+        <p className="flex min-w-0 items-start gap-1.5 text-meta text-foreground">
+          <CircleAlertIcon
+            className="mt-px size-3.5 shrink-0 text-warning-foreground"
+            aria-hidden
+          />
           <span>
-            <span className="font-medium">{props.failure.title}.</span> The agent stopped before
-            fixing this.
+            <span className="text-strong-foreground">{props.failure.title}.</span> The agent stopped
+            before fixing this.
           </span>
         </p>
       ) : null}
       {note.reply !== null || display.status === "fixing" ? (
-        <div className="flex min-w-0 gap-2 rounded-lg bg-work-raised p-2">
+        <div className="flex min-w-0 gap-2 rounded-lg bg-secondary p-2">
           <Avatar agent>
             <SparklesIcon className="size-3" />
           </Avatar>
           <div className="flex min-w-0 flex-col gap-1">
-            <p className="line-clamp-2 text-xs text-work-ink">
+            <p className="line-clamp-2 text-meta text-foreground">
               {note.reply ??
                 (note.sentRunId === null ? "Sent. Waiting for the agent…" : "Working on it…")}
             </p>
             {display.check !== null ? (
-              <button
-                type="button"
-                onClick={() => props.onCheck(display.check!)}
-                className="self-start text-xs font-medium text-work-ink underline underline-offset-2 outline-hidden focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-work-highlight"
-              >
+              <InlineButton className="self-start" onClick={() => props.onCheck(display.check!)}>
                 {checkLinkLabel(display.check)}
-              </button>
+              </InlineButton>
             ) : null}
           </div>
         </div>
@@ -359,7 +361,7 @@ function NoteCard(props: {
       {props.canOperate ? (
         <footer className="flex flex-wrap items-center gap-1">
           {note.status === "open" ? (
-            <Button size="xs" variant="outline" disabled={props.sending} onClick={props.onSend}>
+            <Button size="xs" variant="secondary" disabled={props.sending} onClick={props.onSend}>
               {props.failure !== null ? <RotateCcwIcon /> : <SendIcon />}
               {props.failure !== null
                 ? "Retry"
@@ -372,7 +374,7 @@ function NoteCard(props: {
             <>
               <Button
                 size="xs"
-                variant="contrast"
+                variant="default"
                 onClick={() =>
                   void setStatus({ ...target, input: { noteId: note.id, status: "resolved" } })
                 }
@@ -447,8 +449,10 @@ function WorkChatLog(props: {
           )}
           <p
             className={cn(
-              "min-w-0 text-xs whitespace-pre-line",
-              entry.role === "user" ? "line-clamp-3 text-work-ink" : "line-clamp-4 text-work-muted",
+              "min-w-0 text-meta whitespace-pre-line",
+              entry.role === "user"
+                ? "line-clamp-3 text-foreground"
+                : "line-clamp-4 text-muted-foreground",
             )}
           >
             {/* A plain preview: markdown emphasis and code marks would show as stray characters. */}
@@ -461,7 +465,7 @@ function WorkChatLog(props: {
           <Avatar agent>
             <SparklesIcon className="size-3" />
           </Avatar>
-          <p className="text-xs text-work-muted">Working…</p>
+          <p className="text-meta text-muted-foreground">Working…</p>
         </div>
       ) : null}
       <Button variant="link" size="micro" className="self-start" onClick={props.onOpenChat}>
@@ -497,17 +501,17 @@ function NoteComposer({
     !composer.speech.blocksSubmission;
   return (
     <form
-      className="flex shrink-0 flex-col gap-2 border-t border-work-line p-3"
+      className="flex shrink-0 flex-col gap-2 border-t border-border p-3"
       onSubmit={(event) => {
         event.preventDefault();
         if (canSend) props.onSend();
       }}
     >
       {composer.drawing !== null ? (
-        <div className="flex items-center gap-2 text-xs text-work-ink">
-          <span className="inline-flex items-center gap-1 rounded-full bg-work-raised px-2 py-0.5 ring-1 ring-work-line">
+        <div className="flex items-center gap-2 text-meta text-foreground">
+          <Badge variant="secondary" size="lg">
             Drawing attached
-          </span>
+          </Badge>
           <Button
             type="button"
             size="icon-xs"
@@ -562,7 +566,7 @@ function NoteComposer({
         <Button
           type="submit"
           size="icon-xs"
-          variant="contrast"
+          variant="default"
           aria-label="Send note"
           disabled={!canSend}
         >

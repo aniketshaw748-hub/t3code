@@ -5,11 +5,13 @@ import {
   squashAtomCommandFailure,
 } from "@t3tools/client-runtime/state/runtime";
 import type { EnvironmentId, ThreadId } from "@t3tools/contracts";
+import { ShieldIcon } from "lucide-react";
 import { useState } from "react";
 
 import { environmentThreadDetails, threadEnvironment } from "~/state/threads";
 import { useAtomCommand } from "~/state/use-atom-command";
 import { ComposerPendingApprovalActions } from "./ComposerPendingApprovalActions";
+import { ComposerRequestCard } from "./ComposerRequestCard";
 import { PendingQuestionCard } from "./PendingQuestionCard";
 
 /** A thread's pending approvals and questions, for surfaces that have no chat composer. */
@@ -27,42 +29,50 @@ export function PendingRequestCards(props: {
   return (
     <>
       {requests.approvals.map((approval) => (
-        <section
-          key={approval.requestId}
-          aria-label="Approval needed"
-          className="flex flex-col gap-1.5 rounded-lg border border-warning/40 bg-warning/8 p-2 text-xs"
-        >
-          <p className="font-medium text-warning">Approval needed</p>
-          {approval.detail ? (
-            <pre className="max-h-24 overflow-auto font-mono text-2xs whitespace-pre-wrap break-words">
-              {approval.detail}
-            </pre>
-          ) : null}
-          <div className="flex flex-wrap gap-1.5">
-            <ComposerPendingApprovalActions
-              presentation="inline"
-              requestId={approval.requestId}
-              isResponding={responding}
-              canRespond={approval.responseCapability === "live"}
-              {...(approval.options === undefined ? {} : { options: approval.options })}
-              onRespondToApproval={async (requestId, decision) => {
-                setResponding(true);
-                setError(null);
-                const result = await respond({
-                  environmentId: props.environmentId,
-                  input: { threadId: props.threadId, requestId, decision },
-                });
-                if (result._tag === "Failure" && !isAtomCommandInterrupted(result)) {
-                  const failure = squashAtomCommandFailure(result);
-                  setError(failure instanceof Error ? failure.message : "Could not send that.");
-                }
-                setResponding(false);
-                return result;
-              }}
+        <div key={approval.requestId} className="overflow-hidden rounded-card surface-panel">
+          <ComposerRequestCard.Root role="region" aria-label="Approval needed">
+            <ComposerRequestCard.Header
+              icon={<ShieldIcon className="text-warning-foreground" />}
+              title="Approval needed"
             />
-          </div>
-          {error ? <p className="text-destructive">{error}</p> : null}
-        </section>
+            {approval.detail ? (
+              <ComposerRequestCard.Well>
+                <pre className="max-h-24 overflow-auto whitespace-pre-wrap p-2 font-mono text-meta text-foreground wrap-anywhere">
+                  {approval.detail}
+                </pre>
+              </ComposerRequestCard.Well>
+            ) : null}
+            <ComposerRequestCard.Footer>
+              <ComposerPendingApprovalActions
+                designLabels
+                showShortcutHints={false}
+                requestId={approval.requestId}
+                isResponding={responding}
+                canRespond={approval.responseCapability === "live"}
+                {...(approval.options === undefined ? {} : { options: approval.options })}
+                onRespondToApproval={async (requestId, decision) => {
+                  setResponding(true);
+                  setError(null);
+                  const result = await respond({
+                    environmentId: props.environmentId,
+                    input: { threadId: props.threadId, requestId, decision },
+                  });
+                  if (result._tag === "Failure" && !isAtomCommandInterrupted(result)) {
+                    const failure = squashAtomCommandFailure(result);
+                    setError(failure instanceof Error ? failure.message : "Could not send that.");
+                  }
+                  setResponding(false);
+                  return result;
+                }}
+              />
+            </ComposerRequestCard.Footer>
+            {error ? (
+              <p role="alert" className="px-2.5 text-meta text-error-foreground">
+                {error}
+              </p>
+            ) : null}
+          </ComposerRequestCard.Root>
+        </div>
       ))}
       {requests.userInputs.map((request) => (
         <PendingQuestionCard

@@ -266,7 +266,6 @@ import { pickableProjectGroups } from "@t3tools/client-runtime/state/project-gro
 import { buildSidebarProjectPickerEntries } from "../sidebarProjectGrouping";
 import { PullRequestGlyph } from "~/components/pullRequest/pullRequestIcons";
 import { useThreadRouteTarget } from "../hooks/useThreadRouteTarget";
-import { threadRecentUse } from "@t3tools/shared/paletteSearch";
 import { BRAND } from "@t3tools/contracts/brand";
 
 // Root actions listed under Settings, after Actions.

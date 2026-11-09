@@ -5,16 +5,17 @@ import type {
   DeliverableRendition,
   DeliverableRenditionUnit,
 } from "@t3tools/contracts";
-import { ChevronLeftIcon, ChevronRightIcon, LayoutGridIcon, LoaderIcon } from "lucide-react";
+import { ChevronLeftIcon, ChevronRightIcon, LayoutGridIcon } from "lucide-react";
 import { useRef } from "react";
 
-import { cn } from "../../lib/utils";
-import { Button } from "../ui/button";
+import { Button, ContentButton } from "../ui/button";
+import { Spinner } from "../ui/spinner";
+import { StatusDot } from "../ui/status-dot";
 import { CaptureToolbar } from "./CaptureToolbar";
 import { DrawOverlay, type Drawing } from "./DrawOverlay";
 import { RegionOutline } from "./RegionOutline";
 import { useContainedBox } from "./useContainedBox";
-import { noteStatusDotClass } from "./WorkStatusChip";
+import { noteStatusTone } from "./WorkStatusChip";
 
 const notesOnSlide = (notes: ReadonlyArray<DeliverableNote>, index: number) =>
   notes.filter(
@@ -79,8 +80,8 @@ export function DeckCanvas(props: {
           const image = props.assetUrl(unit.thumbUrl ?? unit.imageUrl);
           return (
             <li key={unit.index} className="flex flex-col gap-1.5">
-              <button
-                type="button"
+              <ContentButton
+                variant="selection-card"
                 aria-pressed={isSelected}
                 aria-label={`Slide ${unit.index + 1}${unit.title ? `: ${unit.title}` : ""}${notes.length > 0 ? `, ${notes.length} open notes` : ""}`}
                 onClick={() => props.onSelectSlide(isSelected ? null : unit.index)}
@@ -94,45 +95,36 @@ export function DeckCanvas(props: {
                     props.onFocus(true);
                   }
                 }}
-                className={cn(
-                  "relative overflow-hidden rounded-lg border bg-work-panel outline-hidden focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-work-highlight",
-                  isSelected
-                    ? "border-work-highlight ring-1 ring-work-highlight"
-                    : "border-work-line",
-                )}
+                className="relative"
                 style={{ aspectRatio: aspect }}
               >
                 {image === null ? (
-                  <span className="absolute inset-0 flex items-center justify-center text-xs text-work-muted">
+                  <span className="absolute inset-0 flex items-center justify-center text-meta text-muted-foreground">
                     Slide {unit.index + 1}
                   </span>
                 ) : (
                   <img src={image} alt="" loading="lazy" className="size-full object-contain" />
                 )}
                 {working ? (
-                  <span className="absolute top-2 left-2 inline-flex items-center gap-1 rounded-full bg-black/75 px-2 py-0.5 text-2xs text-white">
-                    <LoaderIcon className="size-3 motion-safe:animate-spin" aria-hidden />
+                  <span className="absolute top-2 left-2 inline-flex items-center gap-1 rounded-full bg-black/75 px-2 py-0.5 text-caption text-white">
+                    <Spinner size="xs" aria-hidden />
                     Agent working on this slide
                   </span>
                 ) : null}
                 {notes.length > 0 ? (
-                  <span className="absolute top-2 right-2 inline-flex items-center gap-1 rounded-full bg-black/75 px-1.5 py-0.5 text-2xs text-white">
-                    <span
-                      aria-hidden
-                      className={cn(
-                        "size-1.5 rounded-full",
-                        noteStatusDotClass(mostUrgentStatus(notes.map((note) => note.status))),
-                      )}
+                  <span className="absolute top-2 right-2 inline-flex items-center gap-1 rounded-full bg-black/75 px-1.5 py-0.5 text-caption text-white">
+                    <StatusDot
+                      tone={noteStatusTone(mostUrgentStatus(notes.map((note) => note.status)))}
                     />
                     {notes.length}
                   </span>
                 ) : null}
-              </button>
-              <span className="flex min-w-0 items-baseline gap-1.5 px-0.5 text-xs">
-                <span className="font-mono text-work-muted tabular-nums">
+              </ContentButton>
+              <span className="flex min-w-0 items-baseline gap-1.5 px-0.5 text-meta">
+                <span className="font-mono text-muted-foreground tabular-nums">
                   {String(unit.index + 1).padStart(2, "0")}
                 </span>
-                <span className="truncate text-work-ink">{unit.title ?? ""}</span>
+                <span className="truncate text-foreground">{unit.title ?? ""}</span>
               </span>
             </li>
           );
@@ -170,7 +162,7 @@ function FocusedSlide(
         >
           <ChevronLeftIcon />
         </Button>
-        <span className="font-mono text-xs text-work-muted tabular-nums">
+        <span className="font-mono text-meta text-muted-foreground tabular-nums">
           {props.unit.index + 1} / {props.count}
         </span>
         <Button
@@ -185,7 +177,7 @@ function FocusedSlide(
       </div>
       <div ref={boxRef} className="relative flex min-h-0 flex-1 items-center justify-center">
         <div
-          className="relative overflow-hidden rounded-xl border border-work-line bg-work-panel"
+          className="relative overflow-hidden rounded-card surface-panel"
           style={box === null ? { width: "100%", aspectRatio: props.aspect } : box}
         >
           {image === null ? null : (

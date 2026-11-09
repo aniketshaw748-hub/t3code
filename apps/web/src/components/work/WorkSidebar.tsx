@@ -11,6 +11,7 @@ import {
   SidebarMenuButton,
   SidebarMenuItem,
 } from "../ui/sidebar";
+import { StatusDot } from "../ui/status-dot";
 import { isThreadBusy, useWorkProjects } from "./useWorkData";
 
 /** The app sidebar in Work mode: the shelf and the Work projects, no code threads. */
@@ -40,9 +41,9 @@ export function WorkSidebar() {
           </SidebarMenu>
         </SidebarGroup>
         <SidebarGroup>
-          <p className="px-2 pb-1 text-xs font-medium text-muted-foreground">Projects</p>
+          <p className="flex h-8 items-center px-2 text-meta text-dim-foreground">Projects</p>
           {projects.length === 0 ? (
-            <p className="px-2 text-xs text-muted-foreground">Start one from the shelf.</p>
+            <p className="px-2 text-meta text-dim-foreground">Start one from the shelf.</p>
           ) : (
             <SidebarMenu>
               {projects.map((project) => {
@@ -59,14 +60,7 @@ export function WorkSidebar() {
                         />
                       }
                     >
-                      <span
-                        aria-hidden
-                        className={
-                          busy
-                            ? "size-1.5 shrink-0 rounded-full bg-work-status-fixing"
-                            : "size-1.5 shrink-0 rounded-full bg-work-line"
-                        }
-                      />
+                      <StatusDot tone={busy ? "info" : "neutral"} />
                       <span className="min-w-0 flex-1 truncate">{project.title}</span>
                       {busy ? <span className="sr-only">Agent working</span> : null}
                     </SidebarMenuButton>

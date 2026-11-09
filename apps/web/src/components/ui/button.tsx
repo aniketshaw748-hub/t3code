@@ -47,9 +47,6 @@ const buttonVariants = cva(
         // Primary: the lit recipe.
         default:
           "surface-lit focus-visible:[--surface-rim:var(--lit-fill)] kbd-on-lit text-primary-foreground [:hover,[data-pressed]]:surface-lit-hover",
-        // The foreground as a fill: white on dark, black on light, for surfaces with no accent.
-        contrast:
-          "[--control-icon-color:currentColor] border-transparent bg-foreground text-background [:hover,[data-pressed]]:bg-foreground/88",
         destructive:
           "surface-destructive focus-visible:[--surface-rim:var(--surface-fill)] kbd-on-destructive text-destructive-fill-foreground [:hover,[data-pressed]]:surface-destructive-hover",
         // Destructive-secondary: raised, red label, a red rim on hover.
