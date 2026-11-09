@@ -57,6 +57,7 @@ import {
 } from "@t3tools/provider-core/server/failure";
 import * as RunExecutionService from "./RunExecutionService.ts";
 import * as RuntimePolicy from "./RuntimePolicy.ts";
+import * as TurnContextNotes from "./TurnContextNotes.ts";
 import {
   isRestartNoteContinuation,
   pendingRestartCancelledBackgroundWork,
@@ -162,6 +163,7 @@ export const layer: Layer.Layer<
     const runExecution = yield* RunExecutionService.RunExecutionServiceV2;
     const runtimePolicy = yield* RuntimePolicy.RuntimePolicyV2;
     const isManagedWorktreePath = yield* makeIsManagedWorktreePath;
+    const turnNotes = yield* Effect.serviceOption(TurnContextNotes.TurnContextNotes);
 
     const resolveRecreateBase = Effect.fn("ProviderTurnStartService.resolveRecreateBase")(
       function* (cwd: string) {
@@ -866,10 +868,25 @@ export const layer: Layer.Layer<
         run,
         attempts: projection.attempts,
       });
-      const restartNote =
+      // Changes made outside this thread's turns since its last one, such as restored versions.
+      const previousStart =
+        projection.runs.findLast(
+          (candidate) => candidate.ordinal < run.ordinal && candidate.startedAt !== null,
+        )?.startedAt ?? projection.thread.createdAt;
+      const contextNotes = Option.isNone(turnNotes)
+        ? []
+        : yield* turnNotes.value.since({
+            projectId: projection.thread.projectId,
+            since: previousStart,
+          });
+      const restartNote = [
         restartCancelledWork.length === 0
           ? ""
-          : restartCancelledBackgroundWorkNote(restartCancelledWork);
+          : restartCancelledBackgroundWorkNote(restartCancelledWork),
+        ...contextNotes,
+      ]
+        .filter((part) => part !== "")
+        .join("\n\n");
       const tokenCap = yield* handoffTokenCapConfig.pipe(
         Effect.orElseSucceed(() => DEFAULT_HANDOFF_TOKEN_CAP),
       );

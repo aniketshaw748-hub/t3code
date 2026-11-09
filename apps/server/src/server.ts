@@ -131,6 +131,16 @@ import * as VcsStatusBroadcaster from "./vcs/VcsStatusBroadcaster.ts";
 import * as ProjectCloneTracker from "./project/ProjectCloneTracker.ts";
 import * as GitWorkflowService from "./git/GitWorkflowService.ts";
 import * as ReviewService from "./review/ReviewService.ts";
+import * as DeliverableBlobStore from "./deliverables/DeliverableBlobStore.ts";
+import * as DeliverableCheckpointReactor from "./deliverables/DeliverableCheckpointReactor.ts";
+import * as DeliverableContext from "./deliverables/DeliverableContext.ts";
+import * as DeliverableGit from "./deliverables/DeliverableGit.ts";
+import * as DeliverableRenderers from "./deliverables/DeliverableRenderers.ts";
+import * as DeliverableSelfCheck from "./deliverables/DeliverableSelfCheck.ts";
+import * as DeliverableService from "./deliverables/DeliverableService.ts";
+import * as DeliverableTurnNotes from "./deliverables/DeliverableTurnNotes.ts";
+import * as DeliverableRepository from "./persistence/Deliverables.ts";
+import * as SpendApprovals from "./spend/SpendApprovals.ts";
 import * as SourceControlProviderRegistry from "./sourceControl/SourceControlProviderRegistry.ts";
 import * as PullRequestReadCache from "./pullRequest/PullRequestReadCache.ts";
 import * as SourceControlRateLimit from "@t3tools/source-control-core/server/SourceControlRateLimit";
@@ -565,6 +575,7 @@ const layerScheduledTaskWebhookOrigin = Layer.effect(
 );
 
 const layerOrchestrationV2Runtime = RuntimeLayer.layerProduction.pipe(
+  Layer.provide(DeliverableTurnNotes.layer.pipe(Layer.provide(DeliverableRepository.layer))),
   Layer.provide(layerScheduledTaskWebhookOrigin),
   Layer.provide(ProviderUsageAnalytics.layer),
   Layer.provide(layerCheckpointStore),
@@ -582,6 +593,27 @@ const layerOrchestrationApplication = Layer.merge(
   CheckpointDiffQuery.layer,
   NativeChildWorkQuery.layer,
 ).pipe(Layer.provideMerge(layerCheckpointStore), Layer.provideMerge(layerOrchestrationV2Runtime));
+
+const layerDeliverables = Layer.effectDiscard(
+  Effect.gen(function* () {
+    const reactor = yield* DeliverableCheckpointReactor.DeliverableCheckpointReactor;
+    yield* reactor.start();
+  }),
+).pipe(
+  Layer.provideMerge(DeliverableCheckpointReactor.layer),
+  Layer.provideMerge(DeliverableService.layer),
+  Layer.provide(
+    Layer.mergeAll(
+      DeliverableGit.layer.pipe(Layer.provide(VcsProcess.layer)),
+      DeliverableRenderers.layer.pipe(Layer.provide(ProcessRunner.layer)),
+      DeliverableSelfCheck.layer,
+      DeliverableContext.layer.pipe(Layer.provide(ProjectStore.layer)),
+    ),
+  ),
+  Layer.provideMerge(DeliverableBlobStore.layer),
+  Layer.provideMerge(DeliverableRepository.layer),
+  Layer.provideMerge(layerCheckpointStore),
+);
 
 const layerThreadSettlementWorker = Layer.effectDiscard(
   ThreadSettlementService.make.pipe(Effect.flatMap((service) => service.start())),
@@ -635,6 +667,8 @@ const layerRuntimeCoreDependenciesBase = Layer.mergeAll(
   StorageCleanup.layer.pipe(Layer.provide(ProjectionStoreV2.layer)),
   DatabaseStorage.layer.pipe(Layer.provide(ProjectionMaintenance.layer)),
   layerThreadPullRequestWorker,
+  layerDeliverables,
+  SpendApprovals.layer,
   DelegatedTaskAnalytics.layer,
   Layer.effectDiscard(
     Effect.gen(function* () {
