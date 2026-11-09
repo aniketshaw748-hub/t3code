@@ -20,15 +20,19 @@ export function AppModeSwitch() {
     <ToggleGroup
       aria-label="Mode"
       variant="segmented"
-      className="relative z-10 shrink-0"
+      className="relative z-10 w-full"
       value={[mode]}
       onValueChange={(next) => {
         const value = next[0];
         if (value === "code" || value === "work") choose(value);
       }}
     >
-      <Toggle value="code">Code</Toggle>
-      <Toggle value="work">Work</Toggle>
+      <Toggle value="code" className="flex-1">
+        Code
+      </Toggle>
+      <Toggle value="work" className="flex-1">
+        Work
+      </Toggle>
     </ToggleGroup>
   );
 }
