@@ -451,7 +451,7 @@ function WorkChatLog(props: {
           )}
           <p
             className={cn(
-              "min-w-0 text-body whitespace-pre-line",
+              "min-w-0 text-body wrap-anywhere whitespace-pre-line",
               entry.role === "user"
                 ? "line-clamp-3 text-foreground"
                 : "line-clamp-4 text-muted-foreground",
