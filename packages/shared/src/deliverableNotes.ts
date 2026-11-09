@@ -75,7 +75,7 @@ export function formatNotesMessage(input: {
   });
   const single = input.notes.length === 1;
   return [
-    `${single ? "A note" : "Notes"} on ${deliverable.title} (${deliverable.path}, V${input.versionOrdinal}):`,
+    `${single ? "A note" : "Notes"} on ${deliverable.title === deliverable.path ? deliverable.path : `${deliverable.title} (${deliverable.path})`}, V${input.versionOrdinal}:`,
     ...lines,
     "",
     `When ${single ? "it is" : "they are"} done, call deliverable_mark_notes_fixed with the note ids, a one-line reply, and where to check the change.`,

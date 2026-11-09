@@ -53,7 +53,7 @@ describe("formatNotesMessage", () => {
         },
       ],
     });
-    expect(message).toContain("Notes on Launch film (out/launch.mp4, V4):");
+    expect(message).toContain("Notes on Launch film (out/launch.mp4), V4:");
     expect(message).toContain(
       "- [note_a] at 0:42 (my drawing on the frame is attached): Logo lands too late",
     );

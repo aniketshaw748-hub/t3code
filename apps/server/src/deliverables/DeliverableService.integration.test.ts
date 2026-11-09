@@ -173,7 +173,7 @@ const withEngine = <A, E>(
   Effect.gen(function* () {
     const repo = yield* setup;
     return yield* body(repo).pipe(Effect.provide(layerEngine(repo.root)));
-  }).pipe(Effect.scoped, Effect.provide(layerPlatform), Effect.provide(layerVcsProcess));
+  }).pipe(Effect.scoped, Effect.provide(Layer.mergeAll(layerPlatform, layerVcsProcess)));
 
 it.live(
   "records each turn's changed deck as a Git commit with the deck as a pointer to the blob store",
