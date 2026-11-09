@@ -270,7 +270,7 @@ describe.skipIf(HostProcess.Platform.defaultValue() !== "linux")("install.sh t3 
       expect(relative.output).toContain(`'export PATH="$PATH:$HOME/bin"'`);
 
       await NodeFSP.rm(link);
-      await NodeFSP.symlink(NodePath.join(home, `bin/${BRAND.cliName}`), link);
+      await NodeFSP.symlink(NodePath.join(home, "bin", BRAND.cliName), link);
       const overDesktop = await installOver({
         script: "install.sh",
         home: `${home}//`,

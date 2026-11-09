@@ -222,7 +222,7 @@ if ((Test-Path $marker) -and ((Get-Content $marker -Raw).Trim() -eq $version)) {
 Step "Setting up the $cliName command..."
 New-Item -ItemType Directory -Force -Path $binDir | Out-Null
 $shim = Join-Path $binDir "$cliName.cmd"
-# Replace only a shim that runs a version in this home; never the desktop app's or another $cliName.
+# Replace only a shim that runs a version in this home; never the desktop app's or another t3.
 if (Test-Path -LiteralPath $shim) {
   $existingTarget = ""
   # The shim is UTF-8 without a BOM; Windows PowerShell 5.1 reads files as ANSI by default.
@@ -259,7 +259,7 @@ if ($binDir.Contains(";")) {
   # `irm | iex` runs in the user's own session, so the command works in this window right away.
   # Last, so it never shadows another command of the same name.
   if ($added) { $env:Path = "$env:Path;$binDir" }
-  # A command of the same name earlier on PATH runs instead, so name this one in full.
+  # A t3 earlier on PATH runs instead, so name this one in full.
   $first = Get-Command $cliName -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1
   if ($first -and [System.IO.Path]::GetFullPath($first.Source) -ne [System.IO.Path]::GetFullPath($shimPath)) {
     Write-Host "  Another $cliName at $($first.Source) runs first, so run ${bold}& '$($shim.Replace("'", "''"))'$reset to use this one.`n"

@@ -185,8 +185,8 @@ function ReclaimRow({
                   Reclaim {amount} on {label}?
                 </AlertDialogTitle>
                 <AlertDialogDescription>
-                  {BRAND.displayName} on {label} stops, rebuilds its database, and starts again. It is offline
-                  for about {minutes} min. Running agents stop when it restarts.
+                  {BRAND.displayName} on {label} stops, rebuilds its database, and starts again. It
+                  is offline for about {minutes} min. Running agents stop when it restarts.
                 </AlertDialogDescription>
               </AlertDialogHeader>
               <AlertDialogFooter>

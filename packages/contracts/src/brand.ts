@@ -92,6 +92,11 @@ export interface Brand {
   readonly assets: {
     /** Repo-relative folder with `dev/`, `nightly/`, `prod/` and `android/` icon sets. */
     readonly directory: string;
+    /**
+     * Whether stages without Dev or Nightly art (Beta, Latest) show this build's own sidebar
+     * header and send-button artwork instead of a plain header.
+     */
+    readonly stageArtwork: boolean;
   };
 }
 
@@ -154,6 +159,7 @@ export const BRAND: Brand = {
   },
   assets: {
     directory: "assets/kavyaan",
+    stageArtwork: true,
   },
 };
 
@@ -181,6 +187,14 @@ export const BRAND_GIT_IDENTITY = {
   name: BRAND.displayName,
   email: `${BRAND.slug}@users.noreply.github.com`,
 } as const;
+
+/** The one-line command that installs the CLI from this repository's install script. */
+export function brandInstallScriptCommand(shell: "sh" | "powershell"): string {
+  const base = `https://raw.githubusercontent.com/${REPOSITORY}/main/scripts`;
+  return shell === "powershell"
+    ? `irm ${base}/install.ps1 | iex`
+    : `curl -fsSL ${base}/install.sh | sh`;
+}
 
 /** The CLI launcher file name on `platform`. */
 export function brandCliLauncherName(platform: string): string {

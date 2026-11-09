@@ -1,4 +1,4 @@
-import { BRAND } from "@t3tools/contracts/brand";
+import { BRAND, brandCliLauncherName, brandInstallScriptCommand } from "@t3tools/contracts/brand";
 import * as HostProcess from "@t3tools/shared/HostProcess";
 import { pathSetupCommand } from "@t3tools/shared/shell";
 import * as Console from "effect/Console";
@@ -52,9 +52,7 @@ export const installCli = Effect.fn("cli.install.install")(function* () {
   const runtime = yield* standaloneRuntime;
   const windows = platform === "win32";
   if (Option.isNone(runtime)) {
-    const script = windows
-      ? `irm https://raw.githubusercontent.com/${BRAND.repository}/main/scripts/install.ps1 | iex`
-      : `curl -fsSL https://raw.githubusercontent.com/${BRAND.repository}/main/scripts/install.sh | sh`;
+    const script = brandInstallScriptCommand(windows ? "powershell" : "sh");
     return yield* new CliInstallError({
       reason: `Only the standalone ${BRAND.cliName} can install itself. Use \`${script}\`, or Settings in the desktop app.`,
     });
@@ -70,7 +68,7 @@ export const installCli = Effect.fn("cli.install.install")(function* () {
   const binDir = path.resolve(
     environment.T3CODE_INSTALL_BIN_DIR?.trim() || path.join(home, ".local", "bin"),
   );
-  const name = windows ? "t3.cmd" : "t3";
+  const name = brandCliLauncherName(platform);
   const link = path.join(binDir, name);
   const failed = (reason: string) => (cause: unknown) => new CliInstallError({ reason, cause });
 
@@ -104,7 +102,7 @@ export const installCli = Effect.fn("cli.install.install")(function* () {
     )
   ) {
     return yield* new CliInstallError({
-      reason: `Another t3 is already at ${link}. Remove it, then run this again.`,
+      reason: `Another ${BRAND.cliName} is already at ${link}. Remove it, then run this again.`,
     });
   }
 
@@ -162,8 +160,8 @@ export const installCli = Effect.fn("cli.install.install")(function* () {
     for (const entry of entries) {
       if (same(entry)) return undefined;
       if (!path.isAbsolute(entry) || detectCliRunner(`${entry}/`) !== null) continue;
-      for (const name of windows ? ["t3.cmd", "t3.exe"] : ["t3"]) {
-        const candidate = path.join(entry, name);
+      for (const other of windows ? [name, `${BRAND.cliName}.exe`] : [name]) {
+        const candidate = path.join(entry, other);
         if (yield* fs.exists(candidate).pipe(Effect.orElseSucceed(() => false))) return candidate;
       }
     }
@@ -198,30 +196,34 @@ export const installCli = Effect.fn("cli.install.install")(function* () {
 const reportInstalled = Effect.fn("cli.install.report")(function* (
   installed: Effect.Success<ReturnType<typeof installCli>>,
 ) {
-  yield* Console.log(`Installed t3 ${packageJson.version} at ${installed.link}.`);
+  yield* Console.log(`Installed ${BRAND.cliName} ${packageJson.version} at ${installed.link}.`);
   if (installed.shadowedBy !== undefined) {
     return yield* Console.log(
-      `Another t3 at ${installed.shadowedBy} runs first, so run ${installed.link} to use this one.`,
+      `Another ${BRAND.cliName} at ${installed.shadowedBy} runs first, so run ${installed.link} to use this one.`,
     );
   }
-  if (installed.onPath) return yield* Console.log("Run `t3` to get started.");
+  if (installed.onPath) return yield* Console.log(`Run \`${BRAND.cliName}\` to get started.`);
   if (installed.pathCommand === undefined) {
-    return yield* Console.log(`Add ${installed.binDir} to your PATH, then run \`t3\`.`);
+    return yield* Console.log(
+      `Add ${installed.binDir} to your PATH, then run \`${BRAND.cliName}\`.`,
+    );
   }
   if ((yield* HostProcess.Platform) === "win32") {
     yield* Console.log(
       `${installed.binDir} is not on your PATH yet. In this PowerShell window, run:`,
     );
     yield* Console.log(`  ${installed.pathCommand}`);
-    return yield* Console.log("Then run `t3`. For new windows, add the folder to your PATH.");
+    return yield* Console.log(
+      `Then run \`${BRAND.cliName}\`. For new windows, add the folder to your PATH.`,
+    );
   }
   yield* Console.log(`${installed.binDir} is not on your PATH yet. Add it with:`);
   yield* Console.log(`  ${installed.pathCommand}`);
-  yield* Console.log("Then open a new terminal and run `t3`.");
+  yield* Console.log(`Then open a new terminal and run \`${BRAND.cliName}\`.`);
 });
 
 export const installCommand = Command.make("install").pipe(
-  Command.withDescription("Install this version as the `t3` command."),
+  Command.withDescription(`Install this version as the \`${BRAND.cliName}\` command.`),
   Command.withHandler(() => installCli().pipe(Effect.flatMap(reportInstalled))),
 );
 
@@ -325,13 +327,14 @@ export const offerCliInstall = Effect.fn("cli.install.offer")(function* <E, R, E
   // Any t3 already installed means no prompt: ours (even when off PATH) or another on PATH.
   // Runners put their own cache's node_modules/.bin on PATH, so skip those.
   const windows = platform === "win32";
-  const names = windows ? ["t3.cmd", "t3.exe"] : ["t3"];
+  const launcherName = brandCliLauncherName(platform);
+  const names = windows ? [launcherName, `${BRAND.cliName}.exe`] : [launcherName];
   const launchers = yield* fs
     .readFileString(path.join(runtimeDir, "launchers"))
     .pipe(Effect.orElseSucceed(() => ""));
   const candidates = [
     ...launchers.split(/\r?\n/).filter(Boolean),
-    path.join(path.dirname(runtimeDir), "bin", windows ? "t3.cmd" : "t3"),
+    path.join(path.dirname(runtimeDir), "bin", launcherName),
     ...(environment.PATH ?? environment.Path ?? "")
       .split(windows ? ";" : ":")
       .filter(
@@ -366,7 +369,10 @@ export const offerCliInstall = Effect.fn("cli.install.offer")(function* <E, R, E
   yield* installCli().pipe(
     Effect.flatMap(reportInstalled),
     Effect.catch((error) =>
-      Effect.andThen(saveDecline, Console.error(`Could not install t3: ${error.message}`)),
+      Effect.andThen(
+        saveDecline,
+        Console.error(`Could not install ${BRAND.cliName}: ${error.message}`),
+      ),
     ),
   );
   yield* Console.log("");
@@ -375,7 +381,7 @@ export const offerCliInstall = Effect.fn("cli.install.offer")(function* <E, R, E
 
 export const confirmCliInstall = Prompt.run(
   Prompt.Confirm({
-    message: "Install the t3 command? Then you can run `t3` directly.",
+    message: `Install the ${BRAND.cliName} command? Then you can run \`${BRAND.cliName}\` directly.`,
     initial: true,
   }),
 ).pipe(Effect.catchTags({ QuitError: () => Effect.void }));

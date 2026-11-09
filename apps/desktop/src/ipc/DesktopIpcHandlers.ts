@@ -85,6 +85,7 @@ import {
   uninstallCliCommand,
   addCliCommandToPath,
 } from "./methods/cliCommand.ts";
+import { applyT3Import, previewT3Import } from "./methods/t3Import.ts";
 
 export const installDesktopIpcHandlers = Effect.fn("desktop.ipc.installHandlers")(function* () {
   const ipc = yield* DesktopIpc.DesktopIpc;
@@ -170,6 +171,8 @@ export const installDesktopIpcHandlers = Effect.fn("desktop.ipc.installHandlers"
   yield* ipc.handle(installCliCommand);
   yield* ipc.handle(uninstallCliCommand);
   yield* ipc.handle(addCliCommandToPath);
+  yield* ipc.handle(previewT3Import);
+  yield* ipc.handle(applyT3Import);
   for (const previewMethod of PreviewIpc.methods) {
     // Explicit types preserve the error/service union of these heterogeneous preview methods.
     yield* ipc.handle<

@@ -1855,7 +1855,7 @@ function ImportRowMeta({
   );
 }
 
-/** The desktop app links `t3` on a fresh install; this puts its folder on PATH when it is not. */
+/** The desktop app links its CLI on a fresh install; this puts its folder on PATH when it is not. */
 function CliPathSetup() {
   const { state, busy, run } = useDesktopCliCommand();
   const setup = state?.pathSetup;
@@ -1865,12 +1865,13 @@ function CliPathSetup() {
       <p className="text-body text-muted-foreground">
         {setup.added ? (
           <>
-            Added to {setup.file}. Open a new terminal to use <code className="font-mono">t3</code>.
+            Added to {setup.file}. Open a new terminal to use{" "}
+            <code className="font-mono">{BRAND.cliName}</code>.
           </>
         ) : (
           <>
-            Use <code className="font-mono">t3</code> from any terminal. Adds one line to{" "}
-            {setup.file}.
+            Use <code className="font-mono">{BRAND.cliName}</code> from any terminal. Adds one line
+            to {setup.file}.
           </>
         )}
       </p>

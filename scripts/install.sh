@@ -323,8 +323,8 @@ if [ -n "$path_rest" ]; then
       [ -z "$config_dir" ] || path_command="mkdir -p ${fish_dir} && printf '\\n%s\\n' 'fish_add_path --append --path ${path_prefix}${path_rest}' >> ${fish_dir}/config.fish" ;;
   esac
 fi
-# A command of the same name earlier on PATH runs instead; the PATH command adds this folder last.
-# A PATH entry with a trailing slash gives `dir//<cli>`.
+# A t3 earlier on PATH runs instead; the PATH command adds this folder last.
+# A PATH entry with a trailing slash gives `dir//t3`.
 first_t3="$(command -v "$cli_name" 2>/dev/null | tr -s / || true)"
 case "$first_t3" in "" | "${bin_dir}/${cli_name}") first_t3= ;; esac
 if [ -n "$first_t3" ]; then

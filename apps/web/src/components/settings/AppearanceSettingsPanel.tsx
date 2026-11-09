@@ -1,6 +1,7 @@
 import { isElectron } from "../../env";
 import { isMacPlatform } from "../../lib/utils";
 import { RestoreDeviceDefaultsButton } from "./SettingsPanels";
+import { BRAND } from "@t3tools/contracts/brand";
 import type { CSSProperties } from "react";
 import { useState } from "react";
 import {
@@ -68,6 +69,14 @@ function environmentIdentificationOptions(
       ["none", "None"],
     ];
   }
+  if (stageVariant === "brand") {
+    return [
+      ["artwork", `${BRAND.displayName} artwork`],
+      ["nightly-artwork", "Nightly artwork"],
+      ["dev-artwork", "Dev artwork"],
+      ["none", "None"],
+    ];
+  }
   return [
     ["artwork", "None"],
     ["nightly-artwork", "Nightly artwork"],
@@ -121,9 +130,11 @@ export function AppearanceSettingsPanel() {
     ? environmentStageVariant
       ? "Only built-in themes show artwork, so this theme shows the version pill."
       : "Only built-in themes show artwork."
-    : environmentStageVariant
-      ? "Choose how Dev and Nightly environments are identified."
-      : "Show Dev or Nightly artwork in the sidebar header.";
+    : environmentStageVariant === "brand"
+      ? "Choose the artwork behind the sidebar header."
+      : environmentStageVariant
+        ? "Choose how Dev and Nightly environments are identified."
+        : "Show Dev or Nightly artwork in the sidebar header.";
   const appearanceContrastRatio =
     (settings.appearanceContrast - MIN_APPEARANCE_CONTRAST) /
     (MAX_APPEARANCE_CONTRAST - MIN_APPEARANCE_CONTRAST);
@@ -242,42 +253,6 @@ export function AppearanceSettingsPanel() {
             }
           />
         ) : null}
-
-        <SettingsRow
-          {...searchableSetting("work-appearance")}
-          description="Work mode stays dark for reviewing films and decks, whatever the app theme. Pick Light to have it follow a light look instead."
-          resetAction={
-            settings.workAppearance !== DEFAULT_UNIFIED_SETTINGS.workAppearance ? (
-              <SettingResetButton
-                label="Work mode look"
-                onClick={() =>
-                  updateSettings({ workAppearance: DEFAULT_UNIFIED_SETTINGS.workAppearance })
-                }
-              />
-            ) : null
-          }
-          control={
-            <div className="w-full sm:w-40">
-              <Select
-                value={settings.workAppearance}
-                onValueChange={(value) => {
-                  if (value === "dark" || value === "light")
-                    updateSettings({ workAppearance: value });
-                }}
-              >
-                <SelectTrigger size="sm" className="w-full min-w-0" aria-label="Work mode look">
-                  <SelectValue>
-                    {settings.workAppearance === "dark" ? "Dark (default)" : "Light"}
-                  </SelectValue>
-                </SelectTrigger>
-                <SelectPopup align="end" alignItemWithTrigger={false}>
-                  <SelectItem value="dark">Dark (default)</SelectItem>
-                  <SelectItem value="light">Light</SelectItem>
-                </SelectPopup>
-              </Select>
-            </div>
-          }
-        />
 
         <SettingsRow
           {...searchableSetting("chat-width")}

@@ -1,12 +1,13 @@
 import { useAtomValue } from "@effect/atom-react";
 import type { EnvironmentIdentificationMode } from "@t3tools/contracts";
+import { BRAND } from "@t3tools/contracts/brand";
 import { useId } from "react";
 
 import { APP_STAGE_LABEL } from "../branding";
 import { resolveServerBackedAppStageLabel } from "../branding.logic";
 import { primaryServerConfigAtom } from "../state/server";
 
-export type SidebarStageBackdropVariant = "nightly" | "dev";
+export type SidebarStageBackdropVariant = "nightly" | "dev" | "brand";
 export type EnvironmentIdentificationPillLabel = "Dev" | "Nightly";
 
 const STAGE_BACKDROP_VIEW_BOX = "0 0 8192 96";
@@ -21,7 +22,7 @@ export function resolveSidebarStageBackdropVariant(
   const normalized = stageLabel.trim().toLowerCase();
   if (normalized === "nightly") return "nightly";
   if (normalized === "dev") return "dev";
-  return null;
+  return BRAND.assets.stageArtwork ? "brand" : null;
 }
 
 export function resolveEnvironmentIdentificationPillLabel(
@@ -108,6 +109,7 @@ export function SidebarStageBackdrop({ variant }: { variant: SidebarStageBackdro
 }
 
 function StageBackdropArt({ variant }: { variant: SidebarStageBackdropVariant }) {
+  if (variant === "brand") return <BrandDuskArt />;
   return variant === "nightly" ? <NightlySkyArt /> : <DevBlueprintArt />;
 }
 
@@ -431,6 +433,97 @@ function DevBlueprintArt({ compact = false }: { compact?: boolean }) {
       <rect width="100%" height="96" fill={`url(#${majorGridId})`} />
       <rect width="100%" height="6" fill={`url(#${rulerId})`} />
       <rect width="100%" height="96" fill={`url(#${annotationsId})`} />
+    </svg>
+  );
+}
+
+const BRAND_DUSK_STARS = NIGHTLY_STARS.filter((_, index) => index % 3 === 0);
+
+/**
+ * The brand's own stage art for Beta and Latest: the Nightly sky's palette, so themes tint it
+ * the same way, crossed by soft light beams that echo the mark's diagonals.
+ */
+function BrandDuskArt({ compact = false }: { compact?: boolean }) {
+  const idPrefix = useId().replaceAll(":", "");
+  const skyId = `${idPrefix}-stage-brand-sky`;
+  const glowId = `${idPrefix}-stage-brand-glow`;
+  const beamId = `${idPrefix}-stage-brand-beam`;
+  const softId = `${idPrefix}-stage-brand-soft`;
+  const beamsId = `${idPrefix}-stage-brand-beams`;
+  const starsId = `${idPrefix}-stage-brand-stars`;
+
+  return (
+    <svg
+      data-stage-art="brand"
+      className="h-full w-full"
+      fill="none"
+      preserveAspectRatio="xMinYMin slice"
+      viewBox={compact ? "120 0 8192 96" : STAGE_BACKDROP_VIEW_BOX}
+      xmlns="http://www.w3.org/2000/svg"
+    >
+      <defs>
+        <linearGradient
+          id={skyId}
+          x1="0"
+          y1="0"
+          x2="288"
+          y2="96"
+          gradientUnits="userSpaceOnUse"
+          spreadMethod="reflect"
+        >
+          <stop style={{ stopColor: "var(--stage-night-top)" }} />
+          <stop offset="0.55" style={{ stopColor: "var(--stage-night-mid)" }} />
+          <stop offset="1" style={{ stopColor: "var(--stage-night-bottom)" }} />
+        </linearGradient>
+        <radialGradient
+          id={glowId}
+          cx="0"
+          cy="0"
+          r="1"
+          gradientTransform="translate(196 8) rotate(150) scale(150 80)"
+          gradientUnits="userSpaceOnUse"
+        >
+          <stop style={{ stopColor: "var(--stage-night-tertiary)" }} stopOpacity="0.42" />
+          <stop
+            offset="0.55"
+            style={{ stopColor: "var(--stage-night-glow-secondary)" }}
+            stopOpacity="0.18"
+          />
+          <stop offset="1" style={{ stopColor: "var(--stage-night-bottom)" }} stopOpacity="0" />
+        </radialGradient>
+        <linearGradient id={beamId} x1="0" y1="0" x2="0" y2="96" gradientUnits="userSpaceOnUse">
+          <stop style={{ stopColor: "var(--stage-night-highlight)" }} stopOpacity="0.5" />
+          <stop offset="1" style={{ stopColor: "var(--stage-night-secondary)" }} stopOpacity="0" />
+        </linearGradient>
+        <filter id={softId} x="-24" y="-24" width="336" height="144" filterUnits="userSpaceOnUse">
+          <feGaussianBlur stdDeviation="3" />
+        </filter>
+        <pattern id={beamsId} width="288" height="96" patternUnits="userSpaceOnUse">
+          <rect width="288" height="96" fill={`url(#${glowId})`} />
+          <g filter={`url(#${softId})`} fill={`url(#${beamId})`}>
+            <path d="M150 -8H172L124 104H102Z" />
+            <path d="M188 -8H198L262 104H246Z" fillOpacity="0.7" />
+            <path d="M40 -8H48L18 104H8Z" fillOpacity="0.45" />
+          </g>
+        </pattern>
+        <pattern id={starsId} width="288" height="96" patternUnits="userSpaceOnUse">
+          <g style={{ fill: "var(--stage-night-line)" }}>
+            {BRAND_DUSK_STARS.map((star) => (
+              <circle
+                key={`${star.cx}-${star.cy}`}
+                cx={star.cx}
+                cy={star.cy}
+                r={star.r}
+                fillOpacity={star.opacity * 0.8}
+              />
+            ))}
+          </g>
+        </pattern>
+      </defs>
+
+      <rect width="100%" height="96" fill={`url(#${skyId})`} />
+      <rect width="100%" height="96" fill={`url(#${beamsId})`} />
+      <rect width="100%" height="96" fill={`url(#${starsId})`} />
     </svg>
   );
 }

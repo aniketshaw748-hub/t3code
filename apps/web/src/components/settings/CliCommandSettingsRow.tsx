@@ -13,9 +13,9 @@ import { searchableSetting } from "./settingsSearch";
 import { BRAND } from "@t3tools/contracts/brand";
 
 const FAILURE_TITLES = {
-  install: "Could not install t3",
-  uninstall: "Could not remove t3",
-  addToPath: "Could not add t3 to PATH",
+  install: `Could not install ${BRAND.cliName}`,
+  uninstall: `Could not remove ${BRAND.cliName}`,
+  addToPath: `Could not add ${BRAND.cliName} to PATH`,
 } as const;
 
 /** The desktop `t3` command's state, and its actions with a toast on failure. */
@@ -61,7 +61,7 @@ export function CliCommandSettingsRow() {
         ? `Installed at ${state.installedPath}. Open a new terminal to use it.`
         : state.pathSetup?.added
           ? `Installed at ${state.installedPath} and added to PATH in ${state.pathSetup.file}. Open a new terminal to use it.`
-          : `Installed at ${state.installedPath}, which is not on your PATH yet.${state.pathSetup ? "" : " Add its folder to your PATH to run `t3`."}`;
+          : `Installed at ${state.installedPath}, which is not on your PATH yet.${state.pathSetup ? "" : ` Add its folder to your PATH to run \`${BRAND.cliName}\`.`}`;
 
   return (
     <SettingsRow

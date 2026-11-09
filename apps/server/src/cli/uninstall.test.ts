@@ -1,3 +1,4 @@
+import { BRAND } from "@t3tools/contracts/brand";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, it } from "@effect/vitest";
 import * as Config from "effect/Config";
@@ -39,7 +40,7 @@ it.layer(NodeServices.layer)("t3 uninstall launcher", (it) => {
 
       // On Windows, only the shim exactly as written is ours; a user's wrapper stays.
       const shimDir = path.join(root, "win-bin");
-      const shim = path.join(shimDir, "t3.cmd");
+      const shim = path.join(shimDir, `${BRAND.cliName}.cmd`);
       yield* fs.makeDirectory(shimDir);
       const windowsOwner = (contents: string) =>
         fs

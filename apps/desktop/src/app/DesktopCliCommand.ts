@@ -405,9 +405,8 @@ export const make = Effect.gen(function* () {
       return yield* fail(`Install the ${BRAND.cliName} command first.`);
     }
     const setup = startupLine(installed.value);
-    if (setup === undefined) return yield* fail(
-        `${BRAND.displayName} cannot add ${BRAND.cliName} to this shell's PATH.`,
-      );
+    if (setup === undefined)
+      return yield* fail(`${BRAND.displayName} cannot add ${BRAND.cliName} to this shell's PATH.`);
     const shadowedBy = yield* foreignFirstOnPath;
     if (Option.isSome(shadowedBy)) {
       return yield* fail(
@@ -417,7 +416,9 @@ export const make = Effect.gen(function* () {
     if (!(yield* folderOnPath(installed.value)) && !(yield* hasLine(setup))) {
       yield* fs.makeDirectory(path.dirname(setup.path), { recursive: true }).pipe(
         Effect.andThen(
-          fs.writeFileString(setup.path, `\n# Added by ${BRAND.displayName}\n${setup.line}\n`, { flag: "a" }),
+          fs.writeFileString(setup.path, `\n# Added by ${BRAND.displayName}\n${setup.line}\n`, {
+            flag: "a",
+          }),
         ),
         Effect.mapError(() => fail(`Could not add ${BRAND.cliName} to ${setup.file}.`)),
       );
@@ -446,7 +447,9 @@ export const make = Effect.gen(function* () {
       // A t3 that is not ours in these folders, even off PATH, means the user has one already. On
       // Windows the app never writes there, so any t3 there is someone else's.
       for (const directory of userCandidates(environment.homeDirectory)) {
-        for (const name of windows ? [`${BRAND.cliName}.cmd`, `${BRAND.cliName}.exe`] : [BRAND.cliName]) {
+        for (const name of windows
+          ? [`${BRAND.cliName}.cmd`, `${BRAND.cliName}.exe`]
+          : [BRAND.cliName]) {
           const other = path.join(directory, name);
           const present =
             (yield* exists(other)) || Option.isSome(yield* fs.readLink(other).pipe(Effect.option));

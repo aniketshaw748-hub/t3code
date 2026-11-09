@@ -254,14 +254,19 @@ it.layer(NodeServices.layer)("DesktopCliCommand", (it) => {
       // An old link of ours is updated where it is, not moved to a folder that may be off PATH.
       yield* fs.writeFileString(path.join(home, "bin", `${BRAND.cliName}.staging`), "mine");
       yield* fs.remove(path.join(home, "bin", BRAND.cliName));
-      yield* fs.symlink(path.join(home, "old-t3", "bin", BRAND.cliName), path.join(home, "bin", BRAND.cliName));
+      yield* fs.symlink(
+        path.join(home, "old-t3", "bin", BRAND.cliName),
+        path.join(home, "bin", BRAND.cliName),
+      );
       env.PATH = "";
       expect((yield* after.install).installedPath).toBe(path.join(home, "bin", BRAND.cliName));
       expect(yield* fs.readLink(path.join(home, "bin", BRAND.cliName))).toBe(
         path.join(home, "new-t3", "bin", BRAND.cliName),
       );
       expect(yield* fs.exists(path.join(home, ".local", "bin", BRAND.cliName))).toBe(false);
-      expect(yield* fs.readFileString(path.join(home, "bin", `${BRAND.cliName}.staging`))).toBe("mine");
+      expect(yield* fs.readFileString(path.join(home, "bin", `${BRAND.cliName}.staging`))).toBe(
+        "mine",
+      );
     }).pipe(Effect.scoped),
   );
 
@@ -439,7 +444,10 @@ it.layer(NodeServices.layer)("DesktopCliCommand", (it) => {
       // PATH alone.
       const besideHome = yield* fs.makeTempDirectoryScoped();
       yield* fs.makeDirectory(path.join(besideHome, ".local", "bin"), { recursive: true });
-      yield* fs.writeFileString(path.join(besideHome, ".local", "bin", `${BRAND.cliName}.cmd`), "@echo off\r\n");
+      yield* fs.writeFileString(
+        path.join(besideHome, ".local", "bin", `${BRAND.cliName}.cmd`),
+        "@echo off\r\n",
+      );
       const beside = fakePowerShell("C:\\Tools");
       yield* (yield* commandIn({ home: besideHome, platform: "win32" }, beside.spawner))
         .installOnFirstLaunch;

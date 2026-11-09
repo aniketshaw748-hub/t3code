@@ -12,7 +12,12 @@ import type {
 import { AuthAccessTokenResult, AuthSessionState } from "./auth.ts";
 import { AdvertisedEndpoint } from "./remoteAccess.ts";
 import { ExecutionEnvironmentDescriptor } from "./environment.ts";
-import { type ClientSettings, type QuitConfirmationMode, SnapShotShortcut } from "./settings.ts";
+import {
+  type ClientSettings,
+  ClientSettingsPatch,
+  type QuitConfirmationMode,
+  SnapShotShortcut,
+} from "./settings.ts";
 import type { EditorId } from "./editor.ts";
 import { KeybindingShortcut, type PreviewForwardedShortcut } from "./keybindings.ts";
 
@@ -349,6 +354,31 @@ export const DesktopCliCommandStateSchema = Schema.Struct({
   launcherPath: Schema.NullOr(Schema.String),
 });
 export type DesktopCliCommandState = typeof DesktopCliCommandStateSchema.Type;
+
+/** What "Import settings from T3 Code" would bring over. Never threads, credentials or databases. */
+export const DesktopT3ImportPreviewSchema = Schema.Struct({
+  /** The T3 Code data folder that was read, or null when no T3 Code install was found. */
+  sourceDir: Schema.NullOr(Schema.String),
+  /** Client settings T3 Code saved, limited to ones that mean the same on this device. */
+  clientSettings: ClientSettingsPatch,
+  /** Commands whose shortcuts differ from this app's. */
+  keybindingCommands: Schema.Array(Schema.String),
+  /** Custom theme files that are new or different here. */
+  themeFiles: Schema.Array(Schema.String),
+  /** Appearance and layout choices T3 Code keeps in its browser storage. */
+  localStorage: Schema.Record(Schema.String, Schema.String),
+  /** T3 Code's window zoom level, when it differs from this window's. */
+  zoomLevel: Schema.NullOr(Schema.Number),
+  currentZoomLevel: Schema.Number,
+});
+export type DesktopT3ImportPreview = typeof DesktopT3ImportPreviewSchema.Type;
+
+export const DesktopT3ImportSelectionSchema = Schema.Struct({
+  keybindings: Schema.Boolean,
+  themes: Schema.Boolean,
+  zoom: Schema.Boolean,
+});
+export type DesktopT3ImportSelection = typeof DesktopT3ImportSelectionSchema.Type;
 
 export interface DesktopUpdateActionResult {
   accepted: boolean;
@@ -1192,6 +1222,12 @@ export interface DesktopBridge {
     install: () => Promise<DesktopCliCommandState>;
     uninstall: () => Promise<DesktopCliCommandState>;
     addToPath: () => Promise<DesktopCliCommandState>;
+  };
+  t3Import: {
+    /** Reads T3 Code's saved settings read-only; changes nothing. */
+    preview: () => Promise<DesktopT3ImportPreview>;
+    /** Copies the selected files and zoom. Client settings and browser storage are the renderer's. */
+    apply: (selection: DesktopT3ImportSelection) => Promise<void>;
   };
   webLinks: {
     setReady: (ready: boolean) => Promise<void>;
