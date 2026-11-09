@@ -1096,7 +1096,8 @@ export function resolveWindowsServerAsarIgnoreGlobs(
   ];
 }
 
-export const WINDOWS_PACKAGED_PAYLOAD_FILE_LIMIT = 80;
+// Kavyaan ships more server chunks than upstream, each with its own compile-cache file.
+export const WINDOWS_PACKAGED_PAYLOAD_FILE_LIMIT = 90;
 export const WINDOWS_SERVER_RESOURCE_SOURCE_DIR = "apps/desktop/prod-resources/windows-server";
 export const WINDOWS_SERVER_EXTRA_RESOURCES = [
   {
