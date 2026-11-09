@@ -21,9 +21,9 @@ import * as Schema from "effect/Schema";
 import {
   notificationForActivity,
   sanitizeAgentActivityAggregateState,
-  sanitizeApnsNotificationPayload,
-} from "./agentActivityPayloads.ts";
-import { makeAggregateState } from "./agentActivityAggregate.ts";
+  sanitizeAgentActivityNotification,
+} from "@t3tools/shared/agentActivityPayloads";
+import { makeAggregateState } from "@t3tools/shared/agentActivityAggregate";
 import * as Apns from "./ApnsClient.ts";
 import {
   ApnsDeliveryJobLiveActivityAggregateMissing,
@@ -48,7 +48,7 @@ import {
   alertForTerminalAggregate,
   rowPhasesChanged,
   shouldAlertForActivity,
-} from "./agentActivityAlerts.ts";
+} from "@t3tools/shared/agentActivityAlerts";
 const MIN_LIVE_ACTIVITY_UPDATE_INTERVAL_MS = 15_000;
 const FRESHLY_ARMED_GRACE_MS = 2 * 60 * 1_000;
 const PERMANENT_APNS_TOKEN_REASONS = new Set([
@@ -802,7 +802,7 @@ const make = Effect.gen(function* () {
     let deliveryTarget = input.target;
     const now = yield* DateTime.now;
     const epochSeconds = Math.floor(now.epochMilliseconds / 1_000);
-    const notification = sanitizeApnsNotificationPayload(input.notification);
+    const notification = sanitizeAgentActivityNotification(input.notification);
     yield* Effect.annotateCurrentSpan({
       "relay.environment_id": notification.environmentId,
       "relay.thread_id": notification.threadId,

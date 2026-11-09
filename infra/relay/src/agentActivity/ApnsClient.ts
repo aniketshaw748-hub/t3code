@@ -8,7 +8,7 @@ import * as Headers from "effect/http/Headers";
 import * as HttpClient from "effect/http/HttpClient";
 import * as HttpClientRequest from "effect/http/HttpClientRequest";
 import { ApnsEnvironment, type ApnsCredentials } from "../Config.ts";
-import { MAX_SUMMARY_TEXT_LENGTH, truncateText } from "./agentActivityPayloads.ts";
+import { MAX_SUMMARY_TEXT_LENGTH, truncateText } from "@t3tools/shared/agentActivityPayloads";
 import type { ApnsLiveActivityAlert, ApnsNotificationPayload } from "./apnsDeliveryJobs.ts";
 import type { ApnsJwtEncodingError, ApnsJwtSigningError } from "./apnsJwt.ts";
 import * as ApnsProviderTokens from "./ApnsProviderTokens.ts";

@@ -17,6 +17,7 @@ import {
   type DesktopBridge,
   type DesktopServerExposureState,
   type DesktopSshEnvironmentTarget,
+  type DesktopTailscaleAvailability,
   type DesktopUpdateState,
   type DesktopWslState,
   type EnvironmentId,
@@ -442,4 +443,37 @@ export function resolveAccessEnvironmentId(input: {
     (input.environments.find((environment) => environment.connected) ?? input.environments[0])
       ?.environmentId ?? null
   );
+}
+
+export type TailscalePhoneStep =
+  | { readonly kind: "install" | "start" | "sign-in" }
+  | { readonly kind: "expose"; readonly httpsServeEnabled: boolean | null }
+  | { readonly kind: "ready"; readonly endpoint: AdvertisedEndpoint };
+
+/**
+ * The next step to reach this desktop from a phone over the tailnet. HTTPS through
+ * Tailscale Serve wins over the plain Tailscale IP when both are on.
+ */
+export function tailscalePhoneStep(
+  availability: DesktopTailscaleAvailability,
+  endpoints: ReadonlyArray<AdvertisedEndpoint>,
+): TailscalePhoneStep {
+  switch (availability.state) {
+    case "not-installed":
+      return { kind: "install" };
+    case "not-running":
+    case "stopped":
+      return { kind: "start" };
+    case "needs-login":
+      return { kind: "sign-in" };
+    case "running": {
+      const available = endpoints.filter((endpoint) => endpoint.status === "available");
+      const endpoint =
+        available.find(isTailscaleHttpsEndpoint) ??
+        available.find((endpoint) => endpoint.id.startsWith("tailscale-ip:"));
+      return endpoint
+        ? { kind: "ready", endpoint }
+        : { kind: "expose", httpsServeEnabled: availability.httpsServeEnabled };
+    }
+  }
 }

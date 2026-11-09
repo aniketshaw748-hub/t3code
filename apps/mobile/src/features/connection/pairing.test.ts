@@ -1,7 +1,22 @@
 import { BRAND } from "@t3tools/contracts/brand";
 import { describe, expect, it } from "vite-plus/test";
 
-import { buildPairingUrl, extractPairingUrlFromQrPayload, parsePairingUrl } from "./pairing";
+import * as NodeModule from "node:module";
+import type { getStateFromPath as GetStateFromPath } from "@react-navigation/native";
+
+import {
+  buildPairingUrl,
+  extractPairingUrlFromQrPayload,
+  PAIRING_FORM_LINKING,
+  parsePairingUrl,
+} from "./pairing";
+
+const requireFromNative = NodeModule.createRequire(
+  NodeModule.createRequire(import.meta.url).resolve("@react-navigation/native/package.json"),
+);
+const { getStateFromPath } = requireFromNative("@react-navigation/core") as {
+  readonly getStateFromPath: typeof GetStateFromPath;
+};
 
 describe("buildPairingUrl", () => {
   it("uses HTTP for a schemeless IP address", () => {
@@ -42,6 +57,22 @@ describe("parsePairingUrl", () => {
     ).toEqual({
       host: "https://desktop.tailnet.ts.net",
       code: "pairing-token",
+    });
+  });
+});
+
+describe("pair deep links", () => {
+  it("open the prefilled pairing form with the desktop QR's tailnet host and code", () => {
+    const link = "pair?pairingUrl=http%3A%2F%2F100.116.182.86%3A3773%2Fpair%23token%3DPAIRCODE";
+    const state = getStateFromPath(link, {
+      screens: { SettingsEnvironmentNew: PAIRING_FORM_LINKING },
+    });
+    const route = state?.routes[0];
+    expect(route?.name).toBe("SettingsEnvironmentNew");
+    const pairingUrl = (route?.params as { pairingUrl?: string } | undefined)?.pairingUrl ?? "";
+    expect(parsePairingUrl(pairingUrl)).toEqual({
+      host: "http://100.116.182.86:3773",
+      code: "PAIRCODE",
     });
   });
 });

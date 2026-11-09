@@ -1,6 +1,10 @@
 import { afterEach, describe, expect, it, vi } from "vite-plus/test";
 
-import { resolveDesktopPairingUrl, resolveHostedPairingUrl } from "./pairingUrls";
+import {
+  resolveDesktopPairingUrl,
+  resolveHostedPairingUrl,
+  resolveMobileAppPairingUrl,
+} from "./pairingUrls";
 
 describe("settings pairing URL helpers", () => {
   afterEach(() => {
@@ -11,6 +15,16 @@ describe("settings pairing URL helpers", () => {
     expect(resolveHostedPairingUrl("http://192.168.1.44:3773", "PAIRCODE")).toBeNull();
     expect(resolveDesktopPairingUrl("http://192.168.1.44:3773", "PAIRCODE")).toBe(
       "http://192.168.1.44:3773/pair#token=PAIRCODE",
+    );
+  });
+
+  it("wraps a tailnet pairing URL in the phone app's pair link", () => {
+    expect(
+      resolveMobileAppPairingUrl(
+        resolveDesktopPairingUrl("http://100.101.102.103:3773", "PAIRCODE"),
+      ),
+    ).toBe(
+      "kavyaan://pair?pairingUrl=http%3A%2F%2F100.101.102.103%3A3773%2Fpair%23token%3DPAIRCODE",
     );
   });
 

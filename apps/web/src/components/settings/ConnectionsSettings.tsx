@@ -66,6 +66,7 @@ import {
   AlertDialogPopup,
   AlertDialogTitle,
 } from "../ui/alert-dialog";
+import { TailscalePhoneSetupRow } from "./TailscalePhoneSetupRow";
 import { Spinner } from "../ui/spinner";
 import { Select, SelectItem, SelectPopup, SelectTrigger, SelectValue } from "../ui/select";
 import { Menu, MenuPopup, MenuTrigger } from "../ui/menu";
@@ -565,6 +566,29 @@ function ConnectionsSettingsContent({
       );
     }
     setIsUpdatingTailscaleServe(false);
+  };
+
+  // Without network access the MagicDNS endpoint is not listed yet, so serve on the default port.
+  const handleServeTailnetHttps = () => {
+    if (tailscaleHttpsEndpoint) {
+      handleStartTailscaleServeSetup(tailscaleHttpsEndpoint);
+      return;
+    }
+    if (!desktopBridge) return;
+    setIsUpdatingTailscaleServe(true);
+    void desktopBridge
+      .setTailscaleServeEnabled({ enabled: true, port: DEFAULT_TAILSCALE_SERVE_PORT })
+      .then(refreshDesktopNetworkAccessState)
+      .catch((error: unknown) => {
+        toastManager.add(
+          stackedThreadToast({
+            type: "error",
+            title: "Could not set up Tailscale HTTPS",
+            description: error instanceof Error ? error.message : "Something went wrong.",
+          }),
+        );
+      })
+      .finally(() => setIsUpdatingTailscaleServe(false));
   };
 
   const handleStartTailscaleServeDisable = (_endpoint: AdvertisedEndpoint) => {
@@ -1232,6 +1256,15 @@ function ConnectionsSettingsContent({
                 {renderNetworkAccessRow()}
                 {renderEndpointRows()}
                 {renderTailscaleRow()}
+                {primaryEnvironmentId !== null ? (
+                  <TailscalePhoneSetupRow
+                    environmentId={primaryEnvironmentId}
+                    endpoints={desktopAdvertisedEndpoints}
+                    busy={isUpdatingTailscaleServe || isUpdatingDesktopServerExposure}
+                    onAllowNetworkAccess={() => void handleDesktopServerExposureChange(true)}
+                    onServeHttps={handleServeTailnetHttps}
+                  />
+                ) : null}
                 {renderWslRow()}
               </>
             ) : canManageLocalBackend ? (

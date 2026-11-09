@@ -71,6 +71,7 @@ import {
 import { McpAppFullscreenScreen } from "./features/threads/McpAppFullscreenScreen";
 import { ConnectionsRouteScreen } from "./features/connection/ConnectionsRouteScreen";
 import { ConnectionsNewRouteScreen } from "./features/connection/ConnectionsNewRouteScreen";
+import { PAIRING_FORM_LINKING } from "./features/connection/pairing";
 import { AddProjectDestinationRoute } from "./features/projects/AddProjectDestinationRoute";
 import { AddProjectLocalRoute } from "./features/projects/AddProjectLocalRoute";
 import { WorkProjectRouteScreen } from "./features/work/WorkProjectScreen";
@@ -230,7 +231,7 @@ const SETTINGS_SCREENS = {
   }),
   SettingsEnvironmentNew: createNativeStackScreen({
     screen: ConnectionsNewRouteScreen,
-    linking: "settings/environment-new",
+    linking: PAIRING_FORM_LINKING,
     options: settingsPage("Add Environment"),
   }),
   SettingsArchive: createNativeStackScreen({

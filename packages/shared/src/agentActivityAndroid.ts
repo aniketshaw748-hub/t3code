@@ -1,9 +1,83 @@
-import type { RelayAgentActivityAggregateState } from "@t3tools/contracts/relay";
+import type {
+  RelayAgentActivityAggregateState,
+  RelayAgentActivityState,
+  RelayAgentAwarenessPreferences,
+} from "@t3tools/contracts/relay";
 import {
   activityPhasePriority,
+  statusForPhase,
   TERMINAL_AGENT_ACTIVITY_DISPLAY_TTL_MS,
 } from "./agentActivityAggregate.ts";
-import { agentActivityExpiresAt } from "./agentActivityPayloads.ts";
+import {
+  alertForActivityRows,
+  attentionTransitionRows,
+  shouldAlertForActivity,
+  terminalTransitionRows,
+} from "./agentActivityAlerts.ts";
+import { agentActivityExpiresAt, notificationForActivity } from "./agentActivityPayloads.ts";
+
+export interface AndroidAgentAlert {
+  readonly alert_id: string;
+  readonly alert_group?: string;
+  readonly alert_title: string;
+  readonly alert_body: string;
+  readonly alert_path: string;
+}
+
+export function androidAlertForState(
+  state: RelayAgentActivityState,
+  preferences: RelayAgentAwarenessPreferences,
+  nowMs: number,
+): AndroidAgentAlert | null {
+  if (!shouldAlertForActivity({ ...state, preferences, nowMs })) return null;
+  const notification = notificationForActivity({ ...state, status: statusForPhase(state.phase) });
+  return {
+    alert_id: JSON.stringify([state.environmentId, state.threadId, state.phase, state.updatedAt]),
+    alert_group: JSON.stringify([state.environmentId, state.threadId]),
+    alert_title: notification.title,
+    alert_body: notification.body,
+    alert_path: notification.deepLink,
+  };
+}
+
+export function androidAlertForAggregate(input: {
+  readonly previousAggregate: RelayAgentActivityAggregateState;
+  readonly nextAggregate: RelayAgentActivityAggregateState;
+  readonly preferences: RelayAgentAwarenessPreferences;
+  readonly nowMs: number;
+}): AndroidAgentAlert | null {
+  if (!input.preferences.notificationsEnabled) return null;
+  const attention = attentionTransitionRows(input);
+  const activities =
+    attention.length > 0
+      ? attention
+      : terminalTransitionRows({ ...input, includeUnobserved: true });
+  const first = activities[0];
+  const alert = alertForActivityRows(activities);
+  if (!first || !alert) return null;
+  if (activities.length === 1) {
+    const notification = notificationForActivity(first);
+    return {
+      alert_id: JSON.stringify([first.environmentId, first.threadId, first.phase, first.updatedAt]),
+      alert_group: JSON.stringify([first.environmentId, first.threadId]),
+      alert_title: notification.title,
+      alert_body: notification.body,
+      alert_path: notification.deepLink,
+    };
+  }
+  return {
+    // Stable group IDs let the native handler deduplicate across jobs, retries, and row orders.
+    alert_id: JSON.stringify(
+      activities
+        .map((row) => [row.environmentId, row.threadId, row.phase, row.updatedAt])
+        .sort((a, b) => JSON.stringify(a).localeCompare(JSON.stringify(b))),
+    ),
+    alert_title: alert.title,
+    alert_body: alert.body,
+    // Target the overview so one visible thread cannot suppress other threads' alerts.
+    alert_path: "/",
+  };
+}
 
 export function androidActivityData(aggregate: RelayAgentActivityAggregateState | null) {
   const rows = [...(aggregate?.activities ?? [])].sort(
@@ -42,6 +116,10 @@ export function androidActivityData(aggregate: RelayAgentActivityAggregateState 
       ? `${hero.status}: ${clean(hero.threadTitle)} · ${clean(hero.projectTitle)}`
       : "",
     ...Object.fromEntries(lines.map((line, index) => [`activity_line_${index}`, line])),
+    // Phase and thread path per row, so the phone can bubble each running thread.
+    ...Object.fromEntries(
+      rows.map((row, index) => [`activity_thread_${index}`, `${row.phase}\t${row.deepLink}`]),
+    ),
     activity_path: rows[0]?.deepLink ?? "/",
     activity_expires_at: String(expiresAt),
   };

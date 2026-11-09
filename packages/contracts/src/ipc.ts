@@ -552,6 +552,19 @@ export const DesktopServerExposureStateSchema = Schema.Struct({
   tailscaleServePort: Schema.Number,
 });
 
+export const DesktopTailscaleAvailabilitySchema = Schema.Union([
+  Schema.Struct({
+    state: Schema.Literals(["not-installed", "not-running", "needs-login", "stopped"]),
+  }),
+  Schema.Struct({
+    state: Schema.Literal("running"),
+    magicDnsName: Schema.NullOr(Schema.String),
+    tailnetIpv4Addresses: Schema.Array(Schema.String),
+    httpsServeEnabled: Schema.NullOr(Schema.Boolean),
+  }),
+]);
+export type DesktopTailscaleAvailability = typeof DesktopTailscaleAvailabilitySchema.Type;
+
 export interface PickFolderOptions {
   initialPath?: string | null;
   targetEnvironmentId?: string;
@@ -1168,6 +1181,8 @@ export interface DesktopBridge {
     readonly port?: number;
   }) => Promise<DesktopServerExposureState>;
   getAdvertisedEndpoints: () => Promise<readonly AdvertisedEndpoint[]>;
+  /** Runs the Tailscale CLI on demand; never called on load, as it can prompt on macOS. */
+  getTailscaleAvailability: () => Promise<DesktopTailscaleAvailability>;
   getWslState: () => Promise<DesktopWslState>;
   setWslBackendEnabled: (enabled: boolean) => Promise<DesktopWslState>;
   setWslDistro: (distro: string | null) => Promise<DesktopWslState>;

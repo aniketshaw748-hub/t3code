@@ -186,6 +186,7 @@ const layerDesktopServerExposure = Layer.succeed(DesktopServerExposure.DesktopSe
   setMode: () => Effect.die("unexpected setMode"),
   setTailscaleServeEnabled: () => Effect.die("unexpected setTailscaleServeEnabled"),
   getAdvertisedEndpoints: Effect.die("unexpected getAdvertisedEndpoints"),
+  getTailscaleAvailability: Effect.die("unexpected getTailscaleAvailability"),
 } satisfies DesktopServerExposure.DesktopServerExposure["Service"]);
 
 const layerElectronMenu = Layer.succeed(ElectronMenu.ElectronMenu, {

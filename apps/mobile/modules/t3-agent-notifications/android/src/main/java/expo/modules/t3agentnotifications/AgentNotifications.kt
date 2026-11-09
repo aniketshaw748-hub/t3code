@@ -42,6 +42,15 @@ class AgentActivityExpiryReceiver : BroadcastReceiver() {
 
 /** Handles data pushes natively so delivery does not depend on a running JS bridge. */
 object AgentNotifications {
+  /**
+   * The status-bar mark: the `notification_icon` drawable the expo-notifications plugin renders
+   * from the brand's notification asset, or the app icon in a build without it.
+   */
+  fun smallIcon(context: Context): Int {
+    val id = context.resources.getIdentifier("notification_icon", "drawable", context.packageName)
+    return if (id != 0) id else context.applicationInfo.icon
+  }
+
   private const val STORE = "t3-agent-notifications"
   private const val ACTIVITY_CHANNEL = "agent-activity"
   private const val ALERT_CHANNEL = "agent-alerts"
@@ -82,6 +91,7 @@ object AgentNotifications {
   @Synchronized
   fun clear(context: Context) {
     cancelActivity(context)
+    AgentBubbles.clear(context)
     context.getSharedPreferences(STORE, Context.MODE_PRIVATE).edit().clear().apply()
     val manager = manager(context)
     manager.activeNotifications.filter {
@@ -237,6 +247,12 @@ object AgentNotifications {
       return
     }
     prefs.edit().putLong("lastUpdate", updatedAt).putString("lastTerminal", terminal).apply()
+    AgentBubbles.update(
+      context,
+      prefs.getString("scheme", "t3code") ?: "t3code",
+      prefs.getBoolean("ongoing", false),
+      data
+    )
     val active = data["active"] == "true"
     // Use absolute state expiry: a replay must not extend a finished card or
     // make an abandoned host look active indefinitely. Older relays omit it.
@@ -343,6 +359,23 @@ object AgentNotifications {
 
   private fun manager(context: Context) = context.getSystemService(NotificationManager::class.java)
 
+  /** What could stop agent notifications showing, for the app's notification settings. */
+  fun state(context: Context): Map<String, Any> {
+    val manager = manager(context)
+    fun blocked(channel: String) = Build.VERSION.SDK_INT >= 26 &&
+      manager.getNotificationChannel(channel)?.importance == NotificationManager.IMPORTANCE_NONE
+    return mapOf(
+      "notificationsEnabled" to NotificationManagerCompat.from(context).areNotificationsEnabled(),
+      "alertsBlocked" to blocked(ALERT_CHANNEL),
+      "activityBlocked" to blocked(ACTIVITY_CHANNEL),
+      "bubblesSupported" to (Build.VERSION.SDK_INT >= 30),
+      "bubblesBlocked" to AgentBubbles.bubblesBlocked(manager),
+      "registeredUserId" to (
+        context.getSharedPreferences(STORE, Context.MODE_PRIVATE).getString("userId", null) ?: ""
+        )
+    )
+  }
+
   private fun channels(context: Context) {
     if (Build.VERSION.SDK_INT >= 26) {
       manager(context).createNotificationChannels(
@@ -370,7 +403,7 @@ object AgentNotifications {
         }
       )
       .setDefaults(if (channel == ALERT_CHANNEL) Notification.DEFAULT_ALL else 0)
-      .setSmallIcon(R.drawable.agent_activity_mark)
+      .setSmallIcon(smallIcon(context))
       .setVisibility(NotificationCompat.VISIBILITY_PRIVATE)
       .setShowWhen(false)
 

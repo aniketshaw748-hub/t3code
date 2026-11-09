@@ -1,3 +1,4 @@
+import { BRAND } from "@t3tools/contracts/brand";
 import { AUTH_SCOPE_OPTIONS as PAIRING_SCOPE_OPTIONS } from "@t3tools/shared/authScopeOptions";
 import {
   CheckIcon,
@@ -30,7 +31,11 @@ import {
 import { useCopyToClipboard } from "../../hooks/useCopyToClipboard";
 import { cn } from "../../lib/utils";
 import { formatElapsedDurationLabel, formatExpiresInLabel } from "../../timestampFormat";
-import { resolveDesktopPairingUrl, resolveHostedPairingUrl } from "./pairingUrls";
+import {
+  resolveDesktopPairingUrl,
+  resolveHostedPairingUrl,
+  resolveMobileAppPairingUrl,
+} from "./pairingUrls";
 import {
   canRevokeOtherClients,
   isQrShareableEndpoint,
@@ -56,6 +61,7 @@ import { QRCodeSvg } from "../ui/qr-code";
 import { stackedThreadToast, toastManager } from "../ui/toast";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { Button } from "../ui/button";
+import { Toggle, ToggleGroup } from "../ui/toggle-group";
 import { Textarea } from "../ui/textarea";
 import {
   isLoopbackHostname,
@@ -162,6 +168,7 @@ const PairingLinkListRow = memo(function PairingLinkListRow({
   const [isRevealDialogOpen, setIsRevealDialogOpen] = useState(false);
   const [isQrPanelOpen, setIsQrPanelOpen] = useState(defaultShareOpen);
   const [qrEndpointId, setQrEndpointId] = useState<string | null>(null);
+  const [qrForApp, setQrForApp] = useState(true);
   const qrPanelId = useId();
 
   const currentOriginPairingUrl = credential ? resolveCurrentOriginPairingUrl(credential) : null;
@@ -282,6 +289,8 @@ const PairingLinkListRow = memo(function PairingLinkListRow({
   );
   const qrPairingUrl = selectedQrOption?.url ?? shareablePairingUrl;
   const canRenderQrForSelection = selectedQrOption?.qrShareable ?? true;
+  const qrCodeValue =
+    qrPairingUrl !== null && qrForApp ? resolveMobileAppPairingUrl(qrPairingUrl) : qrPairingUrl;
   if (expiresAtMs <= nowMs) {
     return null;
   }
@@ -476,15 +485,32 @@ const PairingLinkListRow = memo(function PairingLinkListRow({
               Copy code only
             </Button>
           </div>
-          {canRenderQrForSelection ? (
-            <div className="w-fit shrink-0 self-center rounded-xl bg-white p-3 sm:self-start">
-              <QRCodeSvg
-                value={qrPairingUrl}
-                size={168}
-                level="M"
-                marginSize={1}
-                title="Pairing link. Scan to open on another device"
-              />
+          {canRenderQrForSelection && qrCodeValue !== null ? (
+            <div className="flex w-fit shrink-0 flex-col items-center gap-2 self-center sm:self-start">
+              <div className="rounded-xl bg-white p-3">
+                <QRCodeSvg
+                  value={qrCodeValue}
+                  size={168}
+                  level="M"
+                  marginSize={1}
+                  title={
+                    qrForApp
+                      ? `Pairing link. Scan with a phone camera to open the ${BRAND.displayName} app`
+                      : "Pairing link. Scan to open on another device"
+                  }
+                />
+              </div>
+              <ToggleGroup
+                aria-label="What the scanning phone opens"
+                variant="segmented"
+                value={[qrForApp ? "app" : "browser"]}
+                onValueChange={(next) => {
+                  if (next[0] === "app" || next[0] === "browser") setQrForApp(next[0] === "app");
+                }}
+              >
+                <Toggle value="app">{BRAND.displayName} app</Toggle>
+                <Toggle value="browser">Browser</Toggle>
+              </ToggleGroup>
             </div>
           ) : (
             <div className="flex size-[192px] shrink-0 items-center justify-center self-center rounded-xl border border-border p-4 sm:self-start">

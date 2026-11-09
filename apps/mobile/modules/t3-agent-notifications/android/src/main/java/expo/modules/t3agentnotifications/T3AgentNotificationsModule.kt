@@ -30,6 +30,31 @@ class T3AgentNotificationsModule : Module() {
       appContext.reactContext?.let { AgentNotifications.showcase(it, scheme, data) }
     }
 
+    Function("getState") {
+      appContext.reactContext?.let { AgentNotifications.state(it) } ?: emptyMap<String, Any>()
+    }
+
+    Function("openNotificationSettings") { channel: String? ->
+      val context = appContext.reactContext ?: return@Function false
+      val intent = if (channel != null && Build.VERSION.SDK_INT >= 26) {
+        Intent(Settings.ACTION_CHANNEL_NOTIFICATION_SETTINGS)
+          .putExtra(Settings.EXTRA_CHANNEL_ID, channel)
+      } else if (Build.VERSION.SDK_INT >= 30 && channel == null) {
+        Intent(Settings.ACTION_APP_NOTIFICATION_BUBBLE_SETTINGS)
+      } else {
+        Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS)
+      }
+      try {
+        context.startActivity(
+          intent.putExtra(Settings.EXTRA_APP_PACKAGE, context.packageName)
+            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        )
+        true
+      } catch (_: ActivityNotFoundException) {
+        false
+      }
+    }
+
     Function("setThreadOnScreen") { path: String? ->
       AgentNotifications.setThreadOnScreen(path)
     }

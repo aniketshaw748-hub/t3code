@@ -10,5 +10,13 @@
     </service>
     <receiver android:name=".AgentActivityDismissReceiver" android:exported="false" />
     <receiver android:name=".AgentActivityExpiryReceiver" android:exported="false" />
+    <activity
+      android:name=".AgentBubbleActivity"
+      android:allowEmbedded="true"
+      android:documentLaunchMode="always"
+      android:exported="false"
+      android:resizeableActivity="true"
+      android:theme="@style/Theme.AppCompat.DayNight.NoActionBar"
+      android:windowSoftInputMode="adjustResize" />
   </application>
 </manifest>

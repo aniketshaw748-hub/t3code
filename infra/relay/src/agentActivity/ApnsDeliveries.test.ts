@@ -1,4 +1,4 @@
-import * as AgentActivityAlerts from "./agentActivityAlerts.ts";
+import * as AgentActivityAlerts from "@t3tools/shared/agentActivityAlerts";
 import { EnvironmentId, ThreadId } from "@t3tools/contracts";
 import type {
   RelayAgentActivityAggregateState,

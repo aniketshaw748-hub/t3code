@@ -121,3 +121,21 @@ Build the host client and mobile app with the same relay URL and Clerk public co
 For deployment through GitHub Actions, add `FCM_SERVICE_ACCOUNT` to the `production` environment's secrets. The relay workflow passes it to Alchemy. The maintainer must also supply `google-services.json` for the production Android package in the native build environment; changing the relay secret alone cannot move an installed app to another Firebase project.
 
 Android delivery uses `RelayFcmDeliveryQueue` and a separate dead-letter queue. Failed requests are retried; messages expire after five minutes. Before sending, the consumer rechecks the device token, current preferences, environment links, and current thread state. `UNREGISTERED` responses invalidate only the matching device token. OAuth tokens are cached within the FCM service and refreshed after an authorization failure.
+
+## Direct delivery from the host
+
+A host with a Firebase service account (Settings → General → Phone notifications (direct))
+sends the same data messages itself. Agent activity goes to every active delivery target in
+[`AgentActivityDeliveryTargets`](../../apps/server/src/relay/AgentActivityDeliveryTargets.ts):
+the relay when T3 Connect is linked, and
+[`DirectPush`](../../apps/server/src/directPush/DirectPush.ts) when a key is configured. Both
+apply the shared policy in `@t3tools/shared/agentActivityAndroid`, so alerts and cards match.
+
+Direct messages carry `user_id: "direct"` (`DIRECT_PUSH_USER_ID`) and the phone's agent awareness
+device id. The phone configures the native handler with that identity only while no T3 Connect
+account is signed in, so a relay-signed-in phone drops direct messages, and signing in
+unregisters it from its hosts. Registrations are stored per device in `direct_push_devices` and
+removed when FCM reports `UNREGISTERED` or the pairing session that made them is revoked.
+
+The key's Firebase project must be the one in the app's `google-services.json`; otherwise FCM
+answers `SENDER_ID_MISMATCH`, which Settings shows as the last delivery error.

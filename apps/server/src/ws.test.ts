@@ -70,6 +70,7 @@ import * as McpAppRequests from "./mcpApps/McpAppRequests.ts";
 import * as ModelManifest from "./provider/ModelManifest.ts";
 import * as Orchestrator from "./orchestration-v2/Orchestrator.ts";
 import * as OtlpEndpointCheck from "./observability/OtlpEndpointCheck.ts";
+import * as DirectPush from "./directPush/DirectPush.ts";
 import * as PairingGrantStore from "./auth/PairingGrantStore.ts";
 import * as RpcAuthorization from "./auth/RpcAuthorization.ts";
 import * as PeerLinkRequests from "./peer/PeerLinkRequests.ts";
@@ -818,6 +819,13 @@ const layerUnusedConfigRpcServices = Layer.mergeAll(
   Layer.mock(PullRequestService.PullRequestService)({}),
   Layer.mock(PullRequestSyncReactor.PullRequestSyncReactor)({}),
   Layer.mock(RelayClient.RelayClient)({}),
+  Layer.mock(DirectPush.DirectPush)({
+    deliveryTarget: {
+      name: "direct-push",
+      resolve: Effect.succeed({ _tag: "Unavailable" as const }),
+      changes: Stream.empty,
+    },
+  }),
   Layer.mock(RepositoryIdentityResolver.RepositoryIdentityResolver)({}),
   Layer.mock(ResourceTelemetry.ResourceTelemetry)({}),
   Layer.mock(ReviewService.ReviewService)({}),

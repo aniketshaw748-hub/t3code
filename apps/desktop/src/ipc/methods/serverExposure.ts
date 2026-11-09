@@ -1,5 +1,6 @@
 import {
   AdvertisedEndpoint,
+  DesktopTailscaleAvailabilitySchema,
   DesktopServerExposureModeSchema,
   DesktopServerExposureStateSchema,
 } from "@t3tools/contracts";
@@ -65,5 +66,15 @@ export const getAdvertisedEndpoints = DesktopIpc.makeIpcMethod({
   handler: Effect.fn("desktop.ipc.serverExposure.getAdvertisedEndpoints")(function* () {
     const serverExposure = yield* DesktopServerExposure.DesktopServerExposure;
     return yield* serverExposure.getAdvertisedEndpoints;
+  }),
+});
+
+export const getTailscaleAvailability = DesktopIpc.makeIpcMethod({
+  channel: IpcChannels.GET_TAILSCALE_AVAILABILITY_CHANNEL,
+  payload: Schema.Void,
+  result: DesktopTailscaleAvailabilitySchema,
+  handler: Effect.fn("desktop.ipc.serverExposure.getTailscaleAvailability")(function* () {
+    const serverExposure = yield* DesktopServerExposure.DesktopServerExposure;
+    return yield* serverExposure.getTailscaleAvailability;
   }),
 });
