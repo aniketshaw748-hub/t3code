@@ -61,7 +61,7 @@ export function workRunFailure(
       runId,
       kind: "stopped",
       title: "Stopped before it finished",
-      detail: "The agent's run was stopped before it saved its work.",
+      detail: "Retry sends the same request again.",
       resetAt: null,
     };
   }
