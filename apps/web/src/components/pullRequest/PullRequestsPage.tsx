@@ -1225,7 +1225,7 @@ export function PullRequestsPage() {
         <PullRequestListNotice
           icon={PullRequestGlyph.pullRequest}
           title="Pull requests unavailable"
-          description="Update your T3 Code servers to browse pull requests."
+          description={`Update your ${BRAND.displayName} servers to browse pull requests.`}
         />
       ) : firstLoad ? (
         <PullRequestListGhost rows={7} caption="Loading pull requests…" />

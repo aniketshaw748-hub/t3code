@@ -47,7 +47,7 @@ function MobileClientRow({ device }: { readonly device: RelayClientDeviceRecord 
                 {mobileClientPlatformLabel(device)}
               </TooltipTrigger>
               <TooltipPopup>
-                {device.appVersion ? `T3 Code ${device.appVersion}` : "App version unavailable"}
+                {device.appVersion ? `${BRAND.displayName} ${device.appVersion}` : "App version unavailable"}
               </TooltipPopup>
             </Tooltip>
           </p>

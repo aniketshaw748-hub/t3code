@@ -1,3 +1,4 @@
+import { BRAND } from "@t3tools/contracts/brand";
 import { Link2Icon, OctagonAlertIcon, UnlinkIcon, XIcon } from "lucide-react";
 import type { AuthSessionState } from "@t3tools/contracts";
 import { squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
@@ -335,12 +336,12 @@ function describePairingFailure(error: unknown): PairingFailure {
       return isPrimaryEnvironmentRequestError(error) && error.responded
         ? {
             title: `Server error (HTTP ${error.status})`,
-            message: "This T3 Code server answered with an error. Try again, or check its logs.",
+            message: `This ${BRAND.displayName} server answered with an error. Try again, or check its logs.`,
           }
         : {
             title: "Server unreachable",
             message:
-              "Could not reach this T3 Code server. Check that it is running and reachable from this browser.",
+              `Could not reach this ${BRAND.displayName} server. Check that it is running and reachable from this browser.`,
           };
     default:
       return { title: "Could not pair", message: errorMessageFromUnknown(error) };

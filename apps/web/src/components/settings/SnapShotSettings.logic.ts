@@ -1,3 +1,4 @@
+import { BRAND } from "@t3tools/contracts/brand";
 import type { ClientSettingsPatch, DesktopSnapShotState, SnapShotSound } from "@t3tools/contracts";
 import {
   captureSetupBackend,
@@ -170,7 +171,7 @@ export function snapShotCaptureHelperStatus(
   return {
     tone: "success",
     label: "Ready",
-    description: "Included with T3 Code. No download needed.",
+    description: `Included with ${BRAND.displayName}. No download needed.`,
     needsSetup: false,
   };
 }

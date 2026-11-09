@@ -1437,7 +1437,7 @@ function KeybindingsList(props: KeybindingsListProps) {
 }
 
 const BROWSER_KEYBINDING_WARNING =
-  "Some shortcuts may be claimed by the browser before T3 Code sees them. Use the desktop app for better keybinding support.";
+  `Some shortcuts may be claimed by the browser before ${BRAND.displayName} sees them. Use the desktop app for better keybinding support.`;
 
 function keybindingAnchorIds(rows: ReturnType<typeof buildKeybindingRows>) {
   const ids = new Map<string, string>();

@@ -554,12 +554,12 @@ function ManagedCodexSetup({
     ) : installed ? (
       <span className="flex flex-col gap-0.5">
         <span>
-          {installation?.source === "local" ? "Using your installed Codex." : "Managed by T3 Code."}
+          {installation?.source === "local" ? "Using your installed Codex." : `Managed by ${BRAND.displayName}.`}
         </span>
         {installation?.installedVersion ? <span>v{installation.installedVersion}</span> : null}
       </span>
     ) : (
-      (installation?.message ?? "T3 Code downloads and manages Codex for you.")
+      (installation?.message ?? `${BRAND.displayName} downloads and manages Codex for you.`)
     );
   const accountDescription = finishingSignIn ? (
     "Finishing sign-in..."

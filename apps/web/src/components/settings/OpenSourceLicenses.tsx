@@ -1,3 +1,4 @@
+import { BRAND, BRAND_REPOSITORY_URL } from "@t3tools/contracts/brand";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { ChevronRightIcon, ExternalLinkIcon } from "lucide-react";
 import { useAtomRefresh, useAtomValue } from "@effect/atom-react";
@@ -134,19 +135,19 @@ function LicenseNoticeRow({
   );
 }
 
-/** T3 Code's own repository and license, above the third-party notices. */
+/** This app's own repository and license, above the third-party notices. */
 function ProjectSourceSection() {
   return (
     <SettingsSection title="Project source">
       <ContentButton
         variant="card-row"
         render={
-          <a href="https://github.com/pingdotgg/t3code" rel="noreferrer noopener" target="_blank" />
+          <a href={BRAND_REPOSITORY_URL} rel="noreferrer noopener" target="_blank" />
         }
       >
         <span className="min-w-0 flex-1">
-          <span className="block truncate text-label text-foreground">T3 Code</span>
-          <span className="block truncate text-meta text-dim-foreground">pingdotgg/t3code</span>
+          <span className="block truncate text-label text-foreground">{BRAND.displayName}</span>
+          <span className="block truncate text-meta text-dim-foreground">{BRAND.repository}</span>
         </span>
         <Badge variant="secondary" size="lg">
           MIT

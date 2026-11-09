@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vite-plus/test";
+import { BRAND } from "@t3tools/contracts/brand";
 
 import type { EnvironmentId, ThreadId } from "@t3tools/contracts";
 import type { RelayAgentActivityAggregateState } from "@t3tools/contracts/relay";
@@ -28,7 +29,7 @@ function row(phase: Row["phase"], status: string): Row {
 
 function aggregate(activities: ReadonlyArray<Row>): RelayAgentActivityAggregateState {
   return {
-    title: "T3 Code",
+    title: BRAND.displayName,
     subtitle: "Agent work in progress",
     activeCount: activities.length,
     updatedAt: "2026-10-18T09:59:00.000Z",

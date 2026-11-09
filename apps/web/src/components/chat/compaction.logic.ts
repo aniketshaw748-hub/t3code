@@ -1,3 +1,4 @@
+import { BRAND } from "@t3tools/contracts/brand";
 import type {
   ContextBreakdownKind,
   ProviderDriverKind,
@@ -50,7 +51,7 @@ const CONTEXT_BREAKDOWN_LABELS: Record<ContextBreakdownKind, string> = {
   system_prompt: "System prompt",
   system_tools: "System tools",
   mcp_tools: "MCP tools",
-  t3_tools: "T3 Code tools",
+  t3_tools: `${BRAND.displayName} tools`,
   memory_files: "Memory files",
   skills: "Skills",
   custom_agents: "Custom agents",

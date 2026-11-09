@@ -1,3 +1,4 @@
+import { BRAND } from "@t3tools/contracts/brand";
 import { RefreshIcon } from "~/components/ui/refresh-icon";
 /**
  *
@@ -149,7 +150,7 @@ export function PullRequestListEmptyState({
         <PageEmptyTile
           icon={<ServerIcon />}
           title="On this server"
-          description="Uses the host's sign-in where T3 Code runs."
+          description={`Uses the host's sign-in where ${BRAND.displayName} runs.`}
         />
       </PullRequestPageEmpty>
     );
@@ -169,7 +170,7 @@ export function PullRequestListEmptyState({
         <PageEmptyTile
           icon={<ServerIcon />}
           title="On this server"
-          description="Sign in where T3 Code runs, not in this browser."
+          description={`Sign in where ${BRAND.displayName} runs, not in this browser.`}
         />
         <PageEmptyTile
           icon={<SettingsIcon />}

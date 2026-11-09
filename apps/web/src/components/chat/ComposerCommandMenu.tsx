@@ -1,3 +1,4 @@
+import { BRAND } from "@t3tools/contracts/brand";
 import { formatProviderSkillDisplayName } from "@t3tools/shared/inlineSkills";
 import type { ComposerPathSearchTarget } from "@t3tools/client-runtime/state/threads";
 import { resolveProviderSkillSourceKind } from "@t3tools/client-runtime/providerSkills";
@@ -133,7 +134,7 @@ function composerCommandItemGroup(
 ): { key: string; label: string } {
   switch (item.type) {
     case "slash-command":
-      return { key: "t3code", label: "T3 Code" };
+      return { key: "t3code", label: BRAND.displayName };
     case "provider-slash-command":
       return { key: `provider:${item.provider}`, label: providerLabel(item.provider) };
     case "skill": {

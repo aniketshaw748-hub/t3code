@@ -1,3 +1,4 @@
+import { BRAND } from "@t3tools/contracts/brand";
 import * as HostProcess from "@t3tools/shared/HostProcess";
 import { pathSetupCommand } from "@t3tools/shared/shell";
 import * as Console from "effect/Console";
@@ -52,17 +53,17 @@ export const installCli = Effect.fn("cli.install.install")(function* () {
   const windows = platform === "win32";
   if (Option.isNone(runtime)) {
     const script = windows
-      ? "irm https://t3.codes/install.ps1 | iex"
-      : "curl -fsSL https://t3.codes/install.sh | sh";
+      ? `irm https://raw.githubusercontent.com/${BRAND.repository}/main/scripts/install.ps1 | iex`
+      : `curl -fsSL https://raw.githubusercontent.com/${BRAND.repository}/main/scripts/install.sh | sh`;
     return yield* new CliInstallError({
-      reason: `Only the standalone t3 can install itself. Use \`${script}\`, or Settings in the desktop app.`,
+      reason: `Only the standalone ${BRAND.cliName} can install itself. Use \`${script}\`, or Settings in the desktop app.`,
     });
   }
   const { executable, versionsDir, runtimeDir } = runtime.value;
   // cmd.exe expands `%` and reads the shim in the OEM code page, so such a path would not run.
   if (windows && /[%\u0080-\uffff]/.test(executable)) {
     return yield* new CliInstallError({
-      reason: `A t3.cmd cannot run ${executable}, because the path has % or non-ASCII characters. Keep using npx t3.`,
+      reason: `A ${BRAND.cliName}.cmd cannot run ${executable}, because the path has % or non-ASCII characters. Keep running ${executable} directly.`,
     });
   }
   // Absolute, so the PATH hint never adds a folder that changes with the working directory.

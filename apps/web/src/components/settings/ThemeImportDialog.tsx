@@ -300,7 +300,7 @@ export function ThemeImportDialog({
       <DialogPopup className="overflow-hidden">
         <DialogHeader>
           <DialogTitle>Add a theme</DialogTitle>
-          <DialogDescription>T3 Code or VS Code color themes.</DialogDescription>
+          <DialogDescription>{BRAND.displayName} or VS Code color themes.</DialogDescription>
         </DialogHeader>
         <ThemeImportBody
           key={session.id}

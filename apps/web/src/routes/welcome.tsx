@@ -1,3 +1,4 @@
+import { BRAND } from "@t3tools/contracts/brand";
 import { useAtomValue } from "@effect/atom-react";
 import { createFileRoute, Link, redirect, useLocation, useNavigate } from "@tanstack/react-router";
 import { findProjectByPath } from "@t3tools/client-runtime/state/projects";
@@ -99,7 +100,7 @@ function ImportConversationsPage() {
       <StandalonePage>
         <StandalonePageHeader
           title="Import conversations"
-          description="Bring your recent Claude Code, Codex and Pi conversations into T3 Code."
+          description={`Bring your recent Claude Code, Codex and Pi conversations into ${BRAND.displayName}.`}
         />
         <div className="mt-6 flex flex-col gap-4">
           {environment ? (
@@ -153,7 +154,7 @@ function ImportConversationsPage() {
               variant="ghost-muted"
               render={<Link to="/welcome" hash="setup" />}
             >
-              Set up T3 Code
+              Set up {BRAND.displayName}
             </Button>
             <Button variant="secondary" render={<Link to="/" />}>
               Back to app

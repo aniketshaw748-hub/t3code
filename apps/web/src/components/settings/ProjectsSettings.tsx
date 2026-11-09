@@ -1,3 +1,4 @@
+import { BRAND } from "@t3tools/contracts/brand";
 import { EnvironmentId } from "@t3tools/contracts";
 import {
   FolderOpenIcon,
@@ -105,7 +106,7 @@ function ProjectChooser() {
         <SettingsEmptyState
           icon={<FolderOpenIcon />}
           title="No projects yet"
-          description="A project is a folder T3 Code works in. Add one to set its name, icon, checkouts and actions here."
+          description={`A project is a folder ${BRAND.displayName} works in. Add one to set its name, icon, checkouts and actions here.`}
         >
           <div className="flex flex-wrap justify-center gap-2">
             <AddProjectButton primary />

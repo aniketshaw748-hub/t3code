@@ -1,3 +1,4 @@
+import { BRAND } from "@t3tools/contracts/brand";
 import type { DesktopBridge, DesktopUpdateState } from "@t3tools/contracts";
 import { ArrowRightIcon, DownloadIcon } from "lucide-react";
 
@@ -120,7 +121,7 @@ export function showDesktopUpdateDownloadedToast(
       title: "Update downloaded",
       description: (
         <>
-          {version ? `T3 Code ${version} is ready.` : "The update is ready."} Restart to finish
+          {version ? `${BRAND.displayName} ${version} is ready.` : "The update is ready."} Restart to finish
           updating.
           {releaseUrl ? <ReleaseNotesLink releaseUrl={releaseUrl} shell={shell} /> : null}
         </>

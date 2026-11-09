@@ -1,3 +1,4 @@
+import { BRAND } from "@t3tools/contracts/brand";
 import type { ReactNode } from "react";
 
 import {
@@ -44,8 +45,8 @@ export function ClientSettingsRecoveryGate({ children }: { readonly children: Re
 function BootSplash() {
   return (
     <div id="boot-shell">
-      <div id="boot-shell-card" aria-label="T3 Code splash screen">
-        <img id="boot-shell-logo" src="/apple-touch-icon.png" alt="T3 Code" />
+      <div id="boot-shell-card" aria-label={`${BRAND.displayName} splash screen`}>
+        <img id="boot-shell-logo" src="/apple-touch-icon.png" alt={BRAND.displayName} />
       </div>
     </div>
   );
