@@ -37,6 +37,7 @@ import {
 } from "@t3tools/contracts";
 import { isMissingExecutable } from "@t3tools/source-control-core/server/discovery";
 import * as HostProcess from "@t3tools/shared/HostProcess";
+import { BRAND, BRAND_GIT_IDENTITY } from "@t3tools/contracts/brand";
 import {
   makeGitVcsDriverCore,
   PATCH_RENDER_PREFIX_ARGS,
@@ -922,10 +923,10 @@ export const makeVcsDriverShape = Effect.fn("makeGitVcsDriverShape")(function* (
       const commitEnv: NodeJS.ProcessEnv = {
         ...hostEnv,
         GIT_INDEX_FILE: tempIndexPath,
-        GIT_AUTHOR_NAME: "T3 Code",
-        GIT_AUTHOR_EMAIL: "t3code@users.noreply.github.com",
-        GIT_COMMITTER_NAME: "T3 Code",
-        GIT_COMMITTER_EMAIL: "t3code@users.noreply.github.com",
+        GIT_AUTHOR_NAME: BRAND_GIT_IDENTITY.name,
+        GIT_AUTHOR_EMAIL: BRAND_GIT_IDENTITY.email,
+        GIT_COMMITTER_NAME: BRAND_GIT_IDENTITY.name,
+        GIT_COMMITTER_EMAIL: BRAND_GIT_IDENTITY.email,
       };
 
       const cleanupTempIndex = Effect.forEach(
@@ -1261,7 +1262,7 @@ export const makeVcsDriverShape = Effect.fn("makeGitVcsDriverShape")(function* (
           });
         }
 
-        const message = `t3 checkpoint ref=${input.checkpointRef}`;
+        const message = `${BRAND.slug} checkpoint ref=${input.checkpointRef}`;
         // HEAD is the parent so listAuthoredPaths can see how HEAD moved between checkpoints.
         const commitTreeResult = yield* execute({
           operation,

@@ -169,6 +169,12 @@ export function brandDesktopScheme(isDevelopment: boolean): string {
   return isDevelopment ? BRAND.urlSchemes.development : BRAND.urlSchemes.production;
 }
 
+/** Who the app's own Git commits, such as turn checkpoints, are authored by. */
+export const BRAND_GIT_IDENTITY = {
+  name: BRAND.displayName,
+  email: `${BRAND.slug}@users.noreply.github.com`,
+} as const;
+
 /** The CLI launcher file name on `platform`. */
 export function brandCliLauncherName(platform: string): string {
   return platform === "win32" ? `${BRAND.cliName}.cmd` : BRAND.cliName;
