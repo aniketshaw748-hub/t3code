@@ -92,6 +92,11 @@ export interface Brand {
   readonly assets: {
     /** Repo-relative folder with `dev/`, `nightly/`, `prod/` and `android/` icon sets. */
     readonly directory: string;
+    /**
+     * Whether stages without Dev or Nightly art (Beta, Latest) show this build's own sidebar
+     * header and send-button artwork instead of a plain header.
+     */
+    readonly stageArtwork: boolean;
   };
 }
 
@@ -154,6 +159,7 @@ export const BRAND: Brand = {
   },
   assets: {
     directory: "assets/kavyaan",
+    stageArtwork: true,
   },
 };
 

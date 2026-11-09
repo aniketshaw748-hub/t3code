@@ -32,6 +32,7 @@ import * as Schema from "effect/Schema";
 import { APP_VERSION, HOSTED_APP_CHANNEL, HOSTED_APP_CHANNEL_LABEL } from "../../branding";
 import { AboutVersionTitle } from "./AboutVersionTitle";
 import { CliCommandSettingsRow } from "./CliCommandSettingsRow";
+import { T3ImportSettingsRow } from "./T3ImportSettingsRow";
 import { MobileAppSettingsRow } from "./MobileAppSettingsRow";
 import {
   canCheckForUpdate,
@@ -997,34 +998,6 @@ export function GeneralSettingsPanel() {
             }
           />
         ) : null}
-        {isElectron ? (
-          <SettingsRow
-            {...searchableSetting("bubble-when-minimized")}
-            description="While the window is minimized, a floating bubble shows running threads and lets you reply."
-            resetAction={
-              settings.showBubbleWhenMinimized !==
-              DEFAULT_UNIFIED_SETTINGS.showBubbleWhenMinimized ? (
-                <SettingResetButton
-                  label="bubble when minimized"
-                  onClick={() =>
-                    updateSettings({
-                      showBubbleWhenMinimized: DEFAULT_UNIFIED_SETTINGS.showBubbleWhenMinimized,
-                    })
-                  }
-                />
-              ) : null
-            }
-            control={
-              <Switch
-                checked={settings.showBubbleWhenMinimized}
-                onCheckedChange={(checked) =>
-                  updateSettings({ showBubbleWhenMinimized: Boolean(checked) })
-                }
-                aria-label="Show bubble when minimized"
-              />
-            }
-          />
-        ) : null}
       </SettingsSection>
 
       <SettingsSection id="display" title="Display">
@@ -1069,6 +1042,73 @@ export function GeneralSettingsPanel() {
             </Select>
           }
         />
+      </SettingsSection>
+
+      <SettingsSection id="kavyaan" title={BRAND.displayName}>
+        {isElectron ? (
+          <SettingsRow
+            {...searchableSetting("bubble-when-minimized")}
+            description="While the window is minimized, a floating bubble shows running threads and lets you reply."
+            resetAction={
+              settings.showBubbleWhenMinimized !==
+              DEFAULT_UNIFIED_SETTINGS.showBubbleWhenMinimized ? (
+                <SettingResetButton
+                  label="bubble when minimized"
+                  onClick={() =>
+                    updateSettings({
+                      showBubbleWhenMinimized: DEFAULT_UNIFIED_SETTINGS.showBubbleWhenMinimized,
+                    })
+                  }
+                />
+              ) : null
+            }
+            control={
+              <Switch
+                checked={settings.showBubbleWhenMinimized}
+                onCheckedChange={(checked) =>
+                  updateSettings({ showBubbleWhenMinimized: Boolean(checked) })
+                }
+                aria-label="Show bubble when minimized"
+              />
+            }
+          />
+        ) : null}
+        <SettingsRow
+          {...searchableSetting("work-appearance")}
+          description="Work mode stays dark for reviewing films and decks, whatever the app theme. Pick Light to have it follow a light look instead."
+          resetAction={
+            settings.workAppearance !== DEFAULT_UNIFIED_SETTINGS.workAppearance ? (
+              <SettingResetButton
+                label="Work mode look"
+                onClick={() =>
+                  updateSettings({ workAppearance: DEFAULT_UNIFIED_SETTINGS.workAppearance })
+                }
+              />
+            ) : null
+          }
+          control={
+            <div className="w-full sm:w-40">
+              <Select
+                value={settings.workAppearance}
+                onValueChange={(value) => {
+                  if (value === "dark" || value === "light")
+                    updateSettings({ workAppearance: value });
+                }}
+              >
+                <SelectTrigger size="sm" className="w-full min-w-0" aria-label="Work mode look">
+                  <SelectValue>
+                    {settings.workAppearance === "dark" ? "Dark (default)" : "Light"}
+                  </SelectValue>
+                </SelectTrigger>
+                <SelectPopup align="end" alignItemWithTrigger={false}>
+                  <SelectItem value="dark">Dark (default)</SelectItem>
+                  <SelectItem value="light">Light</SelectItem>
+                </SelectPopup>
+              </Select>
+            </div>
+          }
+        />
+        <T3ImportSettingsRow />
       </SettingsSection>
     </SettingsPageContainer>
   );

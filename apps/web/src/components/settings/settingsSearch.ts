@@ -339,7 +339,7 @@ export const SETTINGS_SEARCH_ITEMS = [
   {
     id: "work-appearance",
     title: "Work mode look",
-    to: "/settings/appearance",
+    to: "/settings/general",
     searchTerms: ["work mode dark light theme review flask black"],
   },
   {
@@ -831,6 +831,13 @@ export const SETTINGS_SEARCH_ITEMS = [
     desktopOnly: true,
   },
   {
+    id: "import-t3-settings",
+    title: "Import from T3 Code",
+    to: "/settings/general",
+    searchTerms: ["migrate copy settings keybindings shortcuts themes zoom layout t3code"],
+    desktopOnly: true,
+  },
+  {
     id: "text-generation-model",
     title: "Text generation model",
     to: "/settings/threads",
@@ -859,7 +866,7 @@ export const SETTINGS_SEARCH_ITEMS = [
   },
   {
     id: "cli-command",
-    title: "t3 command",
+    title: `${BRAND.cliName} command`,
     to: "/settings/about",
     searchTerms: ["cli terminal shell path install command line"],
     desktopOnly: true,
