@@ -184,13 +184,13 @@ describe.skipIf(HostProcess.Platform.defaultValue() !== "linux")("install.sh t3 
     try {
       const home = NodePath.join(root, "home");
       const binDir = NodePath.join(root, "bin");
-      const link = NodePath.join(binDir, "t3");
+      const link = NodePath.join(binDir, BRAND.cliName);
       await NodeFSP.mkdir(binDir, { recursive: true });
 
       await NodeFSP.writeFile(link, "#!/bin/sh\necho mine\n");
       const foreign = await installOver({ script: "install.sh", home, binDir });
       expect(foreign.code).not.toBe(0);
-      expect(foreign.output).toContain(`another t3 is already at ${link}`);
+      expect(foreign.output).toContain(`another ${BRAND.cliName} is already at ${link}`);
       expect(await NodeFSP.readFile(link, "utf8")).toBe("#!/bin/sh\necho mine\n");
       // Not even from inside the versions folder, where `.` would resolve into it.
       const fromVersions = await installOver({
@@ -256,7 +256,7 @@ describe.skipIf(HostProcess.Platform.defaultValue() !== "linux")("install.sh t3 
         env: { HOME: root, PATH: `${binDir}/:/usr/bin:/bin` },
       });
       expect(slashed.code, slashed.output).toBe(0);
-      expect(slashed.output).toContain("Run t3 to use T3 Code here");
+      expect(slashed.output).toContain(`Run ${BRAND.cliName} to use ${BRAND.displayName} here`);
 
       // A relative folder is made absolute, so the PATH command never follows the working directory.
       const relative = await installOver({
@@ -270,7 +270,7 @@ describe.skipIf(HostProcess.Platform.defaultValue() !== "linux")("install.sh t3 
       expect(relative.output).toContain(`'export PATH="$PATH:$HOME/bin"'`);
 
       await NodeFSP.rm(link);
-      await NodeFSP.symlink(NodePath.join(home, "bin/t3"), link);
+      await NodeFSP.symlink(NodePath.join(home, `bin/${BRAND.cliName}`), link);
       const overDesktop = await installOver({
         script: "install.sh",
         home: `${home}//`,
@@ -291,14 +291,14 @@ describe.skipIf(HostProcess.Platform.defaultValue() !== "win32")("install.ps1 t3
       // Windows PowerShell 5.1 reads files as ANSI by default and expands wildcards in paths.
       const home = NodePath.join(root, "José", ".t3");
       const binDir = NodePath.join(root, "bin[t3]");
-      const shim = NodePath.join(binDir, "t3.cmd");
+      const shim = NodePath.join(binDir, `${BRAND.cliName}.cmd`);
       await NodeFSP.mkdir(binDir, { recursive: true });
 
       const desktopShim = '@echo off\r\n"C:\\Program Files\\T3 Code\\T3 Code.exe" "x" %*\r\n';
       await NodeFSP.writeFile(shim, desktopShim);
       const foreign = await installOver({ script: "install.ps1", home, binDir });
       expect(foreign.code).not.toBe(0);
-      expect(foreign.output).toContain("another t3 is already at");
+      expect(foreign.output).toContain(`another ${BRAND.cliName} is already at`);
       expect(await NodeFSP.readFile(shim, "utf8")).toBe(desktopShim);
 
       // A hand-edited wrapper may set its own environment; replacing it would drop that.
@@ -328,7 +328,7 @@ describe.skipIf(HostProcess.Platform.defaultValue() !== "win32")("install.ps1 t3
       // Another t3 first on PATH still runs, so the installer names this one in full.
       const otherBin = NodePath.join(root, "other");
       await NodeFSP.mkdir(otherBin);
-      await NodeFSP.writeFile(NodePath.join(otherBin, "t3.cmd"), "@echo off\r\n");
+      await NodeFSP.writeFile(NodePath.join(otherBin, `${BRAND.cliName}.cmd`), "@echo off\r\n");
       // Windows spells it Path; a second PATH key would be ambiguous.
       const pathKey =
         Object.keys(process.env).find((key) => key.toUpperCase() === "PATH") ?? "PATH";
@@ -340,7 +340,7 @@ describe.skipIf(HostProcess.Platform.defaultValue() !== "win32")("install.ps1 t3
       });
       expect(shadowed.code, shadowed.output).toBe(0);
       expect(shadowed.output).toContain(
-        `Another t3 at ${NodePath.join(otherBin, "t3.cmd")} runs first`,
+        `Another ${BRAND.cliName} at ${NodePath.join(otherBin, `${BRAND.cliName}.cmd`)} runs first`,
       );
 
       // Its own folder on PATH with a trailing separator is already on PATH.
@@ -351,7 +351,7 @@ describe.skipIf(HostProcess.Platform.defaultValue() !== "win32")("install.ps1 t3
         env: { [pathKey]: `${binDir}\\;${process.env[pathKey] ?? ""}` },
       });
       expect(slashed.code, slashed.output).toBe(0);
-      expect(slashed.output).toContain("to use T3 Code here");
+      expect(slashed.output).toContain(`to use ${BRAND.displayName} here`);
       // The same when the install folder itself is given with a trailing separator.
       const bothSlashed = await installOver({
         script: "install.ps1",
@@ -360,7 +360,7 @@ describe.skipIf(HostProcess.Platform.defaultValue() !== "win32")("install.ps1 t3
         env: { [pathKey]: `${binDir}\\;${process.env[pathKey] ?? ""}` },
       });
       expect(bothSlashed.code, bothSlashed.output).toBe(0);
-      expect(bothSlashed.output).toContain("to use T3 Code here");
+      expect(bothSlashed.output).toContain(`to use ${BRAND.displayName} here`);
     } finally {
       await NodeFSP.rm(root, { recursive: true, force: true });
     }
