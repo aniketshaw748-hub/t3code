@@ -45,6 +45,12 @@ export interface Brand {
     readonly easProjectId: string | undefined;
     readonly easOwner: string | undefined;
     readonly appleTeamId: string | undefined;
+    /**
+     * Whether `hosted.appUrl` and `hosted.clerkDomain` list this app's ids in their `.well-known`
+     * files. Only then do the apps claim those domains as verified links; a build that borrows
+     * another product's hosted services must leave this off.
+     */
+    readonly claimsHostedDomains: boolean;
   };
   readonly policy: {
     /** Folder holding `policy.json` under Program Files and Application Support. */
@@ -120,6 +126,7 @@ export const BRAND: Brand = {
     easProjectId: undefined,
     easOwner: undefined,
     appleTeamId: undefined,
+    claimsHostedDomains: false,
   },
   policy: {
     directoryName: "Kavyaan",

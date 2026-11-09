@@ -22,6 +22,7 @@ import {
   loadOrCreateAgentAwarenessDeviceId,
   saveAgentAwarenessRegistrationRecord,
 } from "../../persistence/imperative";
+import { supportsAgentAwarenessPush } from "./capabilities";
 import { makeRelayDeviceRegistrationRequest } from "./registrationPayload";
 import {
   __resetAgentAwarenessRemoteRegistrationForTest,
@@ -638,7 +639,10 @@ describe("makeRelayDeviceRegistrationRequest", () => {
         registrations.push(await request.json());
         return Response.json({ ok: true });
       });
-      Constants.expoConfig!.extra = { relay: { url: "https://permission-relay.example.test" } };
+      Constants.expoConfig!.extra = {
+        androidPushConfigured: true,
+        relay: { url: "https://permission-relay.example.test" },
+      };
       setAgentAwarenessRelayTokenProvider(() => Promise.resolve("clerk"), "user-a");
       return Effect.gen(function* () {
         yield* runBackgroundOperations();
@@ -665,6 +669,14 @@ describe("makeRelayDeviceRegistrationRequest", () => {
       );
     },
   );
+  it.effect("skips the push token on Android builds without a Firebase config", () => {
+    vi.spyOn(Platform, "OS", "get").mockReturnValue("android");
+    return Effect.sync(() => {
+      expect(supportsAgentAwarenessPush()).toBe(false);
+      Constants.expoConfig!.extra = { androidPushConfigured: true };
+      expect(supportsAgentAwarenessPush()).toBe(true);
+    });
+  });
   it.effect("preserves relay rejection errors with React Native response headers", () => {
     vi.spyOn(Platform, "OS", "get").mockReturnValue("android");
     vi.mocked(Notifications.getDevicePushTokenAsync).mockResolvedValue({
