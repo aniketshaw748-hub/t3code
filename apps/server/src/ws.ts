@@ -2389,6 +2389,7 @@ export const layerWsRpc = (
         [WS_METHODS.deliverablesUndo]: (input) => deliverables.undo(input.deliverableId),
         [WS_METHODS.deliverablesRedo]: (input) => deliverables.redo(input.deliverableId),
         [WS_METHODS.deliverablesRestore]: (input) => deliverables.restore(input),
+        [WS_METHODS.deliverablesResolveStray]: (input) => deliverables.resolveStray(input),
         [WS_METHODS.deliverableNotesCreate]: (input) => deliverableNotes.create(input),
         [WS_METHODS.deliverableNotesMarkSent]: (input) =>
           deliverableNotes.markSent(input).pipe(Effect.map((notes) => ({ notes }))),

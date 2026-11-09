@@ -127,6 +127,11 @@ export const Deliverable = Schema.Struct({
   title: TrimmedNonEmptyString,
   currentVersionId: Schema.NullOr(DeliverableVersionId),
   versionCount: NonNegativeInt,
+  /**
+   * The deliverable this file looks like a revision of, saved under a new name (`deck-v2.pptx`
+   * beside `deck.pptx`) in a turn that left the original alone. Work mode offers to adopt it.
+   */
+  strayVersionOf: Schema.optional(Schema.NullOr(DeliverableId)),
   createdAt: Schema.DateTimeUtc,
   updatedAt: Schema.DateTimeUtc,
 });
@@ -293,6 +298,19 @@ export const DeliverableRestoreInput = Schema.Struct({
 });
 export type DeliverableRestoreInput = typeof DeliverableRestoreInput.Type;
 
+/** Adopt a stray file as the next version of the deliverable it revises, or keep it separate. */
+export const DeliverableResolveStrayInput = Schema.Struct({
+  deliverableId: DeliverableId,
+  adopt: Schema.Boolean,
+});
+export type DeliverableResolveStrayInput = typeof DeliverableResolveStrayInput.Type;
+
+export const DeliverableResolveStrayResult = Schema.Struct({
+  /** The original with its new version after adopting; the kept file otherwise. */
+  deliverable: Deliverable,
+});
+export type DeliverableResolveStrayResult = typeof DeliverableResolveStrayResult.Type;
+
 export const DeliverableRestoreResult = Schema.Struct({
   deliverable: Deliverable,
   graph: DeliverableVersionGraph,
@@ -314,6 +332,7 @@ const DELIVERABLE_FAILURE_MESSAGES = {
   nothing_to_redo: "There is no later version to redo.",
   turn_running:
     "An agent turn is running in this project. Wait for it to finish, then undo or restore.",
+  not_stray: "That file is no longer offered as a version of another deliverable.",
   workspace_changed:
     "Files this restore would overwrite changed since the current version. Register or discard those changes first.",
   storage_failed: "Could not read or write deliverable storage.",

@@ -20,6 +20,7 @@ import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as Path from "effect/Path";
+import * as SqlClient from "effect/sql/SqlClient";
 
 import * as AssetSigner from "../assets/AssetSigner.ts";
 import * as CheckpointStore from "../checkpointing/CheckpointStore.ts";
@@ -39,6 +40,7 @@ import * as DeliverableNotes from "./DeliverableNotes.ts";
 import * as DeliverableService from "./DeliverableService.ts";
 import * as WorkProjectEvents from "./WorkProjectEvents.ts";
 import * as DeliverableTurnNotes from "./DeliverableTurnNotes.ts";
+import * as ProjectStore from "../orchestration-v2/ProjectStore.ts";
 import * as TurnContextNotes from "../orchestration-v2/TurnContextNotes.ts";
 
 const projectId = ProjectId.make("project-work");
@@ -118,7 +120,8 @@ const layerContext = (root: string) =>
 const layerPlatform = Layer.mergeAll(NodeServices.layer, NodeCryptoLayer.layer);
 const layerVcsProcess = VcsProcess.layer.pipe(Layer.provide(layerPlatform));
 const layerEngine = (root: string) =>
-  Layer.mergeAll(DeliverableService.layer, DeliverableNotes.layer).pipe(
+  DeliverableService.layer.pipe(
+    Layer.provideMerge(DeliverableNotes.layer),
     Layer.provide(
       Layer.mergeAll(
         DeliverableGit.layer,
@@ -323,12 +326,37 @@ it.live("tells the next turn which versions were restored since the last one", (
       yield* record("Two");
       const before = yield* DateTime.now;
       yield* deliverables.undo((yield* record("Three")).deliverableId);
-      const notes = yield* Effect.gen(function* () {
-        const service = yield* TurnContextNotes.TurnContextNotes;
-        return yield* service.since({ projectId, since: before });
-      }).pipe(Effect.provide(DeliverableTurnNotes.layer));
-      assert.deepEqual(notes, [
-        "Since your last turn, deliverables moved to other versions:\n- deck.pptx was undone to V2; it and the sources that changed with it now match V2.\nWork from these files, not from what you last wrote.",
+      const turnNotes = (kind: "code" | "work") =>
+        Effect.gen(function* () {
+          const sql = yield* SqlClient.SqlClient;
+          yield* sql`
+            INSERT INTO projection_projects (
+              project_id, title, workspace_root, auto_pull, scripts_json, kind, created_at,
+              updated_at
+            ) VALUES (
+              ${projectId}, 'Deck', ${repo.root}, 0, '[]', ${kind}, ${DateTime.formatIso(before)},
+              ${DateTime.formatIso(before)}
+            )
+            ON CONFLICT (project_id) DO UPDATE SET kind = excluded.kind
+          `;
+          const service = yield* TurnContextNotes.TurnContextNotes;
+          return yield* service.since({ projectId, since: before });
+        }).pipe(
+          Effect.provide(
+            DeliverableTurnNotes.layer.pipe(
+              Layer.provideMerge(
+                ProjectStore.layer.pipe(Layer.provideMerge(SqlitePersistence.layerMemory)),
+              ),
+            ),
+          ),
+        );
+      const restored =
+        "Since your last turn, deliverables moved to other versions:\n- deck.pptx was undone to V2; it and the sources that changed with it now match V2.\nWork from these files, not from what you last wrote.";
+      assert.deepEqual(yield* turnNotes("code"), [restored]);
+      // A Work project's turns also learn how its files are versioned.
+      assert.deepEqual(yield* turnNotes("work"), [
+        DeliverableTurnNotes.workProjectInstructions(["deck.pptx"]),
+        restored,
       ]);
     }),
   ),
@@ -393,6 +421,89 @@ it.live("moves notes from sent to fixed in the version their run made, and back 
       const reopened = yield* notes.setStatus({ noteId: marked.id, status: "open" });
       assert.equal(reopened.status, "open");
       assert.isNull(reopened.fixedInVersionId);
+    }),
+  ),
+);
+
+it.live("offers a revision saved under a new name as the next version, and adopts it", () =>
+  withEngine((repo) =>
+    Effect.gen(function* () {
+      const deliverables = yield* DeliverableService.DeliverableService;
+      const notes = yield* DeliverableNotes.DeliverableNotes;
+      const checkpoints = yield* CheckpointStore.CheckpointStore;
+      yield* repo.write("deck.pptx", "Title\nAgenda");
+      const v1 = (yield* deliverables.registerVersion({ projectId, path: "deck.pptx" })).version;
+      const note = yield* notes.create({
+        deliverableId: v1.deliverableId,
+        versionId: v1.id,
+        anchor: { kind: "slide", index: 1 },
+        body: "Punchier agenda",
+      });
+      const messageId = MessageId.make("message-stray");
+      const runId = RunId.make("run-2");
+      yield* notes.markSent({ noteIds: [note.id], threadId, messageId });
+      yield* notes.linkRun({ messageId, runId });
+
+      // The agent writes its revision to a copy and leaves deck.pptx alone.
+      yield* repo.write("deck-v2.pptx", "Title\nAgenda: 40% faster");
+      const ref = CheckpointRef.make("refs/t3/test-checkpoints/stray");
+      yield* checkpoints.captureCheckpoint({ cwd: repo.root, checkpointRef: ref });
+      const [strayV1] = yield* deliverables.detectFromCheckpoint({
+        threadId,
+        checkpoint: {
+          ...checkpoint(2, ref),
+          files: [{ path: "deck-v2.pptx", kind: "added", additions: 2, deletions: 0 }],
+        },
+      });
+      assert.isDefined(strayV1);
+      yield* notes.settleRun({ projectId, runId, final: true });
+      const stray = (yield* deliverables.versions(strayV1.deliverableId)).deliverable;
+      assert.equal(stray.strayVersionOf, v1.deliverableId);
+      assert.equal((yield* notes.list(projectId))[0]?.status, "open");
+
+      busy.value = true;
+      const refused = yield* deliverables
+        .resolveStray({ deliverableId: stray.id, adopt: true })
+        .pipe(Effect.flip);
+      assert.equal(refused.reason, "turn_running");
+      busy.value = false;
+
+      const adopted = yield* deliverables.resolveStray({ deliverableId: stray.id, adopt: true });
+      assert.equal(adopted.deliverable.id, v1.deliverableId);
+      assert.equal(adopted.deliverable.versionCount, 2);
+      assert.equal(yield* repo.read("deck.pptx"), "Title\nAgenda: 40% faster");
+      const fileSystem = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      assert.isFalse(yield* fileSystem.exists(path.join(repo.root, "deck-v2.pptx")));
+      assert.deepEqual(
+        (yield* deliverables.list(projectId)).map((deliverable) => deliverable.path),
+        ["deck.pptx"],
+      );
+      const [fixed] = yield* notes.list(projectId);
+      assert.equal(fixed?.status, "fixed");
+      assert.equal(fixed?.fixedInVersionId, adopted.deliverable.currentVersionId);
+
+      // Kept as its own file, a later copy stops asking.
+      yield* repo.write("deck (2).pptx", "Title\nOther");
+      const keepRef = CheckpointRef.make("refs/t3/test-checkpoints/keep");
+      yield* checkpoints.captureCheckpoint({ cwd: repo.root, checkpointRef: keepRef });
+      const [copy] = yield* deliverables.detectFromCheckpoint({
+        threadId,
+        checkpoint: {
+          ...checkpoint(3, keepRef),
+          files: [{ path: "deck (2).pptx", kind: "added", additions: 2, deletions: 0 }],
+        },
+      });
+      assert.isDefined(copy);
+      const kept = yield* deliverables.resolveStray({
+        deliverableId: copy.deliverableId,
+        adopt: false,
+      });
+      assert.isNull(kept.deliverable.strayVersionOf);
+      const again = yield* deliverables
+        .resolveStray({ deliverableId: copy.deliverableId, adopt: true })
+        .pipe(Effect.flip);
+      assert.equal(again.reason, "not_stray");
     }),
   ),
 );

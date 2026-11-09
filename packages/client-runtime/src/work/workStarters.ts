@@ -15,7 +15,7 @@ export interface WorkStarter {
 }
 
 const REPORT_BACK =
-  "Save the result in this project and keep each change you make as a new version of the same file. Before any paid generation step, ask me to approve its cost with request_spend_approval.";
+  "Save each deliverable as a file in this project, and keep the sources you build it from here too. The app records every save of a deliverable as its next version, so for each change rebuild and overwrite the same file; never save a copy such as name-v2. Before any paid generation step, ask me to approve its cost with request_spend_approval.";
 
 export const WORK_STARTERS: ReadonlyArray<WorkStarter> = [
   {

@@ -580,7 +580,11 @@ const layerScheduledTaskWebhookOrigin = Layer.effect(
 );
 
 const layerOrchestrationV2Runtime = RuntimeLayer.layerProduction.pipe(
-  Layer.provide(DeliverableTurnNotes.layer.pipe(Layer.provide(DeliverableRepository.layer))),
+  Layer.provide(
+    DeliverableTurnNotes.layer.pipe(
+      Layer.provide(Layer.merge(DeliverableRepository.layer, ProjectStore.layer)),
+    ),
+  ),
   Layer.provide(layerScheduledTaskWebhookOrigin),
   Layer.provide(ProviderUsageAnalytics.layer),
   Layer.provide(layerCheckpointStore),
@@ -610,8 +614,8 @@ const layerDeliverables = Layer.effectDiscard(
   Layer.provideMerge(DeliverableCheckpointReactor.layer),
   Layer.provideMerge(DeliverableNotesReactor.layer),
   Layer.provideMerge(WorkProjectFeed.layer),
-  Layer.provideMerge(DeliverableNotes.layer),
   Layer.provideMerge(DeliverableService.layer),
+  Layer.provideMerge(DeliverableNotes.layer),
   Layer.provide(
     Layer.mergeAll(
       DeliverableGit.layer.pipe(Layer.provide(VcsProcess.layer)),

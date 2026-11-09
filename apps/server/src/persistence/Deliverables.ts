@@ -102,6 +102,14 @@ export class DeliverableRepository extends Context.Service<
         readonly fromVersionId: DeliverableVersionId | null;
       };
     }) => Effect.Effect<void, DeliverableRepositoryError>;
+    readonly setStrayVersionOf: (input: {
+      readonly deliverableId: DeliverableId;
+      readonly strayVersionOf: DeliverableId | null;
+    }) => Effect.Effect<void, DeliverableRepositoryError>;
+    /** Removes a deliverable with its versions, restores and review status; notes go first. */
+    readonly deleteDeliverable: (
+      deliverableId: DeliverableId,
+    ) => Effect.Effect<void, DeliverableRepositoryError>;
     readonly listVersions: (
       deliverableId: DeliverableId,
     ) => Effect.Effect<ReadonlyArray<StoredDeliverableVersion>, DeliverableRepositoryError>;
@@ -168,6 +176,7 @@ const make = Effect.gen(function* () {
     d.current_version_id AS "currentVersionId",
     (SELECT COUNT(*) FROM deliverable_versions v WHERE v.deliverable_id = d.deliverable_id)
       AS "versionCount",
+    d.stray_version_of AS "strayVersionOf",
     d.created_at AS "createdAt",
     d.updated_at AS "updatedAt"
   `;
@@ -283,10 +292,11 @@ const make = Effect.gen(function* () {
         const row = yield* encodeDeliverable(input);
         yield* sql`
         INSERT INTO deliverables (
-          deliverable_id, project_id, path, kind, title, current_version_id, created_at, updated_at
+          deliverable_id, project_id, path, kind, title, current_version_id, stray_version_of,
+          created_at, updated_at
         ) VALUES (
           ${row.id}, ${row.projectId}, ${row.path}, ${row.kind}, ${row.title},
-          ${row.currentVersionId}, ${row.createdAt}, ${row.updatedAt}
+          ${row.currentVersionId}, ${row.strayVersionOf ?? null}, ${row.createdAt}, ${row.updatedAt}
         )
       `;
       },
@@ -314,6 +324,26 @@ const make = Effect.gen(function* () {
         }).pipe(sql.withTransaction);
       },
       Effect.mapError(sqlError("setCurrentVersion")),
+    ),
+    setStrayVersionOf: Effect.fn("DeliverableRepository.setStrayVersionOf")(
+      function* (input) {
+        yield* sql`
+        UPDATE deliverables SET stray_version_of = ${input.strayVersionOf}
+        WHERE deliverable_id = ${input.deliverableId}
+      `;
+      },
+      Effect.mapError(sqlError("setStrayVersionOf")),
+    ),
+    deleteDeliverable: Effect.fn("DeliverableRepository.deleteDeliverable")(
+      function* (deliverableId) {
+        yield* Effect.gen(function* () {
+          yield* sql`DELETE FROM deliverable_review_status WHERE deliverable_id = ${deliverableId}`;
+          yield* sql`DELETE FROM deliverable_restores WHERE deliverable_id = ${deliverableId}`;
+          yield* sql`DELETE FROM deliverable_versions WHERE deliverable_id = ${deliverableId}`;
+          yield* sql`DELETE FROM deliverables WHERE deliverable_id = ${deliverableId}`;
+        }).pipe(sql.withTransaction);
+      },
+      Effect.mapError(sqlError("deleteDeliverable")),
     ),
     listVersions: Effect.fn("DeliverableRepository.listVersions")(function* (deliverableId) {
       return yield* findVersions({ deliverableId }).pipe(

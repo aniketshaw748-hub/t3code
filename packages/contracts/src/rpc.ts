@@ -389,6 +389,8 @@ import {
   DeliverableRegisterVersionInput,
   DeliverableRegisterVersionResult,
   DeliverableRendition,
+  DeliverableResolveStrayInput,
+  DeliverableResolveStrayResult,
   DeliverableRestoreInput,
   DeliverableRestoreResult,
   DeliverableVersionGraph,
@@ -588,6 +590,7 @@ export const WS_METHODS = {
   deliverablesUndo: "deliverables.undo",
   deliverablesRedo: "deliverables.redo",
   deliverablesRestore: "deliverables.restore",
+  deliverablesResolveStray: "deliverables.resolveStray",
   deliverableNotesCreate: "deliverableNotes.create",
   deliverableNotesMarkSent: "deliverableNotes.markSent",
   deliverableNotesSetStatus: "deliverableNotes.setStatus",
@@ -2101,6 +2104,12 @@ const WsDeliverablesRestoreRpc = Rpc.make(WS_METHODS.deliverablesRestore, {
   error: DeliverableRpcError,
 });
 
+const WsDeliverablesResolveStrayRpc = Rpc.make(WS_METHODS.deliverablesResolveStray, {
+  payload: DeliverableResolveStrayInput,
+  success: DeliverableResolveStrayResult,
+  error: DeliverableRpcError,
+});
+
 const DeliverableNoteRpcError = Schema.Union([DeliverableNoteError, EnvironmentAuthorizationError]);
 
 const WsDeliverableNotesCreateRpc = Rpc.make(WS_METHODS.deliverableNotesCreate, {
@@ -2250,6 +2259,7 @@ export const WsRpcGroup = RpcGroup.make(
   WsDeliverablesUndoRpc,
   WsDeliverablesRedoRpc,
   WsDeliverablesRestoreRpc,
+  WsDeliverablesResolveStrayRpc,
   WsDeliverableNotesCreateRpc,
   WsDeliverableNotesMarkSentRpc,
   WsDeliverableNotesSetStatusRpc,

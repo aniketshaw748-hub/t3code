@@ -48,6 +48,11 @@ export function createWorkEnvironmentAtoms<R, E>(
       tag: WS_METHODS.deliverablesRestore,
       concurrency: historyConcurrency,
     }),
+    resolveStray: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:work:resolve-stray",
+      tag: WS_METHODS.deliverablesResolveStray,
+      concurrency: historyConcurrency,
+    }),
     createNote: createEnvironmentRpcCommand(runtime, {
       label: "environment-data:work:create-note",
       tag: WS_METHODS.deliverableNotesCreate,

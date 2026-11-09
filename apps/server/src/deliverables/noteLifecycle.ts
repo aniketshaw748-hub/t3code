@@ -71,3 +71,40 @@ export function settleRunNotes(input: {
   }
   return patches;
 }
+
+export type AdoptPatch = NotePatch & Partial<Pick<DeliverableNote, "deliverableId" | "versionId">>;
+
+/**
+ * A file saved under a new name was adopted as `version` of the deliverable. The notes its run
+ * worked on, and any left on the stray file, are fixed in that version; resolved ones stay put.
+ */
+export function adoptRunNotes(input: {
+  readonly notes: ReadonlyArray<LifecycleNote>;
+  readonly runId: RunId | null;
+  readonly strayDeliverableId: LifecycleNote["deliverableId"];
+  readonly version: RunVersion;
+}): ReadonlyArray<AdoptPatch> {
+  const { version } = input;
+  const patches: AdoptPatch[] = [];
+  for (const note of input.notes) {
+    if (note.deliverableId === input.strayDeliverableId) {
+      // Left on the stray's only version, which holds the same bytes as the adopted one.
+      patches.push({
+        noteId: note.id,
+        deliverableId: version.deliverableId,
+        versionId: version.id,
+      });
+      continue;
+    }
+    if (note.deliverableId !== version.deliverableId || note.status === "resolved") continue;
+    if (input.runId === null) continue;
+    if (note.sentRunId !== input.runId && note.addressedRunId !== input.runId) continue;
+    patches.push({
+      noteId: note.id,
+      status: "fixed",
+      fixedInVersionId: version.id,
+      ...(note.reply === null && version.summary !== null ? { reply: version.summary } : {}),
+    });
+  }
+  return patches;
+}

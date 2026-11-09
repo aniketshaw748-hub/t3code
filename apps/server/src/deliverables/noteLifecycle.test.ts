@@ -7,7 +7,7 @@ import {
 } from "@t3tools/contracts";
 import { describe, expect, it } from "vite-plus/test";
 
-import { settleRunNotes } from "./noteLifecycle.ts";
+import { adoptRunNotes, settleRunNotes } from "./noteLifecycle.ts";
 
 const run = RunId.make("run-1");
 const otherRun = RunId.make("run-0");
@@ -93,5 +93,29 @@ describe("settleRunNotes", () => {
       final: true,
     });
     expect(patches).toEqual([]);
+  });
+});
+
+describe("adoptRunNotes", () => {
+  it("fixes the run's notes on the original in the adopted version and moves the stray's notes", () => {
+    const stray = DeliverableId.make("dlv_stray");
+    const patches = adoptRunNotes({
+      notes: [
+        note("sent", { status: "open" }),
+        note("addressed", { addressedRunId: run, sentRunId: null, reply: "Bigger logo." }),
+        note("other-run", { status: "open", sentRunId: otherRun }),
+        note("resolved", { status: "resolved" }),
+        note("on-stray", { deliverableId: stray, status: "open", sentRunId: null }),
+        note("other-file", { deliverableId: deck }),
+      ],
+      runId: run,
+      strayDeliverableId: stray,
+      version: version("v3", 3),
+    });
+    expect(patches).toEqual([
+      { noteId: "sent", status: "fixed", fixedInVersionId: "v3", reply: "Summary of v3" },
+      { noteId: "addressed", status: "fixed", fixedInVersionId: "v3" },
+      { noteId: "on-stray", deliverableId: film, versionId: "v3" },
+    ]);
   });
 });

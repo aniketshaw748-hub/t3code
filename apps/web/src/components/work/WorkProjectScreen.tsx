@@ -45,6 +45,7 @@ import type { Drawing } from "./DrawOverlay";
 import { NotesPanel, type NotesTab } from "./NotesPanel";
 import { SelfCheckBadge } from "./SelfCheckBadge";
 import { StillCanvas } from "./StillCanvas";
+import { StrayFileBanner } from "./StrayFileBanner";
 import { useSendNotes, useSendWorkMessage } from "./useWorkActions";
 import {
   isThreadBusy,
@@ -144,6 +145,8 @@ export function WorkProjectScreen(props: {
   const versions = (snapshot?.versions ?? []).filter(
     (version) => version.deliverableId === deliverable?.id,
   );
+  const strayOriginal =
+    deliverables.find((candidate) => candidate.id === deliverable?.strayVersionOf) ?? null;
   const currentVersionId = deliverable?.currentVersionId ?? null;
   const viewed =
     versions.find((version) => version.id === (viewedVersionId ?? currentVersionId)) ??
@@ -542,7 +545,18 @@ export function WorkProjectScreen(props: {
         </WorkspacePageHeader>
         <div className="flex min-h-0 flex-1 flex-col lg:flex-row">
           <section aria-label="Work" className="flex min-h-0 min-w-0 flex-1 flex-col">
-            <div className="flex min-h-0 flex-1 flex-col p-4">{canvas}</div>
+            <div className="flex min-h-0 flex-1 flex-col gap-3 p-4">
+              {deliverable !== null && strayOriginal !== null ? (
+                <StrayFileBanner
+                  environmentId={environmentId}
+                  stray={deliverable}
+                  original={strayOriginal}
+                  canOperate={canOperate}
+                  turnRunning={busy}
+                />
+              ) : null}
+              {canvas}
+            </div>
             {versions.length > 0 ? (
               <VersionStrip
                 items={versionStrip(versions, currentVersionId)}

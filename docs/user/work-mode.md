@@ -14,8 +14,12 @@ status: drafting, rendering, waiting for you, notes back, in review, final, or t
 ## Notes
 
 Type in **Notes & chat** to leave a note on the moment the video is paused at or the slide you
-selected; switch to **Whole video** or **Whole deck** to talk about all of it. Use the toolbar over
-the player or slide to dictate a note or to draw on the frame; the drawing is attached to the note.
+selected. Use the toolbar over the player or slide to dictate a note or to draw on the frame; the
+drawing is attached to the note. Switch to **Whole video** or **Whole deck** to talk about all of
+it: that is a chat message, not a note, so there is nothing to resolve afterwards.
+
+When the agent asks you something, the question shows in **Notes & chat**: pick an option or type
+an answer. Writing a note or message instead also answers a question the agent is not waiting on.
 
 Each note shows where it stands: open, agent fixing, fixed in a version, or resolved. When the agent
 fixes one, **Check it** opens that version at the right moment or slide. Choose **Looks good** to
@@ -24,7 +28,9 @@ resolve it, or **Still not right** to reopen it and send it again.
 ## Versions
 
 Every change the agent saves is a version (V1, V2, ...). The strip under the work shows them with a
-one-line summary. Undo, redo and **Restore** move the files back and forth; they wait until the
+one-line summary. If the agent saves a revision as a new file instead (`deck-v2.pptx` beside
+`deck.pptx`), the new file offers **Use as V3**: that makes it the next version of the original and
+removes the copy. **Keep as its own file** leaves both. Undo, redo and **Restore** move the files back and forth; they wait until the
 agent's turn ends. Editing after an undo starts a new branch, and the old versions stay restorable.
 **Compare** shows two versions side by side or overlaid, with the changed slides or shots marked.
 

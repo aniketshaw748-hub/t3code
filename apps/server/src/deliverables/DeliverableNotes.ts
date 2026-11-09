@@ -10,6 +10,7 @@ import {
   type DeliverableNotesMarkSentInput,
   type DeliverableReviewStatus,
   type DeliverableReviewStatusSetInput,
+  type DeliverableVersion,
   type DeliverableVersionId,
   type MessageId,
   type ProjectId,
@@ -31,7 +32,7 @@ import * as AssetAccess from "../assets/AssetAccess.ts";
 import * as DeliverableNoteRepository from "../persistence/DeliverableNotes.ts";
 import * as DeliverableRepository from "../persistence/Deliverables.ts";
 import * as DeliverableBlobStore from "./DeliverableBlobStore.ts";
-import { settleRunNotes } from "./noteLifecycle.ts";
+import { adoptRunNotes, settleRunNotes } from "./noteLifecycle.ts";
 import * as WorkProjectEvents from "./WorkProjectEvents.ts";
 
 const fail = (reason: DeliverableNoteFailureReason) => (cause?: unknown) =>
@@ -86,6 +87,13 @@ export class DeliverableNotes extends Context.Service<
     readonly projectsForRun: (
       runId: RunId,
     ) => Effect.Effect<ReadonlyArray<ProjectId>, DeliverableNoteError>;
+    /** A stray file became `version`: its run's notes are fixed there, its own notes move over. */
+    readonly adoptVersion: (input: {
+      readonly projectId: ProjectId;
+      readonly runId: RunId | null;
+      readonly strayDeliverableId: DeliverableId;
+      readonly version: DeliverableVersion;
+    }) => Effect.Effect<void, DeliverableNoteError>;
   }
 >()("t3/deliverables/DeliverableNotes") {}
 
@@ -326,6 +334,37 @@ const make = Effect.gen(function* () {
     if (patched) yield* changed(input.projectId);
   });
 
+  const adoptVersion: DeliverableNotes["Service"]["adoptVersion"] = Effect.fn(
+    "DeliverableNotes.adoptVersion",
+  )(function* (input) {
+    const patched = yield* projectLock.withLock(
+      input.projectId,
+      Effect.gen(function* () {
+        const projectNotes = yield* notes.listNotes(input.projectId).pipe(persistence);
+        const patches = adoptRunNotes({
+          notes: projectNotes,
+          runId: input.runId,
+          strayDeliverableId: input.strayDeliverableId,
+          version: input.version,
+        });
+        const now = yield* DateTime.now;
+        const byId = new Map(projectNotes.map((note) => [note.id, note]));
+        yield* Effect.forEach(
+          patches,
+          ({ noteId, ...patch }) => {
+            const note = byId.get(noteId);
+            return note === undefined
+              ? Effect.void
+              : notes.putNote({ ...note, ...patch, updatedAt: now }).pipe(persistence);
+          },
+          { discard: true },
+        );
+        return patches.length > 0;
+      }),
+    );
+    if (patched) yield* changed(input.projectId);
+  });
+
   const markFixed: DeliverableNotes["Service"]["markFixed"] = Effect.fn(
     "DeliverableNotes.markFixed",
   )(function* (input) {
@@ -395,6 +434,7 @@ const make = Effect.gen(function* () {
     projectsForRun: Effect.fn("DeliverableNotes.projectsForRun")(function* (runId) {
       return yield* notes.projectsForRun(runId).pipe(persistence);
     }),
+    adoptVersion,
   });
 });
 

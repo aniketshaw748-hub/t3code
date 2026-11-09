@@ -10,6 +10,8 @@ import {
   type DeliverableRegisterVersionInput,
   type DeliverableRegisterVersionResult,
   type DeliverableRendition,
+  type DeliverableResolveStrayInput,
+  type DeliverableResolveStrayResult,
   type DeliverableRestoreResult,
   type DeliverableUnitChange,
   type DeliverableVersion,
@@ -44,8 +46,10 @@ import * as DeliverableRepository from "../persistence/Deliverables.ts";
 import * as DeliverableBlobStore from "./DeliverableBlobStore.ts";
 import * as DeliverableContext from "./DeliverableContext.ts";
 import * as DeliverableGit from "./DeliverableGit.ts";
+import * as DeliverableNotes from "./DeliverableNotes.ts";
 import * as DeliverableRenderers from "./DeliverableRenderers.ts";
 import * as DeliverableSelfCheck from "./DeliverableSelfCheck.ts";
+import { strayVersionTarget } from "./strayVersions.ts";
 import * as WorkProjectEvents from "./WorkProjectEvents.ts";
 import {
   compareSequences,
@@ -143,6 +147,10 @@ export class DeliverableService extends Context.Service<
       readonly deliverableId: DeliverableId;
       readonly versionId: DeliverableVersionId;
     }) => Effect.Effect<DeliverableRestoreResult, DeliverableError>;
+    /** Adopts a stray file as the next version of the deliverable it revises, or keeps it. */
+    readonly resolveStray: (
+      input: DeliverableResolveStrayInput,
+    ) => Effect.Effect<DeliverableResolveStrayResult, DeliverableError>;
     /** Resolves once queued renditions and self-checks have finished. */
     readonly drain: Effect.Effect<void>;
   }
@@ -155,6 +163,7 @@ const make = Effect.gen(function* () {
   const renderers = yield* DeliverableRenderers.DeliverableRenderers;
   const selfCheck = yield* DeliverableSelfCheck.DeliverableSelfCheck;
   const context = yield* DeliverableContext.DeliverableContext;
+  const notes = yield* DeliverableNotes.DeliverableNotes;
   const events = yield* WorkProjectEvents.WorkProjectEvents;
   const fileSystem = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
@@ -414,9 +423,35 @@ const make = Effect.gen(function* () {
           { discard: true },
         ),
       );
+      yield* markStrays(turn.projectId, recorded);
       return recorded;
     },
   );
+
+  /**
+   * A file a turn created beside a deliverable under a version-suffixed name, while leaving
+   * that deliverable alone, is most likely its revision saved as a copy; Work mode offers to
+   * adopt it.
+   */
+  const markStrays = Effect.fn("DeliverableService.markStrays")(function* (
+    projectId: ProjectId,
+    recorded: ReadonlyArray<DeliverableVersion>,
+  ) {
+    const created = recorded.filter((version) => version.ordinal === 1);
+    if (created.length === 0) return;
+    const changed = new Set(recorded.map((version) => version.deliverableId as string));
+    const all = yield* repository.listDeliverables(projectId).pipe(persistence);
+    const originals = all.filter((candidate) => !changed.has(candidate.id));
+    for (const version of created) {
+      const stray = all.find((candidate) => candidate.id === version.deliverableId);
+      const target = stray === undefined ? null : strayVersionTarget(stray.path, originals);
+      if (target === null) continue;
+      yield* repository
+        .setStrayVersionOf({ deliverableId: version.deliverableId, strayVersionOf: target.id })
+        .pipe(persistence);
+      yield* events.publish({ type: "changed", projectId });
+    }
+  });
 
   const renditionRelative = (sha256: string, kind: DeliverableKind, file: string) =>
     path
@@ -679,6 +714,66 @@ const make = Effect.gen(function* () {
     );
   });
 
+  const resolveStray: DeliverableService["Service"]["resolveStray"] = Effect.fn(
+    "DeliverableService.resolveStray",
+  )(function* (input) {
+    const initial = yield* loadDeliverable(input.deliverableId);
+    return yield* projectLock.withLock(
+      initial.projectId,
+      Effect.gen(function* () {
+        const stray = yield* loadDeliverable(input.deliverableId);
+        if (stray.strayVersionOf == null) return yield* fail("not_stray")();
+        if (!input.adopt) {
+          yield* repository
+            .setStrayVersionOf({ deliverableId: stray.id, strayVersionOf: null })
+            .pipe(persistence);
+          yield* events.publish({ type: "changed", projectId: stray.projectId });
+          return { deliverable: yield* loadDeliverable(stray.id) };
+        }
+        if (yield* context.projectBusy(stray.projectId)) return yield* fail("turn_running")();
+        const original = yield* loadDeliverable(stray.strayVersionOf);
+        const strayVersion = yield* loadVersion(
+          stray.currentVersionId ?? (yield* fail("version_not_found")()),
+        );
+        const root = yield* projectRoot(stray.projectId);
+        // The stray's bytes become the original file; the copy leaves the workspace.
+        yield* fileSystem
+          .copyFile(
+            blobs.blobPath(strayVersion.contentSha256),
+            path.join(root, ...original.path.split("/")),
+          )
+          .pipe(
+            Effect.andThen(fileSystem.remove(path.join(root, ...stray.path.split("/")))),
+            Effect.mapError(fail("storage_failed")),
+          );
+        yield* git.ensureRepository(root).pipe(Effect.mapError(fail("git_failed")));
+        const capture = yield* git
+          .captureWorkingTree(root)
+          .pipe(Effect.mapError(fail("git_failed")));
+        const { version } = yield* recordVersion({
+          projectId: original.projectId,
+          cwd: root,
+          relativePath: original.path,
+          sourceCommit: capture.commitOid,
+          source: strayVersion.source,
+          summary: strayVersion.summary,
+          expectedChanges: strayVersion.expectedChanges,
+        }).pipe(Effect.ensuring(capture.release));
+        yield* notes
+          .adoptVersion({
+            projectId: original.projectId,
+            runId: strayVersion.source.runId ?? null,
+            strayDeliverableId: stray.id,
+            version: publicVersion(version),
+          })
+          .pipe(Effect.mapError(fail("persistence_failed")));
+        yield* repository.deleteDeliverable(stray.id).pipe(persistence);
+        yield* events.publish({ type: "changed", projectId: original.projectId });
+        return { deliverable: yield* loadDeliverable(original.id) };
+      }),
+    );
+  });
+
   /** Renders a version's content once; identical bytes in later versions reuse it. */
   const ensureRendered = Effect.fn("DeliverableService.ensureRendered")(function* (
     version: DeliverableRepository.StoredDeliverableVersion,
@@ -806,6 +901,7 @@ const make = Effect.gen(function* () {
         ),
       );
     }),
+    resolveStray,
     restore: Effect.fn("DeliverableService.restore")(function* (input) {
       return yield* moveTo(input.deliverableId, "restore", (versions) =>
         versions.some((version) => version.id === input.versionId)

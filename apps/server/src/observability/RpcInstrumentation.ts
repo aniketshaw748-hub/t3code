@@ -110,6 +110,7 @@ const RPC_AGGREGATES = {
   [WS_METHODS.deliverablesUndo]: "deliverables",
   [WS_METHODS.deliverablesRedo]: "deliverables",
   [WS_METHODS.deliverablesRestore]: "deliverables",
+  [WS_METHODS.deliverablesResolveStray]: "deliverables",
   [WS_METHODS.deliverableNotesCreate]: "deliverables",
   [WS_METHODS.deliverableNotesMarkSent]: "deliverables",
   [WS_METHODS.deliverableNotesSetStatus]: "deliverables",

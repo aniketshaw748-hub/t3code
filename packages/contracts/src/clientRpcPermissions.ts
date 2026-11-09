@@ -79,6 +79,7 @@ export const CLIENT_GUARDED_RPC_SCOPES = {
   [WS_METHODS.deliverablesUndo]: AuthOrchestrationOperateScope,
   [WS_METHODS.deliverablesRedo]: AuthOrchestrationOperateScope,
   [WS_METHODS.deliverablesRestore]: AuthOrchestrationOperateScope,
+  [WS_METHODS.deliverablesResolveStray]: AuthOrchestrationOperateScope,
   [WS_METHODS.deliverableNotesCreate]: AuthOrchestrationOperateScope,
   [WS_METHODS.deliverableNotesMarkSent]: AuthOrchestrationOperateScope,
   [WS_METHODS.deliverableNotesSetStatus]: AuthOrchestrationOperateScope,
