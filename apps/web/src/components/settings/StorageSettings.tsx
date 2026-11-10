@@ -35,6 +35,7 @@ import {
 } from "../ui/number-field";
 import { SettingResetButton, SettingsRow, SettingsSection } from "./settingsLayout";
 import { DatabaseStorageNotice } from "./DatabaseStorageNotice";
+import { WorkHistoryStorage } from "./WorkHistoryStorage";
 import { AdvancedSettings } from "./AdvancedSettings";
 import { FoldedSettingsSection } from "./FoldedSettingsSection";
 import { SettingsScopeNotice } from "./SettingsScopeNotice";
@@ -739,12 +740,15 @@ export function StorageCleanupSections() {
   const update = (patch: Partial<StorageCleanupSettings>) =>
     updateSettings({ storageCleanup: patch });
   const databaseStorageNotice = (
-    <DatabaseStorageNotice
-      environments={connectedEnvironments.filter(
-        (environment) =>
-          environment.serverConfig?.environment.capabilities.databaseStorage === true,
-      )}
-    />
+    <>
+      <DatabaseStorageNotice
+        environments={connectedEnvironments.filter(
+          (environment) =>
+            environment.serverConfig?.environment.capabilities.databaseStorage === true,
+        )}
+      />
+      <WorkHistoryStorage environments={connectedEnvironments} />
+    </>
   );
   if (!supportsStorageCleanup(connectedEnvironments)) {
     return (

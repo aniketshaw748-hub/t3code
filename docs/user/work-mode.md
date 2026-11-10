@@ -38,8 +38,12 @@ agent's turn ends. Editing after an undo starts a new branch, and the old versio
 Slides and shots are matched by what they show, so one you added, removed or moved is marked as
 that and the rest are not. If a version could not be rendered, **Render again** tries it once more.
 
-Deleting a Work project removes its versions and notes from the app and frees the space they
-used. The files in the project's folder stay where they are.
+Removing a project never deletes its versions, notes or stored media, and never touches the
+files in the project's folder. To delete that history for good, delete the project from its Work
+screen and tick **Also delete its versions, notes and stored media**, or use **Settings →
+Maintenance → Work history of removed projects**, which shows how much space the history of
+removed projects holds. A project added again from the same folder starts a new history; the old
+one stays there until you delete it.
 
 Before a paid generation step, the agent shows what it will make and what it costs. Nothing is
 spent until you choose **Approve**.

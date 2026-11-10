@@ -48,6 +48,7 @@ import { Toggle, ToggleGroup } from "../ui/toggle-group";
 import { WorkspacePageHeader } from "../WorkspacePageHeader";
 import { CompareView } from "./CompareView";
 import { DeckCanvas } from "./DeckCanvas";
+import { DeleteWorkProject } from "./DeleteWorkProject";
 import type { Drawing } from "./DrawOverlay";
 import { NotesPanel, type NotesTab } from "./NotesPanel";
 import { RenderFailureBanner } from "./RenderFailureBanner";
@@ -508,6 +509,12 @@ export function WorkProjectScreen(props: {
               </Button>
             </>
           ) : null}
+          <DeleteWorkProject
+            environmentId={environmentId}
+            projectId={projectId}
+            title={project?.title ?? "Project"}
+            canOperate={canOperate}
+          />
         </WorkspacePageHeader>
         <div className="flex min-h-0 flex-1 flex-col lg:flex-row">
           <section
