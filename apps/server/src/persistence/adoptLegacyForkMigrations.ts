@@ -57,11 +57,35 @@ export const adoptLegacyForkMigrations = Effect.fn("adoptLegacyForkMigrations")(
         SELECT migration_id FROM ${forkTable}
       `;
       const recordedIds = new Set(recorded.map((row) => row.migration_id));
-      // A row the fork ledger already holds is not ours to move: upstream reused the id and name.
-      const adoptable = legacy
-        .filter((migration) => !recordedIds.has(migration.id))
-        .toSorted((a, b) => a.id - b.id);
-      if (adoptable.length === 0) return [];
+
+      // Everything is checked before anything moves. A fork migration's old number held by some
+      // other name, while that fork migration is not yet in the fork's ledger, is a history this
+      // cannot explain: moving the rows around it would run that migration a second time.
+      const unexplained = input.migrations.flatMap((migration) => {
+        if (recordedIds.has(migration.id)) return [];
+        const row = upstream.find((other) => other.migration_id === migration.legacyUpstreamId);
+        return row === undefined || row.name === migration.name
+          ? []
+          : [`${row.migration_id}_${row.name}`];
+      });
+      // Nor can one migration be recorded in both ledgers: which of the two ran is unknowable.
+      const recordedTwice = legacy
+        .filter((migration) => recordedIds.has(migration.id))
+        .map((migration) => `${migration.legacyUpstreamId}_${migration.name}`);
+      if (unexplained.length > 0 || recordedTwice.length > 0) {
+        return yield* new Migrator.MigrationError({
+          kind: "BadState",
+          message: `Cannot move fork migrations out of upstream's ledger: ${[
+            ...(unexplained.length === 0
+              ? []
+              : [`it holds ${unexplained.join(", ")} under a fork migration's old number`]),
+            ...(recordedTwice.length === 0
+              ? []
+              : [`${recordedTwice.join(", ")} is already in the fork's ledger too`]),
+          ].join(", and ")}. The database is unchanged.`,
+        });
+      }
+      const adoptable = legacy.toSorted((a, b) => a.id - b.id);
 
       // The migrator skips every id up to the highest recorded, so a gap would never be filled.
       const head = Math.max(0, ...recordedIds);

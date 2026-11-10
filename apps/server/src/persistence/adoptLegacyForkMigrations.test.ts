@@ -438,6 +438,61 @@ it.layer(NodeServices.layer)("fork migration ledger", (it) => {
     }),
   );
 
+  it.effect.each([
+    [
+      "one of the old numbers holds another name",
+      "UPDATE effect_sql_migrations SET name = 'SomethingElse' WHERE migration_id = 86",
+      "86_SomethingElse under a fork migration's old number",
+    ],
+    [
+      "a migration is in both ledgers",
+      `CREATE TABLE ${FORK_MIGRATIONS_TABLE} (
+         migration_id integer PRIMARY KEY NOT NULL,
+         created_at datetime NOT NULL DEFAULT current_timestamp,
+         name VARCHAR(255) NOT NULL
+       );
+       INSERT INTO ${FORK_MIGRATIONS_TABLE} (migration_id, name) VALUES (1, 'Deliverables')`,
+      "81_Deliverables is already in the fork's ledger too",
+    ],
+  ] as const)(
+    "refuses a legacy history it cannot explain and moves nothing: %s",
+    ([, corrupt, reason]) =>
+      Effect.gen(function* () {
+        const databasePath = yield* makeDatabasePath;
+        yield* open(
+          databasePath,
+          Effect.gen(function* () {
+            const sql = yield* SqlClient.SqlClient;
+            yield* runOldBuild();
+            yield* seedWorkRows();
+            for (const statement of corrupt.split(";")) yield* sql.unsafe(statement);
+            const before = {
+              upstream: yield* upstreamLedger,
+              fork: yield* forkLedger,
+              schema: yield* schemaSnapshot,
+            };
+
+            const exit = yield* Effect.exit(runMigrations());
+
+            assert.isTrue(Exit.isFailure(exit));
+            assert.include(String(exit), reason);
+            assert.include(String(exit), "The database is unchanged.");
+            // Rows 81 to 85 matched and would have moved before: none did, and no fork
+            // migration ran on top of them.
+            assert.deepStrictEqual(
+              {
+                upstream: yield* upstreamLedger,
+                fork: yield* forkLedger,
+                schema: yield* schemaSnapshot,
+              },
+              before,
+            );
+            assert.deepStrictEqual(yield* workRows, seededWorkRows);
+          }),
+        );
+      }),
+  );
+
   it.effect("stops the old build from running on a database whose ledgers are apart", () =>
     Effect.gen(function* () {
       const databasePath = yield* makeDatabasePath;
