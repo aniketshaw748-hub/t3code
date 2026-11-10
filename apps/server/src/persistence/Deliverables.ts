@@ -119,8 +119,11 @@ export class DeliverableRepository extends Context.Service<
     readonly insertVersion: (
       input: NewDeliverableVersion,
     ) => Effect.Effect<void, DeliverableRepositoryError>;
-    /** Versions whose content has no finished rendition, oldest first. */
-    readonly listUnrendered: Effect.Effect<
+    /**
+     * Versions with work left for the render queue, oldest first: content with no finished
+     * rendition, or expected changes that have no self-check yet.
+     */
+    readonly listUnfinished: Effect.Effect<
       ReadonlyArray<DeliverableVersionId>,
       DeliverableRepositoryError
     >;
@@ -385,19 +388,21 @@ const make = Effect.gen(function* () {
       },
       Effect.mapError(sqlError("insertVersion")),
     ),
-    listUnrendered: sql<{ readonly id: DeliverableVersionId }>`
+    listUnfinished: sql<{ readonly id: DeliverableVersionId }>`
       SELECT v.version_id AS "id"
       FROM deliverable_versions v
       JOIN deliverables d ON d.deliverable_id = v.deliverable_id
       LEFT JOIN deliverable_renditions r
         ON r.content_sha256 = v.content_sha256 AND r.kind = d.kind
-      WHERE r.status IS NULL OR r.status IN ('pending', 'rendering')
+      WHERE r.status IS NULL
+        OR r.status IN ('pending', 'rendering')
+        OR (v.self_check_json IS NULL AND v.expected_changes_json <> '[]')
       ORDER BY v.created_at ASC
     `.pipe(
       NodeSqliteClient.readOnly,
       Effect.map((rows) => rows.map((row) => row.id)),
-      Effect.mapError(sqlError("listUnrendered")),
-      Effect.withSpan("DeliverableRepository.listUnrendered"),
+      Effect.mapError(sqlError("listUnfinished")),
+      Effect.withSpan("DeliverableRepository.listUnfinished"),
     ),
     listRestoresSince: Effect.fn("DeliverableRepository.listRestoresSince")(
       function* (input) {

@@ -1071,11 +1071,13 @@ const make = Effect.gen(function* () {
   const worker = yield* makeDrainableWorker((versionId: DeliverableVersionId) =>
     renderVersion(versionId),
   );
-  // Renditions interrupted by a restart pick up where they were.
-  yield* repository.listUnrendered.pipe(
+  // Renditions and self-checks a restart interrupted, or an upgrade asked for again, pick up here.
+  yield* repository.listUnfinished.pipe(
     Effect.flatMap((ids) => Effect.forEach(ids, worker.enqueue, { discard: true })),
     Effect.catch((error) =>
-      Effect.logWarning("Could not resume deliverable renditions", { error: error.message }),
+      Effect.logWarning("Could not resume deliverable renditions and self-checks", {
+        error: error.message,
+      }),
     ),
   );
 

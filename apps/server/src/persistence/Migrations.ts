@@ -89,6 +89,7 @@ import Migration0083 from "./Migrations/083_DeliverableNotes.ts";
 import Migration0084 from "./Migrations/084_WholeDeliverableNotesToChat.ts";
 import Migration0085 from "./Migrations/085_DeliverableStrayVersionOf.ts";
 import Migration0086 from "./Migrations/086_DirectPushDevices.ts";
+import Migration0087 from "./Migrations/087_RecheckDeliverableSelfChecks.ts";
 
 const migrationEntries = [
   [1, "OrchestrationEvents", Migration0001],
@@ -178,6 +179,7 @@ const migrationEntries = [
   [84, "WholeDeliverableNotesToChat", Migration0084],
   [85, "DeliverableStrayVersionOf", Migration0085],
   [86, "DirectPushDevices", Migration0086],
+  [87, "RecheckDeliverableSelfChecks", Migration0087],
 ] as const;
 
 export const migrationManifest = migrationEntries.map(([id, name]) => [id, name] as const);
