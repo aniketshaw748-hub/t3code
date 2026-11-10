@@ -62,6 +62,11 @@ A build from before this change cannot open a database once the rows have moved.
 
 A migration another branch still added as an upstream number (say `087_Name.ts`) is folded in
 during the merge: move the file to `ForkMigrations/` under the next fork number, take its line out
-of `Migrations.ts`, and add it to `forkMigrationEntries` with its old number as the fifth value,
-such as `[7, "Name", Migration0007, 80, 87]`. A database that already ran it as 87 then has the row
-moved instead of running it twice.
+of `Migrations.ts`, and add it to `forkMigrationEntries`. Give the entry its old number as the fifth
+value, such as `[8, "Name", Migration0008, 80, 87]`, only when a database worth keeping ran it under
+that number: its row is then moved instead of the migration running twice.
+
+Without the fifth value the migration runs again as a fork migration, and a database that recorded
+the old number keeps that row in upstream's ledger, where it hides upstream's migrations up to that
+number. Discard such a database. Fork migration 7 was folded in this way, because only throwaway
+test homes had run it as 87.

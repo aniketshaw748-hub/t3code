@@ -12,7 +12,11 @@ import { runServicePreflight } from "../cloud/servicePreflight.ts";
 import { SERVICE_LAUNCHER_PROTOCOL } from "../cloud/serviceProtocol.ts";
 import { adoptLegacyForkMigrations } from "./adoptLegacyForkMigrations.ts";
 import { BUILD_MIGRATION_HEAD, databaseMigrationHead } from "./databaseMigrationHead.ts";
-import { FORK_MIGRATIONS_TABLE, withForkMigrations } from "./ForkMigrations.ts";
+import {
+  FORK_MIGRATIONS_TABLE,
+  forkMigrationManifest,
+  withForkMigrations,
+} from "./ForkMigrations.ts";
 import Deliverables from "./ForkMigrations/001_Deliverables.ts";
 import ProjectionProjectsKind from "./ForkMigrations/002_ProjectionProjectsKind.ts";
 import DeliverableNotes from "./ForkMigrations/003_DeliverableNotes.ts";
@@ -28,7 +32,8 @@ import {
   upstreamLedger,
 } from "./testkit/MigrationState.ts";
 
-// Written out, not derived from the manifest: this is what real databases hold.
+// Written out, not derived from the manifest: this is what real databases hold. These six are the
+// only fork migrations ever released inside upstream's sequence, so this list never grows.
 const LEGACY_UPSTREAM_HEAD = 80;
 const legacyForkMigrations = [
   [81, "Deliverables", Deliverables],
@@ -38,15 +43,19 @@ const legacyForkMigrations = [
   [85, "DeliverableStrayVersionOf", DeliverableStrayVersionOf],
   [86, "DirectPushDevices", DirectPushDevices],
 ] as const;
-const forkIds = legacyForkMigrations.map(
+const LEGACY_FORK_HEAD = LEGACY_UPSTREAM_HEAD + legacyForkMigrations.length;
+/** The six as the fork ledger holds them once moved. */
+const legacyForkIds = legacyForkMigrations.map(
   ([id, name]) => [id - LEGACY_UPSTREAM_HEAD, name] as const,
 );
+/** The whole fork ledger of a database this build has opened: the six, then every later one. */
+const forkIds = forkMigrationManifest.map(([id, name]) => [id, name] as const);
 const upstreamIds = migrationManifest.filter(([id]) => id <= LEGACY_UPSTREAM_HEAD);
 
 const runInUpstreamLedger = Migrator.make({});
 
 /** The build before the separate ledger: fork migrations numbered in upstream's sequence. */
-const runOldBuild = (throughId = 86) =>
+const runOldBuild = (throughId = LEGACY_FORK_HEAD) =>
   Effect.gen(function* () {
     const sql = yield* SqlClient.SqlClient;
     yield* runMigrations({ toMigrationInclusive: LEGACY_UPSTREAM_HEAD });
@@ -97,7 +106,7 @@ const runFutureBuild = withForkMigrations(() =>
 const USER = '{"kind":"user","name":null,"source":null}';
 
 /** Rows a Work project leaves behind, using only what the old sequence had created by `throughId`. */
-const seedWorkRows = (throughId = 86) =>
+const seedWorkRows = (throughId = LEGACY_FORK_HEAD) =>
   Effect.gen(function* () {
     const sql = yield* SqlClient.SqlClient;
     yield* sql`
@@ -120,7 +129,7 @@ const seedWorkRows = (throughId = 86) =>
         'open', 'message-1', '2026-10-01', '2026-10-01'
       )
     `;
-    if (throughId < 86) return;
+    if (throughId < LEGACY_FORK_HEAD) return;
     yield* sql`
       INSERT INTO direct_push_devices (
         device_id, label, platform, package_name, push_token, preferences_json, created_at, updated_at
@@ -229,18 +238,27 @@ it.layer(NodeServices.layer)("fork migration ledger", (it) => {
       yield* open(
         databasePath,
         Effect.gen(function* () {
-          assert.deepStrictEqual(yield* runMigrations(), []);
-          yield* assertSeparateLedgers(before.ledger);
+          // A run limited to upstream's old head moves the rows and runs no fork migration, so it
+          // shows the move by itself, apart from the fork migrations written since.
           assert.deepStrictEqual(
-            (yield* forkLedger).map((row) => row.created_at),
-            legacyForkMigrations.map(([id]) => legacyTime(id)),
+            yield* runMigrations({ toMigrationInclusive: LEGACY_UPSTREAM_HEAD }),
+            [],
           );
-          // Running 2 again would fail on its column, and running 4 again would delete the note.
-          assert.deepStrictEqual(yield* workRows, seededWorkRows);
+          assert.deepStrictEqual(ledgerIds(yield* forkLedger), legacyForkIds);
           const { [FORK_MIGRATIONS_TABLE]: ledgerTable, ...tables } = (yield* schemaSnapshot)
             .tables;
           assert.isDefined(ledgerTable);
           assert.deepStrictEqual(tables, before.schema.tables);
+
+          // The full run adds only the fork migrations no older build recorded.
+          assert.deepStrictEqual(yield* runMigrations(), []);
+          yield* assertSeparateLedgers(before.ledger);
+          assert.deepStrictEqual(
+            (yield* forkLedger).slice(0, legacyForkIds.length).map((row) => row.created_at),
+            legacyForkMigrations.map(([id]) => legacyTime(id)),
+          );
+          // Running 2 again would fail on its column, and running 4 again would delete the note.
+          assert.deepStrictEqual(yield* workRows, seededWorkRows);
         }),
       );
     }),
@@ -262,7 +280,7 @@ it.layer(NodeServices.layer)("fork migration ledger", (it) => {
         Effect.gen(function* () {
           assert.deepStrictEqual(yield* runMigrations(), []);
           yield* assertSeparateLedgers(before);
-          // 1-4 moved with their times; 5 and 6 ran now.
+          // 1-4 moved with their times; the rest ran now.
           assert.deepStrictEqual(
             (yield* forkLedger).slice(0, 4).map((row) => row.created_at),
             [81, 82, 83, 84].map(legacyTime),
@@ -454,43 +472,76 @@ it.layer(NodeServices.layer)("fork migration ledger", (it) => {
     }),
   );
 
-  // How a migration that another branch still numbered in upstream's sequence is folded in.
-  it.effect.each([true, false])(
-    "adopts a later legacy migration (first six moved: %s)",
-    (movedFirst) =>
-      Effect.gen(function* () {
-        const databasePath = yield* makeDatabasePath;
-        const manifest = [
-          ...legacyForkMigrations.map(([legacyUpstreamId, name]) => ({
-            id: legacyUpstreamId - LEGACY_UPSTREAM_HEAD,
-            name,
-            legacyUpstreamId,
-          })),
-          { id: 7, name: "LateLegacy", legacyUpstreamId: 87 },
-        ];
-        yield* open(
-          databasePath,
-          Effect.gen(function* () {
-            yield* runOldBuild();
-            if (movedFirst) yield* runMigrations();
-            yield* runInUpstreamLedger({
-              loader: Migrator.fromRecord({ "87_LateLegacy": Effect.void }),
-            });
+  // How a migration that another branch still numbered in upstream's sequence is folded in. Both
+  // cases give it ids worked out from what the database holds, never written out, so they stay
+  // clear of every real fork migration however many are added.
+  const legacyManifest = legacyForkMigrations.map(([legacyUpstreamId, name]) => ({
+    id: legacyUpstreamId - LEGACY_UPSTREAM_HEAD,
+    name,
+    legacyUpstreamId,
+  }));
+  const recordInUpstreamLedger = (legacyUpstreamId: number, name: string) =>
+    runInUpstreamLedger({
+      loader: Migrator.fromRecord({ [`${legacyUpstreamId}_${name}`]: Effect.void }),
+    });
 
-            const adopted = yield* adoptLegacyForkMigrations({
-              forkTable: FORK_MIGRATIONS_TABLE,
-              migrations: manifest,
-            });
+  it.effect("adopts a later legacy migration onto a ledger this build has settled", () =>
+    Effect.gen(function* () {
+      const databasePath = yield* makeDatabasePath;
+      // The next free number in each sequence, as the other branch and the merge would pick them.
+      const late = {
+        id: forkIds.length + 1,
+        name: "LateLegacy",
+        legacyUpstreamId: Math.max(...migrationManifest.map(([id]) => id)) + 1,
+      };
+      yield* open(
+        databasePath,
+        Effect.gen(function* () {
+          yield* runOldBuild();
+          yield* runMigrations();
+          yield* recordInUpstreamLedger(late.legacyUpstreamId, late.name);
 
-            assert.deepStrictEqual(
-              adopted,
-              movedFirst ? [[7, "LateLegacy"]] : [...forkIds, [7, "LateLegacy"]],
-            );
-            assert.deepStrictEqual(ledgerIds(yield* upstreamLedger), upstreamIds);
-            assert.deepStrictEqual(ledgerIds(yield* forkLedger), [...forkIds, [7, "LateLegacy"]]);
-          }),
-        );
-      }),
+          const adopted = yield* adoptLegacyForkMigrations({
+            forkTable: FORK_MIGRATIONS_TABLE,
+            migrations: [...legacyManifest, late],
+          });
+
+          assert.deepStrictEqual(adopted, [[late.id, late.name]]);
+          assert.deepStrictEqual(ledgerIds(yield* upstreamLedger), migrationManifest);
+          assert.deepStrictEqual(ledgerIds(yield* forkLedger), [...forkIds, [late.id, late.name]]);
+        }),
+      );
+    }),
+  );
+
+  it.effect("adopts a later legacy migration together with the first six", () =>
+    Effect.gen(function* () {
+      const databasePath = yield* makeDatabasePath;
+      // A fork whose seventh migration was also first released in upstream's sequence. Only this
+      // manifest writes this database's fork ledger: the real fork migrations never run here.
+      const late = {
+        id: legacyForkIds.length + 1,
+        name: "LateLegacy",
+        legacyUpstreamId: LEGACY_FORK_HEAD + 1,
+      };
+      yield* open(
+        databasePath,
+        Effect.gen(function* () {
+          yield* runOldBuild();
+          yield* recordInUpstreamLedger(late.legacyUpstreamId, late.name);
+
+          const adopted = yield* adoptLegacyForkMigrations({
+            forkTable: FORK_MIGRATIONS_TABLE,
+            migrations: [...legacyManifest, late],
+          });
+
+          const expected = [...legacyForkIds, [late.id, late.name] as const];
+          assert.deepStrictEqual(adopted, expected);
+          assert.deepStrictEqual(ledgerIds(yield* upstreamLedger), upstreamIds);
+          assert.deepStrictEqual(ledgerIds(yield* forkLedger), expected);
+        }),
+      );
+    }),
   );
 
   it.effect("reports upstream's head for a database that still has legacy fork rows", () =>
