@@ -41,7 +41,10 @@ export class DeliverableRenditions extends Context.Service<
         readonly projectId: ProjectId;
       },
     ) => Effect.Effect<void, DeliverableError>;
-    /** Puts a rendition that ended without output back in line; false when there was none. */
+    /**
+     * Puts a rendition that ended without output back in line; false when there was none. The
+     * next render looks for its tools again, so one installed since the last try is used.
+     */
     readonly retry: (content: RenditionContent) => Effect.Effect<boolean, DeliverableError>;
     /** Saves a ready rendition's output again, after files derived from it were added. */
     readonly replaceOutput: (
@@ -231,6 +234,7 @@ const make = Effect.fn("DeliverableRenditions.make")(function* (
       ) {
         return false;
       }
+      yield* renderers.recheckTools;
       yield* put(content, { status: "pending", renderer: null, detail: null, data: null });
       return true;
     },

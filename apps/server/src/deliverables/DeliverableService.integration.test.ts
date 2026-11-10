@@ -75,6 +75,9 @@ const rendering: {
   /** Completed when a render that hangs has begun. */
   hung: Deferred.Deferred<void> | null;
 } = { mode: "works", hung: null };
+/** The tool the stand-in renderer needs: whether it is installed, and whether a look found it. */
+const tool = { installed: true, found: true };
+const TOOL_MISSING = "The renderer's tool is not installed.";
 
 /** A dark raster with a white bar across its top, `length` pixels wide. */
 const barRaster = (side: number, length: number) => {
@@ -108,6 +111,15 @@ const layerLineRenderer = Layer.effect(
       samples: null,
       detail: null,
     };
+    /** Fails as the real renderers do while the last look for the tool did not find it. */
+    const withTool = <A>(render: Effect.Effect<A>) =>
+      Effect.suspend(() =>
+        tool.found
+          ? render
+          : Effect.fail(
+              new DeliverableRenderers.DeliverableRenderUnsupportedError({ detail: TOOL_MISSING }),
+            ),
+      );
     return DeliverableRenderers.DeliverableRenderers.of({
       render: (input) =>
         Effect.gen(function* () {
@@ -181,7 +193,7 @@ const layerLineRenderer = Layer.effect(
               signature: { hash: NodeCrypto.createHash("sha256").update(line).digest("hex") },
             })),
           };
-        }).pipe(Effect.orDie),
+        }).pipe(Effect.orDie, withTool),
       sampleFrames: (input) =>
         Effect.gen(function* () {
           rendererCalls.sampleFrames++;
@@ -215,6 +227,9 @@ const layerLineRenderer = Layer.effect(
           rendererCalls.readImage++;
           return barRaster(96, (yield* fileSystem.readFileString(input.imagePath)).length);
         }).pipe(Effect.orDie),
+      recheckTools: Effect.sync(() => {
+        tool.found = tool.installed;
+      }),
     });
   }),
 );
@@ -346,6 +361,8 @@ const withEngine = <A, E>(
         Effect.sync(() => {
           rendering.mode = "works";
           rendering.hung = null;
+          tool.installed = true;
+          tool.found = true;
           rendererCalls.notePictures.length = 0;
           projects.deleted.clear();
           projects.unreadable = false;
@@ -829,6 +846,28 @@ it.live("ends a render that crashes or has lost its file as failed, and renders 
       );
       assert.equal(Option.getOrThrow(yield* repository.getRendition(content)).status, "pending");
       assert.deepEqual(yield* repository.listUnfinished, [v1.id]);
+    }),
+  ),
+);
+
+it.live("renders again once the missing tool is installed, with no restart", () =>
+  withEngine((repo) =>
+    Effect.gen(function* () {
+      const deliverables = yield* DeliverableService.DeliverableService;
+      yield* repo.write("deck.pptx", "Title\nAgenda");
+      tool.installed = false;
+      tool.found = false;
+      const v1 = (yield* deliverables.registerVersion({ projectId, path: "deck.pptx" })).version;
+      yield* deliverables.drain;
+      const missing = yield* deliverables.rendition(v1.id);
+      assert.equal(missing.status, "unsupported");
+      assert.equal(missing.detail, TOOL_MISSING);
+
+      // Installed while the server runs: rendering again looks for it, and finds it.
+      tool.installed = true;
+      yield* deliverables.retryRendition(v1.id);
+      yield* deliverables.drain;
+      assert.equal((yield* deliverables.rendition(v1.id)).status, "ready");
     }),
   ),
 );

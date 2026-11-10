@@ -143,11 +143,16 @@ export class DeliverableRenderers extends Context.Service<
       readonly imagePath: string;
       readonly scratchPath: string;
     }) => Effect.Effect<Raster, DeliverableRenderUnsupportedError | DeliverableRenderError>;
+    /**
+     * Forgets which tools this computer has, so the next render looks for them again. Without it
+     * an answer is kept for a minute: a tool installed since is found without a restart.
+     */
+    readonly recheckTools: Effect.Effect<void>;
   }
 >()("t3/deliverables/DeliverableRenderers") {}
 
 const FFMPEG_MISSING =
-  "ffmpeg and ffprobe are not on PATH. Install ffmpeg (winget install Gyan.FFmpeg, brew install ffmpeg, or apt install ffmpeg) and restart the server.";
+  "ffmpeg and ffprobe are not on PATH. Install ffmpeg (winget install Gyan.FFmpeg, brew install ffmpeg, or apt install ffmpeg), then render again. If it is still not found, restart the app so it sees the new PATH.";
 const SLIDE_RENDERER_MISSING =
   "Slide images need Microsoft PowerPoint (Windows) or LibreOffice with Poppler's pdftoppm (winget install TheDocumentFoundation.LibreOffice, brew install --cask libreoffice && brew install poppler, or apt install libreoffice poppler-utils). Slides are compared by their file structure until then.";
 const PDF_RENDERER_MISSING =
@@ -159,6 +164,9 @@ const THUMB_WIDTH = 240;
 const SLIDE_WIDTH = 1280;
 const unitName = (prefix: string, index: number, suffix: string) =>
   `${prefix}-${String(index + 1).padStart(4, "0")}${suffix}`;
+
+/** How long an answer about a tool is believed before the next render asks again. */
+const TOOL_ANSWER_LASTS = "1 minute";
 
 const make = Effect.gen(function* () {
   const runner = yield* ProcessRunner.ProcessRunner;
@@ -178,15 +186,19 @@ const make = Effect.gen(function* () {
       Effect.map((result) => result.code === 0),
       Effect.orElseSucceed(() => false),
     );
-  const ffmpegAvailable = yield* Effect.cached(
+  const [ffmpegAvailable, forgetFfmpeg] = yield* Effect.cachedInvalidateWithTTL(
     Effect.zipWith(
       available("ffmpeg", ["-version"]),
       available("ffprobe", ["-version"]),
       (a, b) => a && b,
     ),
+    TOOL_ANSWER_LASTS,
   );
-  const pdftoppmAvailable = yield* Effect.cached(available("pdftoppm", ["-v"]));
-  const sofficePath = yield* Effect.cached(
+  const [pdftoppmAvailable, forgetPdftoppm] = yield* Effect.cachedInvalidateWithTTL(
+    available("pdftoppm", ["-v"]),
+    TOOL_ANSWER_LASTS,
+  );
+  const [sofficePath, forgetSoffice] = yield* Effect.cachedInvalidateWithTTL(
     Effect.gen(function* () {
       if (yield* available("soffice", ["--version"])) return Option.some("soffice");
       const candidates =
@@ -202,7 +214,11 @@ const make = Effect.gen(function* () {
       }
       return Option.none<string>();
     }),
+    TOOL_ANSWER_LASTS,
   );
+  const recheckTools = Effect.all([forgetFfmpeg, forgetPdftoppm, forgetSoffice], {
+    discard: true,
+  });
 
   const requireFfmpeg = Effect.flatMap(ffmpegAvailable, (ok) =>
     ok
@@ -729,6 +745,7 @@ const make = Effect.gen(function* () {
     outlineImage,
     notePicture,
     readImage,
+    recheckTools,
   });
 });
 
