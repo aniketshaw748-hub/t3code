@@ -13,6 +13,7 @@ import Migration0003 from "./ForkMigrations/003_DeliverableNotes.ts";
 import Migration0004 from "./ForkMigrations/004_WholeDeliverableNotesToChat.ts";
 import Migration0005 from "./ForkMigrations/005_DeliverableStrayVersionOf.ts";
 import Migration0006 from "./ForkMigrations/006_DirectPushDevices.ts";
+import Migration0007 from "./ForkMigrations/007_RecheckDeliverableSelfChecks.ts";
 
 type ForkMigrationEntry = readonly [
   id: number,
@@ -36,6 +37,7 @@ const forkMigrationEntries: ReadonlyArray<ForkMigrationEntry> = [
   [4, "WholeDeliverableNotesToChat", Migration0004, 80, 84],
   [5, "DeliverableStrayVersionOf", Migration0005, 80, 85],
   [6, "DirectPushDevices", Migration0006, 80, 86],
+  [7, "RecheckDeliverableSelfChecks", Migration0007, 80],
 ];
 
 export const FORK_MIGRATIONS_TABLE = "fork_sql_migrations";

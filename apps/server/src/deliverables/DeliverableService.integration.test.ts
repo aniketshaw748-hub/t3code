@@ -19,6 +19,7 @@ import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
+import * as Option from "effect/Option";
 import * as Path from "effect/Path";
 import * as SqlClient from "effect/sql/SqlClient";
 
@@ -36,6 +37,7 @@ import * as DeliverableContext from "./DeliverableContext.ts";
 import * as DeliverableGit from "./DeliverableGit.ts";
 import * as DeliverableRenderers from "./DeliverableRenderers.ts";
 import * as DeliverableSelfCheck from "./DeliverableSelfCheck.ts";
+import { frameRegion, OUTLINE_GRID, VIDEO_GRID } from "./perceptualDiff.ts";
 
 const TURN_REPLY =
   "## **Made the title slide bolder** in [the deck](C:/work/deck.pptx)\n\nDetails follow.";
@@ -49,24 +51,80 @@ import * as TurnContextNotes from "../orchestration-v2/TurnContextNotes.ts";
 const projectId = ProjectId.make("project-work");
 const threadId = ThreadId.make("thread-work");
 
-/** Stands in for PowerPoint: each line of the fixture "deck" is a slide, compared by hash. */
+const rendererCalls = { sampleFrames: 0, readImage: 0 };
+
+/** A dark raster with a white bar across its top, `length` pixels wide. */
+const barRaster = (side: number, length: number) => {
+  const data = new Uint8Array(side * side * 3).fill(30);
+  for (let y = 0; y < 8; y++) data.fill(255, y * side * 3, (y * side + length) * 3);
+  return { width: side, height: side, data };
+};
+
+/**
+ * Stands in for PowerPoint and ffmpeg, working on text files. A deck is one slide a line, compared
+ * by hash. An image's display file holds its trimmed text and every image shares one outline, so
+ * only `readImage`, which draws a bar as long as the text, can tell two apart. A video renders as
+ * servers did before the frame grid grew: samples with no grid, redone by `sampleFrames`.
+ */
 const layerLineRenderer = Layer.effect(
   DeliverableRenderers.DeliverableRenderers,
   Effect.gen(function* () {
     const fileSystem = yield* FileSystem.FileSystem;
+    const path = yield* Path.Path;
+    const base = {
+      renderer: "test-lines@1",
+      width: null,
+      height: null,
+      durationSeconds: null,
+      poster: null,
+      proxy: null,
+      samples: null,
+      detail: null,
+    };
     return DeliverableRenderers.DeliverableRenderers.of({
       render: (input) =>
-        fileSystem.readFileString(input.sourcePath).pipe(
-          Effect.orDie,
-          Effect.map((text) => ({
-            renderer: "test-lines@1",
-            width: null,
-            height: null,
-            durationSeconds: null,
-            poster: null,
-            proxy: null,
-            samples: null,
-            detail: null,
+        Effect.gen(function* () {
+          const text = yield* fileSystem.readFileString(input.sourcePath);
+          yield* fileSystem.makeDirectory(input.outDir, { recursive: true });
+          const write = (file: string, bytes: Uint8Array) =>
+            fileSystem.writeFile(path.join(input.outDir, file), bytes);
+          if (input.kind === "image") {
+            yield* write("image-0001.jpg", new TextEncoder().encode(text.trim()));
+            yield* write("image-0001.rgb", new Uint8Array(OUTLINE_GRID * OUTLINE_GRID * 3));
+            return {
+              ...base,
+              units: [
+                {
+                  index: 0,
+                  kind: "image" as const,
+                  image: "image-0001.jpg",
+                  thumb: null,
+                  signature: { file: "image-0001.rgb" },
+                },
+              ],
+            };
+          }
+          if (input.kind === "video") {
+            yield* write("samples.rgb", new Uint8Array(32 * 32 * 3));
+            return {
+              ...base,
+              durationSeconds: 1,
+              samples: { file: "samples.rgb", fps: 1 },
+              units: [
+                {
+                  index: 0,
+                  kind: "shot" as const,
+                  start: 0,
+                  end: 1,
+                  image: null,
+                  thumb: null,
+                  signature: null,
+                },
+              ],
+            };
+          }
+          return {
+            ...base,
             units: text.split("\n").map((line, index) => ({
               index,
               kind: "slide" as const,
@@ -74,8 +132,24 @@ const layerLineRenderer = Layer.effect(
               thumb: null,
               signature: { hash: NodeCrypto.createHash("sha256").update(line).digest("hex") },
             })),
-          })),
-        ),
+          };
+        }).pipe(Effect.orDie),
+      sampleFrames: (input) =>
+        Effect.gen(function* () {
+          rendererCalls.sampleFrames++;
+          const text = yield* fileSystem.readFileString(input.sourcePath);
+          const file = `frames-${VIDEO_GRID}.rgb`;
+          yield* fileSystem.writeFile(
+            path.join(input.outDir, file),
+            barRaster(VIDEO_GRID, text.length).data,
+          );
+          return { file, fps: 1, grid: VIDEO_GRID };
+        }).pipe(Effect.orDie),
+      readImage: (input) =>
+        Effect.gen(function* () {
+          rendererCalls.readImage++;
+          return barRaster(96, (yield* fileSystem.readFileString(input.imagePath)).length);
+        }).pipe(Effect.orDie),
     });
   }),
 );
@@ -520,6 +594,90 @@ it.live("offers a revision saved under a new name as the next version, and adopt
         path: "brief/brief-v2.pptx",
       });
       assert.equal(registered.deliverable.strayVersionOf, brief.id);
+    }),
+  ),
+);
+
+it.live("judges an image on its display pixels, reading them only when the files differ", () =>
+  withEngine((repo) =>
+    Effect.gen(function* () {
+      const deliverables = yield* DeliverableService.DeliverableService;
+      const record = Effect.fn("test.record")(function* (text: string) {
+        yield* repo.write("cover.png", text);
+        return (yield* deliverables.registerVersion({ projectId, path: "cover.png" })).version;
+      });
+      const v1 = yield* record("Draft");
+      const v2 = yield* record("Draft two");
+      // New bytes that render to the same display image.
+      const v3 = yield* record("Draft two\n");
+      yield* deliverables.drain;
+      rendererCalls.readImage = 0;
+
+      const edited = yield* deliverables.compare({ targetVersionId: v2.id });
+      assert.equal(edited.method, "perceptual");
+      assert.equal(edited.headline, "1 image changed");
+      // The bar grew from 5 to 9 pixels and the outlines of the two are the same. One pixel of
+      // the growth passes as a one-pixel shift; the other three are the change.
+      assert.deepEqual(edited.units[0]?.anchor, {
+        kind: "slide",
+        index: 0,
+        region: frameRegion({ x: 5 / 96, y: 0, w: 3 / 96, h: 8 / 96 }),
+      });
+      assert.equal(rendererCalls.readImage, 2);
+      assert.equal(v1.id, edited.baseVersionId);
+
+      // Asked again, the answer is kept; the same display bytes are never decoded at all.
+      yield* deliverables.compare({ targetVersionId: v2.id });
+      const resaved = yield* deliverables.compare({ targetVersionId: v3.id });
+      assert.equal(resaved.headline, "No visible change");
+      assert.equal(rendererCalls.readImage, 2);
+    }),
+  ),
+);
+
+it.live("resamples a video rendered before the frame grid grew, once, then compares it", () =>
+  withEngine((repo) =>
+    Effect.gen(function* () {
+      const deliverables = yield* DeliverableService.DeliverableService;
+      const repository = yield* DeliverableRepository.DeliverableRepository;
+      const blobs = yield* DeliverableBlobStore.DeliverableBlobStore;
+      const fileSystem = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      const record = Effect.fn("test.record")(function* (text: string) {
+        yield* repo.write("cut.mp4", text);
+        return (yield* deliverables.registerVersion({ projectId, path: "cut.mp4" })).version;
+      });
+      const v1 = yield* record("a short caption");
+      const v2 = yield* record("a rather longer caption, by a good way");
+      yield* deliverables.drain;
+      rendererCalls.sampleFrames = 0;
+
+      const comparison = yield* deliverables.compare({ targetVersionId: v2.id });
+      assert.equal(comparison.method, "perceptual");
+      assert.equal(comparison.headline, "1 shot changed");
+      assert.deepEqual(comparison.units[0]?.anchor, {
+        kind: "time",
+        t: 0,
+        tEnd: 1,
+        region: frameRegion({ x: 15 / VIDEO_GRID, y: 0, w: 23 / VIDEO_GRID, h: 8 / VIDEO_GRID }),
+      });
+      assert.equal(rendererCalls.sampleFrames, 2);
+
+      // The finer frames are saved on the rendition and the old file is gone.
+      for (const version of [v1, v2]) {
+        const stored = yield* repository.getRendition({
+          contentSha256: version.contentSha256,
+          kind: "video",
+        });
+        assert.deepEqual(
+          (Option.getOrThrow(stored).data as DeliverableRenderers.RenderOutput).samples,
+          { file: `frames-${VIDEO_GRID}.rgb`, fps: 1, grid: VIDEO_GRID },
+        );
+        const directory = blobs.renditionDir({ sha256: version.contentSha256, kind: "video" });
+        assert.isFalse(yield* fileSystem.exists(path.join(directory, "samples.rgb")));
+      }
+      yield* deliverables.compare({ targetVersionId: v2.id });
+      assert.equal(rendererCalls.sampleFrames, 2);
     }),
   ),
 );

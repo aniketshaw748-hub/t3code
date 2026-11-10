@@ -1,4 +1,4 @@
-import type { TimelineShot } from "./perceptualDiff.ts";
+import type { Raster, TimelineShot } from "./perceptualDiff.ts";
 
 /** Cut times ffmpeg's `showinfo` printed for frames the scene filter selected. */
 export function parseSceneCuts(stderr: string): ReadonlyArray<number> {
@@ -115,4 +115,30 @@ export function pptxSlideTitle(slideXml: string): string | undefined {
     if (text.length > 0) return text.length > 120 ? `${text.slice(0, 119)}…` : text;
   }
   return undefined;
+}
+
+/** A binary PPM (`P6`, 8 bits a channel), the form ffmpeg writes one decoded frame in. */
+export function parsePpm(bytes: Uint8Array): Raster | null {
+  let offset = 0;
+  const token = () => {
+    for (;;) {
+      const byte = bytes[offset];
+      if (byte === 0x23) while (offset < bytes.length && bytes[offset] !== 0x0a) offset++;
+      else if (byte === 0x20 || (byte !== undefined && byte >= 0x09 && byte <= 0x0d)) offset++;
+      else break;
+    }
+    const start = offset;
+    while (offset < bytes.length && bytes[offset]! > 0x20) offset++;
+    return String.fromCharCode(...bytes.subarray(start, offset));
+  };
+  if (token() !== "P6") return null;
+  const width = Number(token());
+  const height = Number(token());
+  if (token() !== "255") return null;
+  if (!Number.isInteger(width) || !Number.isInteger(height) || width <= 0 || height <= 0) {
+    return null;
+  }
+  // One whitespace byte ends the header.
+  const data = bytes.subarray(offset + 1, offset + 1 + width * height * 3);
+  return data.length === width * height * 3 ? { width, height, data } : null;
 }

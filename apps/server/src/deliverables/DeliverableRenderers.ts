@@ -12,6 +12,7 @@ import * as Schema from "effect/Schema";
 import * as ProcessRunner from "../processRunner.ts";
 import { openZipArchive } from "../zipArchive.ts";
 import {
+  parsePpm,
   parseProbe,
   parseSceneCuts,
   pptxSlideOrder,
@@ -19,7 +20,7 @@ import {
   pptxSlideTitle,
   shotsFromCuts,
 } from "./mediaParsing.ts";
-import { SIGNATURE_GRID } from "./perceptualDiff.ts";
+import { OUTLINE_GRID, type Raster, VIDEO_GRID } from "./perceptualDiff.ts";
 
 /** The renderer cannot run here; `detail` says what to install. */
 export class DeliverableRenderUnsupportedError extends Schema.TaggedError<DeliverableRenderUnsupportedError>()(
@@ -42,6 +43,7 @@ export class DeliverableRenderError extends Schema.TaggedError<DeliverableRender
       "slides",
       "structure",
       "signature",
+      "pixels",
     ]),
     cause: Schema.Defect(),
   },
@@ -60,12 +62,21 @@ export const RenderedUnit = Schema.Struct({
   /** File names inside the rendition directory. */
   image: Schema.NullOr(Schema.String),
   thumb: Schema.NullOr(Schema.String),
-  /** A SIGNATURE_GRID² RGB file, or a structural hash when nothing was rendered. */
+  /** An OUTLINE_GRID² RGB file for lining units up, or a structural hash when nothing was rendered. */
   signature: Schema.NullOr(
     Schema.Union([Schema.Struct({ file: Schema.String }), Schema.Struct({ hash: Schema.String })]),
   ),
 });
 export type RenderedUnit = typeof RenderedUnit.Type;
+
+/** Frames sampled across a video at `fps`, back to back in one file, each `grid` x `grid` RGB. */
+export const SampledFrames = Schema.Struct({
+  file: Schema.String,
+  fps: Schema.Number,
+  /** Missing on renditions made when the grid was 32 a side; those are resampled before use. */
+  grid: Schema.optional(Schema.Number),
+});
+export type SampledFrames = typeof SampledFrames.Type;
 
 export const RenderOutput = Schema.Struct({
   renderer: Schema.String,
@@ -75,8 +86,7 @@ export const RenderOutput = Schema.Struct({
   poster: Schema.NullOr(Schema.String),
   proxy: Schema.NullOr(Schema.String),
   units: Schema.Array(RenderedUnit),
-  /** Frames sampled across a video at `fps`, SIGNATURE_BYTES each. */
-  samples: Schema.NullOr(Schema.Struct({ file: Schema.String, fps: Schema.Number })),
+  samples: Schema.NullOr(SampledFrames),
   /** What this rendition could not do, such as slide images without a slide renderer. */
   detail: Schema.NullOr(Schema.String),
 });
@@ -94,6 +104,17 @@ export class DeliverableRenderers extends Context.Service<
       readonly outDir: string;
       readonly scratchDir: string;
     }) => Effect.Effect<RenderOutput, DeliverableRenderUnsupportedError | DeliverableRenderError>;
+    /** Samples a video's frames onto the comparison grid, writing one file into `outDir`. */
+    readonly sampleFrames: (input: {
+      readonly sourcePath: string;
+      readonly outDir: string;
+      readonly durationSeconds: number;
+    }) => Effect.Effect<SampledFrames, DeliverableRenderUnsupportedError | DeliverableRenderError>;
+    /** A rendered image's pixels, decoded by way of `scratchPath`. */
+    readonly readImage: (input: {
+      readonly imagePath: string;
+      readonly scratchPath: string;
+    }) => Effect.Effect<Raster, DeliverableRenderUnsupportedError | DeliverableRenderError>;
   }
 >()("t3/deliverables/DeliverableRenderers") {}
 
@@ -208,7 +229,7 @@ const make = Effect.gen(function* () {
   });
 
   const scaleFilter = (width: number) => `scale='min(${width},iw)':-2:flags=lanczos`;
-  const signatureFilter = `scale=${SIGNATURE_GRID}:${SIGNATURE_GRID}:flags=area,format=rgb24`;
+  const gridFilter = (grid: number) => `scale=${grid}:${grid}:flags=area,format=rgb24`;
 
   /** A still image's display copy, thumbnail and pixel signature. */
   const stillUnit = Effect.fn("DeliverableRenderers.stillUnit")(function* (
@@ -249,12 +270,63 @@ const make = Effect.gen(function* () {
       "-i",
       source,
       "-vf",
-      signatureFilter,
+      gridFilter(OUTLINE_GRID),
       "-f",
       "rawvideo",
       path.join(outDir, signature),
     ]);
     return { image, thumb, signature: { file: signature } } as const;
+  });
+
+  const sampleFrames: DeliverableRenderers["Service"]["sampleFrames"] = Effect.fn(
+    "DeliverableRenderers.sampleFrames",
+  )(function* (input) {
+    yield* requireFfmpeg;
+    const fps = Math.min(2, SAMPLE_BUDGET / input.durationSeconds);
+    // Named by grid, so resampling an older rendition never writes over the file it still reads.
+    const file = `frames-${VIDEO_GRID}.rgb`;
+    yield* ffmpeg("signature", [
+      "-v",
+      "error",
+      "-i",
+      input.sourcePath,
+      "-vf",
+      `fps=${fps.toFixed(4)},${gridFilter(VIDEO_GRID)}`,
+      "-f",
+      "rawvideo",
+      path.join(input.outDir, file),
+    ]);
+    return { file, fps, grid: VIDEO_GRID };
+  });
+
+  const readImage: DeliverableRenderers["Service"]["readImage"] = Effect.fn(
+    "DeliverableRenderers.readImage",
+  )(function* (input) {
+    yield* requireFfmpeg;
+    yield* ffmpeg("pixels", [
+      "-v",
+      "error",
+      "-i",
+      input.imagePath,
+      "-frames:v",
+      "1",
+      "-update",
+      "1",
+      "-c:v",
+      "ppm",
+      "-f",
+      "image2",
+      input.scratchPath,
+    ]);
+    const raster = parsePpm(
+      yield* fileSystem
+        .readFile(input.scratchPath)
+        .pipe(Effect.mapError((cause) => new DeliverableRenderError({ stage: "pixels", cause }))),
+    );
+    if (raster === null) {
+      return yield* new DeliverableRenderError({ stage: "pixels", cause: "Not a binary PPM." });
+    }
+    return raster;
   });
 
   const renderVideo = Effect.fn("DeliverableRenderers.renderVideo")(function* (
@@ -281,18 +353,7 @@ const make = Effect.gen(function* () {
       "-",
     ]);
     const shots = shotsFromCuts(parseSceneCuts(scenes.stderr), duration);
-    const fps = Math.min(2, SAMPLE_BUDGET / duration);
-    yield* ffmpeg("signature", [
-      "-v",
-      "error",
-      "-i",
-      sourcePath,
-      "-vf",
-      `fps=${fps.toFixed(4)},${signatureFilter}`,
-      "-f",
-      "rawvideo",
-      path.join(outDir, "samples.rgb"),
-    ]);
+    const samples = yield* sampleFrames({ sourcePath, outDir, durationSeconds: duration });
     const units: RenderedUnit[] = [];
     for (const shot of shots) {
       const middle = ((shot.start + shot.end) / 2).toFixed(3);
@@ -352,14 +413,14 @@ const make = Effect.gen(function* () {
       path.join(outDir, "proxy.mp4"),
     ]);
     return {
-      renderer: "video-ffmpeg@2",
+      renderer: "video-ffmpeg@3",
       width: probed.width,
       height: probed.height,
       durationSeconds: duration,
       poster: units[0]?.image ?? null,
       proxy: "proxy.mp4",
       units,
-      samples: { file: "samples.rgb", fps },
+      samples,
       detail: null,
     } satisfies RenderOutput;
   });
@@ -630,6 +691,8 @@ const make = Effect.gen(function* () {
           });
       }
     }),
+    sampleFrames,
+    readImage,
   });
 });
 
