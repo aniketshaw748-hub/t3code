@@ -137,11 +137,15 @@ import * as GitWorkflowService from "./git/GitWorkflowService.ts";
 import * as ReviewService from "./review/ReviewService.ts";
 import * as DeliverableBlobStore from "./deliverables/DeliverableBlobStore.ts";
 import * as DeliverableCheckpointReactor from "./deliverables/DeliverableCheckpointReactor.ts";
+import * as DeliverableComparer from "./deliverables/DeliverableComparer.ts";
 import * as DeliverableContext from "./deliverables/DeliverableContext.ts";
 import * as DeliverableGit from "./deliverables/DeliverableGit.ts";
 import * as DeliverableRenderers from "./deliverables/DeliverableRenderers.ts";
+import * as DeliverableRenditions from "./deliverables/DeliverableRenditions.ts";
 import * as DeliverableSelfCheck from "./deliverables/DeliverableSelfCheck.ts";
 import * as DeliverableService from "./deliverables/DeliverableService.ts";
+import * as DeliverableStoreCleanup from "./deliverables/DeliverableStoreCleanup.ts";
+import * as DeliverableStoreReactor from "./deliverables/DeliverableStoreReactor.ts";
 import * as DeliverableTurnNotes from "./deliverables/DeliverableTurnNotes.ts";
 import * as WorkProjectEvents from "./deliverables/WorkProjectEvents.ts";
 import * as WorkProjectFeed from "./deliverables/WorkProjectFeed.ts";
@@ -613,13 +617,18 @@ const layerDeliverables = Layer.effectDiscard(
     yield* reactor.start();
     const notesReactor = yield* DeliverableNotesReactor.DeliverableNotesReactor;
     yield* notesReactor.start();
+    const storeReactor = yield* DeliverableStoreReactor.DeliverableStoreReactor;
+    yield* storeReactor.start();
   }),
 ).pipe(
   Layer.provideMerge(DeliverableCheckpointReactor.layer),
   Layer.provideMerge(DeliverableNotesReactor.layer),
+  Layer.provideMerge(DeliverableStoreReactor.layer),
   Layer.provideMerge(WorkProjectFeed.layer),
   Layer.provideMerge(DeliverableService.layer),
   Layer.provideMerge(DeliverableNotes.layer),
+  Layer.provideMerge(Layer.mergeAll(DeliverableComparer.layer, DeliverableStoreCleanup.layer)),
+  Layer.provideMerge(DeliverableRenditions.layer),
   Layer.provide(
     Layer.mergeAll(
       DeliverableGit.layer.pipe(Layer.provide(VcsProcess.layer)),

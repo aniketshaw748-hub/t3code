@@ -183,10 +183,6 @@ const make = Effect.gen(function* () {
       if (Option.isNone(version)) return yield* fail("version_not_found")();
       if (version.value.deliverableId !== deliverable.id) return yield* fail("version_mismatch")();
       const id = DeliverableNoteId.make(`note_${(yield* random.uuidV4()).replaceAll("-", "")}`);
-      const snapshotPath =
-        input.snapshotDataUrl === undefined
-          ? null
-          : yield* writeSnapshot(id, input.snapshotDataUrl);
       const now = yield* DateTime.now;
       const stored: DeliverableNoteRepository.StoredDeliverableNote = {
         id,
@@ -199,7 +195,7 @@ const make = Effect.gen(function* () {
           input.author === undefined
             ? { kind: "user", name: null, source: null }
             : { kind: "external", name: input.author.name, source: input.author.source },
-        snapshotPath,
+        snapshotPath: null,
         status: "open",
         threadId: null,
         sentMessageId: null,
@@ -212,9 +208,19 @@ const make = Effect.gen(function* () {
         updatedAt: now,
         resolvedAt: null,
       };
-      yield* notes.putNote(stored).pipe(persistence);
+      const { snapshotDataUrl } = input;
+      // The picture and the note that needs it are written together, with no cleanup between.
+      const saved = yield* blobs.whileWriting(
+        Effect.gen(function* () {
+          const snapshotPath =
+            snapshotDataUrl === undefined ? null : yield* writeSnapshot(id, snapshotDataUrl);
+          const note = { ...stored, snapshotPath };
+          yield* notes.putNote(note).pipe(persistence);
+          return note;
+        }),
+      );
       yield* changed(deliverable.projectId);
-      return yield* toPublic(stored);
+      return yield* toPublic(saved);
     },
   );
 

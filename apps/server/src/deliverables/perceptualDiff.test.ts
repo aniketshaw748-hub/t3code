@@ -6,21 +6,14 @@ import { describe, expect, it } from "vite-plus/test";
 
 import { parsePpm } from "./mediaParsing.ts";
 import {
-  alignSequences,
-  alignUnits,
-  compareHashes,
-  compareTimelines,
   DISPLAY_TOLERANCE,
   frameRegion,
   OUTLINE_GRID,
   type Raster,
   rasterDifference,
   SAME,
-  sequenceChanges,
-  type Timeline,
   type UnitSignature,
   unmeasuredDifference,
-  VIDEO_GRID,
   VIDEO_TOLERANCE,
 } from "./perceptualDiff.ts";
 
@@ -173,118 +166,17 @@ describe("frameRegion", () => {
   });
 });
 
-describe("alignUnits", () => {
-  it("lines up an inserted unit instead of shifting the rest", () => {
-    const base = [1, 2, 3];
-    const target = [1, 9, 2, 3];
-    expect(alignUnits(3, 4, (i, j) => (base[i] === target[j] ? 0 : 1))).toEqual([
-      { baseIndex: 0, targetIndex: 0 },
-      { baseIndex: null, targetIndex: 1 },
-      { baseIndex: 1, targetIndex: 2 },
-      { baseIndex: 2, targetIndex: 3 },
-    ]);
-  });
-});
-
 const outline = (value: number): UnitSignature => ({
   type: "pixels",
   outline: new Uint8Array(OUTLINE_GRID * OUTLINE_GRID * 3).fill(value),
 });
 
-describe("slide sequences", () => {
-  it("aligns by outline and reports each pair as it was measured", () => {
-    const pairs = alignSequences(
-      [outline(10), outline(120), outline(240)],
-      [outline(10), outline(120), outline(60), outline(240)],
-    );
-    expect(pairs).toEqual([
-      { baseIndex: 0, targetIndex: 0 },
-      { baseIndex: 1, targetIndex: 1 },
-      { baseIndex: null, targetIndex: 2 },
-      { baseIndex: 2, targetIndex: 3 },
-    ]);
-    // The outlines of slide 2 match; only its pixels say a word changed.
-    const region = { x: 0.25, y: 0.5, w: 0.1, h: 0.05 };
-    const changes = sequenceChanges(
-      pairs.map((pair) => ({
-        ...pair,
-        difference: pair.baseIndex === 1 ? { difference: 0.002, region } : SAME,
-      })),
-    );
-    expect(changes.map((change) => [change.status, change.baseIndex, change.targetIndex])).toEqual([
-      ["unchanged", 0, 0],
-      ["changed", 1, 1],
-      ["added", null, 2],
-      ["unchanged", 2, 3],
-    ]);
-    expect(changes[1]).toMatchObject({
-      difference: 0.002,
-      anchor: { kind: "slide", index: 1, region },
-    });
-  });
-
+describe("unmeasuredDifference", () => {
   it("never reports nothing for images that differ but could not be measured", () => {
     expect(unmeasuredDifference(outline(10), outline(10))).toEqual({
       difference: 1 / (OUTLINE_GRID * OUTLINE_GRID),
       region: null,
     });
     expect(unmeasuredDifference(outline(10), outline(200)).difference).toBe(1);
-  });
-
-  it("compares structural hashes when no pixels were rendered", () => {
-    const hash = (value: string): UnitSignature => ({ type: "hash", value });
-    expect(
-      compareHashes([hash("x"), hash("y")], [hash("x"), hash("z")]).map((change) => change.status),
-    ).toEqual(["unchanged", "changed"]);
-    expect(compareHashes([hash("x"), hash("y")], [hash("x")])).toMatchObject([
-      { status: "unchanged" },
-      { status: "removed", baseIndex: 1, targetIndex: null },
-    ]);
-  });
-});
-
-const timeline = (
-  duration: number,
-  cuts: ReadonlyArray<number>,
-  frame: (t: number) => Raster,
-): Timeline => {
-  const bounds = [0, ...cuts, duration];
-  const samples = [];
-  for (let t = 0; t < duration; t += 0.5) samples.push({ t, frame: frame(t) });
-  return {
-    duration,
-    shots: bounds.slice(0, -1).map((start, index) => ({ index, start, end: bounds[index + 1]! })),
-    samples,
-  };
-};
-
-describe("compareTimelines", () => {
-  const original = (t: number) => flat(VIDEO_GRID, VIDEO_GRID, t < 2 ? 20 : t < 4 ? 120 : 220);
-
-  it("marks only the shot whose frames changed", () => {
-    const edited = (t: number) =>
-      t >= 2 && t < 4 ? withBlock(original(t), 64, 0, 128, 64) : original(t);
-    const changes = compareTimelines(timeline(6, [2, 4], original), timeline(6, [2, 4], edited));
-    expect(changes.map((change) => change.status)).toEqual(["unchanged", "changed", "unchanged"]);
-    expect(changes[1]).toMatchObject({ baseIndex: 1, targetIndex: 1 });
-    // The block is the frame's top-right quarter, framed on its two inner sides.
-    expect(changes[1]?.anchor).toEqual({
-      kind: "time",
-      t: 2,
-      tEnd: 4,
-      region: {
-        x: expect.closeTo(0.475),
-        y: 0,
-        w: expect.closeTo(0.525),
-        h: expect.closeTo(0.525),
-      },
-    });
-  });
-
-  it("reports shots past the other video's end as added or removed", () => {
-    const longer = compareTimelines(timeline(4, [2], original), timeline(6, [2, 4], original));
-    expect(longer.map((change) => change.status)).toEqual(["unchanged", "unchanged", "added"]);
-    const shorter = compareTimelines(timeline(6, [2, 4], original), timeline(4, [2], original));
-    expect(shorter.map((change) => change.status)).toEqual(["unchanged", "unchanged", "removed"]);
   });
 });

@@ -58,6 +58,7 @@ import { WorkTheme } from "./WorkTheme";
 import { useAppearancePreferences } from "../settings/appearance/AppearancePreferencesProvider";
 import { WorkDeckStage } from "./WorkDeckStage";
 import { WorkNoteComposer } from "./WorkNoteComposer";
+import { WorkRenderFailure } from "./WorkRenderFailure";
 import {
   AgentLine,
   NoteCard,
@@ -346,7 +347,7 @@ function WorkProjectScreen(props: WorkProjectParams) {
       return message(
         rendition.status === "pending" || rendition.status === "rendering"
           ? `Rendering V${viewed.ordinal}…`
-          : (rendition.detail ?? `V${viewed.ordinal} could not be rendered.`),
+          : `No preview of V${viewed.ordinal}`,
       );
     }
     if (kind === "deck" || kind === "pdf") {
@@ -430,6 +431,16 @@ function WorkProjectScreen(props: WorkProjectParams) {
               );
             })}
           </ScrollView>
+        ) : null}
+        {viewed !== null &&
+        rendition !== null &&
+        (rendition.status === "failed" || rendition.status === "unsupported") ? (
+          <WorkRenderFailure
+            environmentId={environmentId}
+            version={viewed}
+            rendition={rendition}
+            canOperate={canOperate}
+          />
         ) : null}
         {stage}
         {versions.length > 0 ? (

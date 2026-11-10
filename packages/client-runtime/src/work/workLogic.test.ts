@@ -4,15 +4,22 @@ import {
   DeliverableVersionId,
   MessageId,
   RunId,
+  type DeliverableComparisonUnavailableReason,
   type DeliverableNote,
   type DeliverableNoteStatus,
+  type DeliverableRenditionStatus,
   type DeliverableVersion,
   type WorkProjectSnapshot,
 } from "@t3tools/contracts";
 import * as DateTime from "effect/DateTime";
 import { describe, expect, it } from "vite-plus/test";
 
-import { defaultCompareSelection, orderedCompare, pickCompareVersion } from "./workCompare.ts";
+import {
+  comparisonIsOutdated,
+  defaultCompareSelection,
+  orderedCompare,
+  pickCompareVersion,
+} from "./workCompare.ts";
 import { layoutNoteMarkers } from "./workMarkers.ts";
 import {
   agentProgress,
@@ -200,6 +207,26 @@ describe("compare selection", () => {
     expect(pickCompareVersion(picked, id(4))).toBe(picked);
     const ordered = orderedCompare(picked, versions);
     expect([ordered?.base.ordinal, ordered?.target.ordinal]).toEqual([1, 4]);
+  });
+  it("asks for the comparison again once the render it named has moved on", () => {
+    const pair = (base: DeliverableRenditionStatus, target: DeliverableRenditionStatus) => [
+      { id: id(1), renditionStatus: base },
+      { id: id(2), renditionStatus: target },
+    ];
+    const held = (reason: DeliverableComparisonUnavailableReason) => ({
+      unavailable: { reason, versionId: id(2), message: "" },
+    });
+    expect(comparisonIsOutdated({ unavailable: null }, pair("ready", "rendering"))).toBe(false);
+    // Waiting on a render: asked again when neither version is rendering any more.
+    expect(comparisonIsOutdated(held("rendering"), pair("ready", "rendering"))).toBe(false);
+    expect(comparisonIsOutdated(held("rendering"), pair("ready", "ready"))).toBe(true);
+    expect(comparisonIsOutdated(held("rendering"), pair("ready", "failed"))).toBe(true);
+    // A failed render: asked again when that version is rendering or rendered again.
+    expect(comparisonIsOutdated(held("render_failed"), pair("ready", "failed"))).toBe(false);
+    expect(comparisonIsOutdated(held("render_failed"), pair("ready", "pending"))).toBe(true);
+    expect(comparisonIsOutdated(held("source_missing"), pair("ready", "ready"))).toBe(true);
+    // The comparing itself failed: only the reviewer asks again.
+    expect(comparisonIsOutdated(held("comparison_failed"), pair("ready", "ready"))).toBe(false);
   });
 });
 

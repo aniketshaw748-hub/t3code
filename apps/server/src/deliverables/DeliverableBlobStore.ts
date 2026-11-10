@@ -5,9 +5,11 @@ import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
+import * as Option from "effect/Option";
 import * as Path from "effect/Path";
 import * as Schema from "effect/Schema";
 import type * as Scope from "effect/Scope";
+import * as Semaphore from "effect/Semaphore";
 import * as Stream from "effect/Stream";
 import * as SecureRandom from "effect/crypto/SecureRandom";
 
@@ -16,7 +18,7 @@ import * as ServerConfig from "../config.ts";
 export class DeliverableBlobStoreError extends Schema.TaggedError<DeliverableBlobStoreError>()(
   "DeliverableBlobStoreError",
   {
-    operation: Schema.Literals(["ingest", "hash", "materialize", "stage", "usage"]),
+    operation: Schema.Literals(["ingest", "hash", "materialize", "stage", "usage", "sweep"]),
     cause: Schema.Defect(),
   },
 ) {
@@ -30,10 +32,18 @@ export interface StoredBlob {
   readonly sizeBytes: number;
 }
 
+/** A file in the store that nothing was said to need, as cleanup lists them. */
+export interface StoredFile {
+  /** Relative to the store root, forward slashes. */
+  readonly path: string;
+  readonly sizeBytes: number;
+  readonly modifiedAt: Date | null;
+}
+
 /**
  * Content-addressed bytes under `<userdata>/deliverables`. Blobs use Git LFS's object layout
- * (`objects/ab/cd/<sha256>`), so `lfs.storage` can point at this directory. Nothing is deleted
- * automatically; `usage` is the hook a retention policy would start from.
+ * (`objects/ab/cd/<sha256>`), so `lfs.storage` can point at this directory. Only
+ * DeliverableStoreCleanup deletes from it, and only while `whileCleaning` keeps writers out.
  */
 export class DeliverableBlobStore extends Context.Service<
   DeliverableBlobStore,
@@ -59,10 +69,36 @@ export class DeliverableBlobStore extends Context.Service<
       { readonly blobCount: number; readonly bytes: number },
       DeliverableBlobStoreError
     >;
+    /**
+     * Runs `effect` while no cleanup is running. Everything that adds to the store goes through
+     * it, from the first byte written to the row that says the bytes are needed.
+     */
+    readonly whileWriting: <A, E, R>(effect: Effect.Effect<A, E, R>) => Effect.Effect<A, E, R>;
+    /** Runs `effect` once every writer has left, and keeps new ones out until it ends. */
+    readonly whileCleaning: <A, E, R>(effect: Effect.Effect<A, E, R>) => Effect.Effect<A, E, R>;
+    /** Every file under one of the store's folders (`objects`, `renditions`, `notes`). */
+    readonly listFiles: (
+      folder: "objects" | "renditions" | "notes",
+    ) => Effect.Effect<ReadonlyArray<StoredFile>, DeliverableBlobStoreError>;
+    /** The rendition folders that exist, whether or not a rendition was ever recorded for them. */
+    readonly listRenditionFolders: Effect.Effect<
+      ReadonlyArray<{ readonly sha256: string; readonly kind: string }>,
+      DeliverableBlobStoreError
+    >;
+    /** Deletes a file or folder by its store-relative path; missing is fine. */
+    readonly remove: (relativePath: string) => Effect.Effect<void, DeliverableBlobStoreError>;
   }
 >()("t3/deliverables/DeliverableBlobStore") {}
 
 const SHA256_PATTERN = /^[0-9a-f]{64}$/;
+/** Writers that may be in the store together; cleanup takes every place at once. */
+const WRITER_PLACES = 64;
+
+/** The content hash a path under `objects` stores, or null for anything else in there. */
+export const blobShaOfPath = (relativePath: string): string | null => {
+  const name = relativePath.slice(relativePath.lastIndexOf("/") + 1);
+  return SHA256_PATTERN.test(name) ? name : null;
+};
 
 const make = Effect.gen(function* () {
   const config = yield* ServerConfig.ServerConfig;
@@ -72,6 +108,9 @@ const make = Effect.gen(function* () {
   const root = path.join(config.stateDir, "deliverables");
   const objectsDir = path.join(root, "objects");
   const scratchRoot = path.join(root, "tmp");
+  const writers = yield* Semaphore.make(WRITER_PLACES);
+  // Scratch folders belong to the process that made them; none of this one's exist yet.
+  yield* fileSystem.remove(scratchRoot, { recursive: true, force: true }).pipe(Effect.ignore);
 
   const blobPath = (sha256: string) => {
     if (!SHA256_PATTERN.test(sha256)) throw new TypeError("Not a sha256 hex digest.");
@@ -154,8 +193,65 @@ const make = Effect.gen(function* () {
     Effect.withSpan("DeliverableBlobStore.usage"),
   );
 
+  const listFiles: DeliverableBlobStore["Service"]["listFiles"] = Effect.fn(
+    "DeliverableBlobStore.listFiles",
+  )(
+    function* (folder) {
+      const directory = path.join(root, folder);
+      if (!(yield* fileSystem.exists(directory))) return [];
+      const files: StoredFile[] = [];
+      for (const entry of yield* fileSystem.readDirectory(directory, { recursive: true })) {
+        const info = yield* fileSystem.stat(path.join(directory, entry));
+        if (info.type !== "File") continue;
+        files.push({
+          path: `${folder}/${entry.split(path.sep).join("/")}`,
+          sizeBytes: Number(info.size),
+          modifiedAt: Option.getOrNull(info.mtime),
+        });
+      }
+      return files;
+    },
+    Effect.mapError((cause) => new DeliverableBlobStoreError({ operation: "sweep", cause })),
+  );
+
+  const listRenditionFolders: DeliverableBlobStore["Service"]["listRenditionFolders"] = Effect.gen(
+    function* () {
+      const directory = path.join(root, "renditions");
+      if (!(yield* fileSystem.exists(directory))) return [];
+      const folders: Array<{ readonly sha256: string; readonly kind: string }> = [];
+      for (const sha256 of yield* fileSystem.readDirectory(directory)) {
+        const kinds = yield* fileSystem.readDirectory(path.join(directory, sha256));
+        // A folder with no kind in it is listed as such, so it can be removed.
+        for (const kind of kinds.length === 0 ? [""] : kinds) folders.push({ sha256, kind });
+      }
+      return folders;
+    },
+  ).pipe(
+    Effect.mapError((cause) => new DeliverableBlobStoreError({ operation: "sweep", cause })),
+    Effect.withSpan("DeliverableBlobStore.listRenditionFolders"),
+  );
+
+  const remove: DeliverableBlobStore["Service"]["remove"] = Effect.fn(
+    "DeliverableBlobStore.remove",
+  )(
+    function* (relativePath) {
+      const target = path.resolve(root, ...relativePath.split("/"));
+      const inside = path.relative(root, target);
+      if (inside === "" || inside.startsWith("..") || path.isAbsolute(inside)) {
+        return yield* Effect.die(new TypeError("Not a path inside the deliverable store."));
+      }
+      yield* fileSystem.remove(target, { recursive: true, force: true });
+    },
+    Effect.mapError((cause) => new DeliverableBlobStoreError({ operation: "sweep", cause })),
+  );
+
   return DeliverableBlobStore.of({
     root,
+    whileWriting: writers.withPermits(1),
+    whileCleaning: writers.withPermits(WRITER_PLACES),
+    listFiles,
+    listRenditionFolders,
+    remove,
     ingest,
     blobPath,
     hash: Effect.fn("DeliverableBlobStore.hash")(

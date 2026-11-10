@@ -30,6 +30,7 @@ const forkTables = [
   "deliverable_renditions",
   "deliverable_restores",
   "deliverable_review_status",
+  "deliverable_version_blobs",
   "deliverable_versions",
   "deliverables",
   "direct_push_devices",

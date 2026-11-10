@@ -194,6 +194,8 @@ export const DeliverableUnitChangeStatus = Schema.Literals([
   "unchanged",
   "added",
   "removed",
+  /** The same slide or shot at another place in the order; `difference` says if it also changed. */
+  "moved",
 ]);
 export type DeliverableUnitChangeStatus = typeof DeliverableUnitChangeStatus.Type;
 
@@ -208,6 +210,25 @@ export const DeliverableUnitChange = Schema.Struct({
 });
 export type DeliverableUnitChange = typeof DeliverableUnitChange.Type;
 
+/** Why two versions have no comparison yet, or cannot have one. */
+export const DeliverableComparisonUnavailableReason = Schema.Literals([
+  "rendering",
+  "render_failed",
+  "source_missing",
+  "comparison_failed",
+]);
+export type DeliverableComparisonUnavailableReason =
+  typeof DeliverableComparisonUnavailableReason.Type;
+
+export const DeliverableComparisonUnavailable = Schema.Struct({
+  reason: DeliverableComparisonUnavailableReason,
+  /** The version that holds it up; null when the comparison itself failed. */
+  versionId: Schema.NullOr(DeliverableVersionId),
+  /** The cause in plain words, ready to show. */
+  message: Schema.String,
+});
+export type DeliverableComparisonUnavailable = typeof DeliverableComparisonUnavailable.Type;
+
 export const DeliverableComparison = Schema.Struct({
   deliverableId: DeliverableId,
   kind: DeliverableKind,
@@ -221,10 +242,13 @@ export const DeliverableComparison = Schema.Struct({
     unchanged: NonNegativeInt,
     added: NonNegativeInt,
     removed: NonNegativeInt,
+    moved: NonNegativeInt,
   }),
   /** The target version's summary from the turn that made it. */
   summary: Schema.NullOr(Schema.String),
   headline: Schema.String,
+  /** Set when the versions could not be compared; `units` is then empty. */
+  unavailable: Schema.NullOr(DeliverableComparisonUnavailable),
 });
 export type DeliverableComparison = typeof DeliverableComparison.Type;
 

@@ -7,12 +7,14 @@ import {
   type EnvironmentThreadShell,
 } from "@t3tools/client-runtime/state/shell";
 import type { EnvironmentThreadStructure } from "@t3tools/client-runtime/state/models";
+import { comparisonIsOutdated } from "@t3tools/client-runtime/work/compare";
 import { agentProgress, type AgentProgress } from "@t3tools/client-runtime/work/notes";
 import type { SpendApprovalTurnItem } from "@t3tools/client-runtime/work/anchors";
 import {
   isListedThreadLineage,
   type DeliverableRendition,
   type DeliverableRenditionStatus,
+  type DeliverableVersion,
   type DeliverableVersionId,
   type EnvironmentId,
   type ProjectId,
@@ -97,6 +99,30 @@ export function useRendition(
     if (stale) refresh();
   }, [stale, refresh]);
   return rendition;
+}
+
+/**
+ * What changed between two versions, asked again when the snapshot shows the answer was overtaken:
+ * the render it was waiting for ended, or a failed one is rendering again.
+ */
+export function useComparison(
+  environmentId: EnvironmentId,
+  base: Pick<DeliverableVersion, "id" | "renditionStatus">,
+  target: Pick<DeliverableVersion, "id" | "renditionStatus">,
+) {
+  const atom = workEnvironment.compare({
+    environmentId,
+    input: { baseVersionId: base.id, targetVersionId: target.id },
+  });
+  const result = useAtomValue(atom);
+  const refresh = useAtomRefresh(atom);
+  const comparison = AsyncResult.getOrElse(result, () => null);
+  const outdated = comparison !== null && comparisonIsOutdated(comparison, [base, target]);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- refetches the server comparison once the live snapshot shows the renditions it was waiting on have moved
+  useEffect(() => {
+    if (outdated) refresh();
+  }, [outdated, refresh]);
+  return { result, comparison };
 }
 
 const NO_THREAD_ATOM = Atom.make<EnvironmentThread | null>(null);

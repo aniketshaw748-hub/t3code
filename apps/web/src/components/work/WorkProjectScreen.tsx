@@ -51,6 +51,7 @@ import { CompareView } from "./CompareView";
 import { DeckCanvas } from "./DeckCanvas";
 import type { Drawing } from "./DrawOverlay";
 import { NotesPanel, type NotesTab } from "./NotesPanel";
+import { RenderFailureBanner } from "./RenderFailureBanner";
 import { SelfCheckBadge } from "./SelfCheckBadge";
 import { StillCanvas } from "./StillCanvas";
 import { StrayFileBanner } from "./StrayFileBanner";
@@ -417,9 +418,7 @@ export function WorkProjectScreen(props: {
       return rendition.status === "pending" || rendition.status === "rendering" ? (
         <CanvasMessage busy title={`Rendering V${viewed.ordinal}…`} />
       ) : (
-        <CanvasMessage title={`V${viewed.ordinal} could not be rendered`}>
-          {rendition.detail}
-        </CanvasMessage>
+        <CanvasMessage title={`No preview of V${viewed.ordinal}`} />
       );
     }
     const shared = {
@@ -568,6 +567,16 @@ export function WorkProjectScreen(props: {
                   retrying={sending}
                   onRetry={retry === null ? null : () => void retry()}
                   onShowChat={() => setTab("chat")}
+                />
+              ) : null}
+              {viewed !== null &&
+              rendition !== null &&
+              (rendition.status === "failed" || rendition.status === "unsupported") ? (
+                <RenderFailureBanner
+                  environmentId={environmentId}
+                  version={viewed}
+                  rendition={rendition}
+                  canOperate={canOperate}
                 />
               ) : null}
               {deliverable !== null && strayOriginal !== null ? (

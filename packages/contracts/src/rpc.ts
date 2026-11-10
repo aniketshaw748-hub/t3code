@@ -606,6 +606,7 @@ export const WS_METHODS = {
   deliverablesRedo: "deliverables.redo",
   deliverablesRestore: "deliverables.restore",
   deliverablesResolveStray: "deliverables.resolveStray",
+  deliverablesRetryRendition: "deliverables.retryRendition",
   deliverableNotesCreate: "deliverableNotes.create",
   deliverableNotesMarkSent: "deliverableNotes.markSent",
   deliverableNotesSetStatus: "deliverableNotes.setStatus",
@@ -2187,6 +2188,12 @@ const WsDeliverablesResolveStrayRpc = Rpc.make(WS_METHODS.deliverablesResolveStr
   error: DeliverableRpcError,
 });
 
+const WsDeliverablesRetryRenditionRpc = Rpc.make(WS_METHODS.deliverablesRetryRendition, {
+  payload: DeliverableVersionRef,
+  success: DeliverableRendition,
+  error: DeliverableRpcError,
+});
+
 const DeliverableNoteRpcError = Schema.Union([DeliverableNoteError, EnvironmentAuthorizationError]);
 
 const WsDeliverableNotesCreateRpc = Rpc.make(WS_METHODS.deliverableNotesCreate, {
@@ -2339,6 +2346,7 @@ export const WsRpcGroup = RpcGroup.make(
   WsDeliverablesRedoRpc,
   WsDeliverablesRestoreRpc,
   WsDeliverablesResolveStrayRpc,
+  WsDeliverablesRetryRenditionRpc,
   WsDeliverableNotesCreateRpc,
   WsDeliverableNotesMarkSentRpc,
   WsDeliverableNotesSetStatusRpc,

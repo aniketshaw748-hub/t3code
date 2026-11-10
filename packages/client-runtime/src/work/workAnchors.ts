@@ -95,6 +95,7 @@ export const UNIT_CHANGE_LABEL: Record<DeliverableUnitChange["status"], string> 
   changed: "Changed",
   added: "Added",
   removed: "Removed",
+  moved: "Moved",
   unchanged: "Unchanged",
 };
 

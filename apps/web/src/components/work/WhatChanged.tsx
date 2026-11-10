@@ -1,4 +1,3 @@
-import { useAtomValue } from "@effect/atom-react";
 import type {
   DeliverableAnchor,
   DeliverableKind,
@@ -9,13 +8,13 @@ import type {
 import { UNIT_CHANGE_LABEL } from "@t3tools/client-runtime/work/anchors";
 import { agentPreviewText } from "@t3tools/shared/agentPreviewText";
 import { formatTimecode } from "@t3tools/shared/deliverableNotes";
-import { AsyncResult } from "effect/reactivity";
 import { ChevronRightIcon, SplitIcon } from "lucide-react";
 
-import { workEnvironment } from "../../state/work";
 import { Badge } from "../ui/badge";
 import { Button } from "../ui/button";
 import { Collapsible, CollapsiblePanel, CollapsibleTrigger } from "../ui/collapsible";
+import { ComparisonNotice } from "./ComparisonNotice";
+import { useComparison } from "./useWorkData";
 
 interface WhatChangedProps {
   readonly environmentId: EnvironmentId;
@@ -68,13 +67,11 @@ export function WhatChanged(props: WhatChangedProps) {
 }
 
 function Comparison(props: WhatChangedProps & { readonly parent: DeliverableVersion }) {
-  const result = useAtomValue(
-    workEnvironment.compare({
-      environmentId: props.environmentId,
-      input: { baseVersionId: props.parent.id, targetVersionId: props.version.id },
-    }),
+  const { result, comparison, retry } = useComparison(
+    props.environmentId,
+    props.parent,
+    props.version,
   );
-  const comparison = AsyncResult.getOrElse(result, () => null);
   const changed = (comparison?.units ?? []).filter((unit) => unit.status !== "unchanged");
   const noun = props.kind === "video" ? "Shot" : props.kind === "pdf" ? "Page" : "Slide";
   return (
@@ -85,6 +82,7 @@ function Comparison(props: WhatChangedProps & { readonly parent: DeliverableVers
           {comparison === null ? "" : ` · ${comparison.headline}`}
         </h2>
         <VersionSummary version={props.version} />
+        <ComparisonNotice result={result} onRetry={retry} />
       </div>
       {changed.length > 0 ? (
         <ul className="-mx-2 flex flex-col gap-0.5">

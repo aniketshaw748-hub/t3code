@@ -1,4 +1,3 @@
-import { useAtomValue } from "@effect/atom-react";
 import {
   changeRegion,
   compareUnitLabel,
@@ -18,8 +17,7 @@ import { View } from "react-native";
 
 import { AppText as Text } from "../../components/ui/AppText";
 import { SegmentedControl } from "../../components/ui/SegmentedControl";
-import { workEnvironment } from "../../state/work";
-import { useRendition } from "./useWorkData";
+import { useComparison, useRendition } from "./useWorkData";
 import { useNoteStatusColors } from "./WorkStatus";
 
 /**
@@ -35,11 +33,10 @@ export function WorkCompareView(props: {
 }) {
   const [which, setWhich] = useState<"changed" | "all">("changed");
   const colors = useNoteStatusColors();
-  const comparison = useAtomValue(
-    workEnvironment.compare({
-      environmentId: props.environmentId,
-      input: { baseVersionId: props.base.id, targetVersionId: props.target.id },
-    }),
+  const { result: comparison, comparison: value } = useComparison(
+    props.environmentId,
+    props.base,
+    props.target,
   );
   const baseRendition = useRendition(
     props.environmentId,
@@ -51,7 +48,6 @@ export function WorkCompareView(props: {
     props.target.id,
     props.target.renditionStatus,
   );
-  const value = AsyncResult.getOrElse(comparison, () => null);
   const changes = value?.units ?? [];
   const shown = which === "all" ? changes : changes.filter((unit) => unit.status !== "unchanged");
   const image = (rendition: DeliverableRendition | null, index: number | null) => {
@@ -73,9 +69,9 @@ export function WorkCompareView(props: {
         {value?.summary ? (
           <Text className="text-sm text-foreground-muted">{value.summary}</Text>
         ) : null}
-        {AsyncResult.isFailure(comparison) ? (
+        {value?.unavailable || AsyncResult.isFailure(comparison) ? (
           <Text className="text-sm text-foreground-muted">
-            These versions can't be compared until both finish rendering.
+            {value?.unavailable?.message ?? "The comparison could not be loaded from the server."}
           </Text>
         ) : null}
       </View>
@@ -88,7 +84,7 @@ export function WorkCompareView(props: {
         selected={which}
         onSelect={setWhich}
       />
-      {value !== null && shown.length === 0 ? (
+      {value !== null && value.unavailable === null && shown.length === 0 ? (
         <View className="rounded-xl border border-dashed border-border px-4 py-8">
           <Text className="text-center text-sm text-foreground-muted">
             Nothing visible changed between these versions.

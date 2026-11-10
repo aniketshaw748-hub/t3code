@@ -32,24 +32,27 @@ export class DeliverableRenderUnsupportedError extends Schema.TaggedError<Delive
   }
 }
 
+/** What the renderer was doing at each stage, in words a reviewer reads. */
+const STAGE_WORK = {
+  probe: "reading the file",
+  scenes: "finding the shots",
+  frames: "making the preview images",
+  proxy: "making the preview video",
+  slides: "exporting the slides",
+  structure: "reading the deck's contents",
+  signature: "sampling it for comparison",
+  pixels: "reading an image",
+} as const;
+
 export class DeliverableRenderError extends Schema.TaggedError<DeliverableRenderError>()(
   "DeliverableRenderError",
   {
-    stage: Schema.Literals([
-      "probe",
-      "scenes",
-      "frames",
-      "proxy",
-      "slides",
-      "structure",
-      "signature",
-      "pixels",
-    ]),
+    stage: Schema.Literals(Object.keys(STAGE_WORK) as Array<keyof typeof STAGE_WORK>),
     cause: Schema.Defect(),
   },
 ) {
   override get message(): string {
-    return `Rendering failed while extracting ${this.stage}.`;
+    return `Rendering stopped while ${STAGE_WORK[this.stage]}.`;
   }
 }
 
@@ -62,9 +65,16 @@ export const RenderedUnit = Schema.Struct({
   /** File names inside the rendition directory. */
   image: Schema.NullOr(Schema.String),
   thumb: Schema.NullOr(Schema.String),
-  /** An OUTLINE_GRID² RGB file for lining units up, or a structural hash when nothing was rendered. */
+  /** A `grid`² RGB file for lining units up, or a structural hash when nothing was rendered. */
   signature: Schema.NullOr(
-    Schema.Union([Schema.Struct({ file: Schema.String }), Schema.Struct({ hash: Schema.String })]),
+    Schema.Union([
+      Schema.Struct({
+        file: Schema.String,
+        /** Missing on renditions made when the grid was 32 a side; those are redone before use. */
+        grid: Schema.optional(Schema.Number),
+      }),
+      Schema.Struct({ hash: Schema.String }),
+    ]),
   ),
 });
 export type RenderedUnit = typeof RenderedUnit.Type;
@@ -110,6 +120,11 @@ export class DeliverableRenderers extends Context.Service<
       readonly outDir: string;
       readonly durationSeconds: number;
     }) => Effect.Effect<SampledFrames, DeliverableRenderUnsupportedError | DeliverableRenderError>;
+    /** Reduces a rendered image to its outline on the current grid, written to `outlinePath`. */
+    readonly outlineImage: (input: {
+      readonly imagePath: string;
+      readonly outlinePath: string;
+    }) => Effect.Effect<void, DeliverableRenderUnsupportedError | DeliverableRenderError>;
     /** A rendered image's pixels, decoded by way of `scratchPath`. */
     readonly readImage: (input: {
       readonly imagePath: string;
@@ -231,6 +246,23 @@ const make = Effect.gen(function* () {
   const scaleFilter = (width: number) => `scale='min(${width},iw)':-2:flags=lanczos`;
   const gridFilter = (grid: number) => `scale=${grid}:${grid}:flags=area,format=rgb24`;
 
+  const outlineImage: DeliverableRenderers["Service"]["outlineImage"] = Effect.fn(
+    "DeliverableRenderers.outlineImage",
+  )(function* (input) {
+    yield* requireFfmpeg;
+    yield* ffmpeg("signature", [
+      "-v",
+      "error",
+      "-i",
+      input.imagePath,
+      "-vf",
+      gridFilter(OUTLINE_GRID),
+      "-f",
+      "rawvideo",
+      input.outlinePath,
+    ]);
+  });
+
   /** A still image's display copy, thumbnail and pixel signature. */
   const stillUnit = Effect.fn("DeliverableRenderers.stillUnit")(function* (
     source: string,
@@ -264,18 +296,8 @@ const make = Effect.gen(function* () {
       "4",
       path.join(outDir, thumb),
     ]);
-    yield* ffmpeg("signature", [
-      "-v",
-      "error",
-      "-i",
-      source,
-      "-vf",
-      gridFilter(OUTLINE_GRID),
-      "-f",
-      "rawvideo",
-      path.join(outDir, signature),
-    ]);
-    return { image, thumb, signature: { file: signature } } as const;
+    yield* outlineImage({ imagePath: source, outlinePath: path.join(outDir, signature) });
+    return { image, thumb, signature: { file: signature, grid: OUTLINE_GRID } } as const;
   });
 
   const sampleFrames: DeliverableRenderers["Service"]["sampleFrames"] = Effect.fn(
@@ -692,6 +714,7 @@ const make = Effect.gen(function* () {
       }
     }),
     sampleFrames,
+    outlineImage,
     readImage,
   });
 });

@@ -70,8 +70,12 @@ export const changedWhereRequested: SelfCheck = {
         findings: ["This is the first version; there is nothing to compare."],
       };
     }
+    if (comparison.unavailable !== null) {
+      return { status: "skipped", findings: [comparison.unavailable.message] };
+    }
     const changed = comparison.units.filter(
-      (change) => change.status === "changed" || change.status === "added",
+      (change) =>
+        change.status === "changed" || change.status === "added" || change.status === "moved",
     );
     const findings: string[] = [];
     for (const expected of expectedChanges) {

@@ -1,9 +1,9 @@
-import type { DeliverableRegion, DeliverableUnitChange } from "@t3tools/contracts";
+import type { DeliverableRegion } from "@t3tools/contracts";
 
 /** Side of the square RGB grid each sampled video frame is reduced to. */
 export const VIDEO_GRID = 128;
 /** Side of the grid a slide, page or image keeps for lining units up, never for the verdict. */
-export const OUTLINE_GRID = 32;
+export const OUTLINE_GRID = 96;
 
 /**
  * A pixel counts as changed when a channel lies this far (0-255) outside what the other version
@@ -29,9 +29,8 @@ const SHIFTS: ReadonlyArray<readonly [number, number]> = [
 ];
 /** Room kept around a change, as a fraction of the frame's width and height. */
 const REGION_MARGIN = 0.025;
-/** An outline cell differs past this step in any channel (0-255). */
-const OUTLINE_THRESHOLD = 24;
-const GAP_COST = 0.5;
+/** An outline cell differs past this step in any channel (0-255); rendering noise stays under it. */
+const OUTLINE_THRESHOLD = 12;
 
 /** RGB pixels, row by row: a slide at display size, or one video frame on its grid. */
 export interface Raster {
@@ -318,7 +317,7 @@ export function rasterDifference(a: Raster, b: Raster, tolerance: RasterToleranc
 }
 
 /** Fraction of outline cells that differ: rough, and only good for telling units apart. */
-function outlineDifference(a: Uint8Array, b: Uint8Array): number {
+export function outlineDifference(a: Uint8Array, b: Uint8Array): number {
   const cells = OUTLINE_GRID * OUTLINE_GRID;
   if (a.length !== cells * 3 || b.length !== cells * 3) return 1;
   let differing = 0;
@@ -344,185 +343,10 @@ export function unmeasuredDifference(a: UnitSignature, b: UnitSignature): UnitDi
   return { difference: Math.max(rough, 1 / (OUTLINE_GRID * OUTLINE_GRID)), region: null };
 }
 
-/** What two units cost to pair up while aligning: 0 alike .. 1 nothing in common. */
-function pairingCost(a: UnitSignature, b: UnitSignature): number {
-  if (a.type === "pixels" && b.type === "pixels") return outlineDifference(a.outline, b.outline);
-  if (a.type === "hash" && b.type === "hash") return a.value === b.value ? 0 : 1;
-  return 1;
-}
-
-export interface AlignedPair {
-  readonly baseIndex: number | null;
-  readonly targetIndex: number | null;
-}
-
-/**
- * Aligns two ordered unit lists so inserted or deleted slides line up instead of shifting every
- * later slide into "changed". Matching costs the difference; skipping a unit costs a fixed gap.
- */
-export function alignUnits(
-  baseCount: number,
-  targetCount: number,
-  difference: (baseIndex: number, targetIndex: number) => number,
-): ReadonlyArray<AlignedPair> {
-  const width = targetCount + 1;
-  const cost = new Float64Array((baseCount + 1) * width);
-  for (let i = 1; i <= baseCount; i++) cost[i * width] = i * GAP_COST;
-  for (let j = 1; j <= targetCount; j++) cost[j] = j * GAP_COST;
-  for (let i = 1; i <= baseCount; i++) {
-    for (let j = 1; j <= targetCount; j++) {
-      cost[i * width + j] = Math.min(
-        cost[(i - 1) * width + (j - 1)]! + difference(i - 1, j - 1),
-        cost[(i - 1) * width + j]! + GAP_COST,
-        cost[i * width + (j - 1)]! + GAP_COST,
-      );
-    }
-  }
-  const pairs: AlignedPair[] = [];
-  let i = baseCount;
-  let j = targetCount;
-  while (i > 0 || j > 0) {
-    const here = cost[i * width + j]!;
-    if (i > 0 && j > 0 && here === cost[(i - 1) * width + (j - 1)]! + difference(i - 1, j - 1)) {
-      pairs.push({ baseIndex: i - 1, targetIndex: j - 1 });
-      i--;
-      j--;
-    } else if (i > 0 && here === cost[(i - 1) * width + j]! + GAP_COST) {
-      pairs.push({ baseIndex: i - 1, targetIndex: null });
-      i--;
-    } else {
-      pairs.push({ baseIndex: null, targetIndex: j - 1 });
-      j--;
-    }
-  }
-  return pairs.reverse();
-}
-
-/** Which slide (or page) of one version is which of the other, going by their signatures. */
-export function alignSequences(
-  base: ReadonlyArray<UnitSignature>,
-  target: ReadonlyArray<UnitSignature>,
-): ReadonlyArray<AlignedPair> {
-  const memo = new Map<number, number>();
-  return alignUnits(base.length, target.length, (i, j) => {
-    const key = i * (target.length + 1) + j;
-    let cost = memo.get(key);
-    if (cost === undefined) {
-      cost = pairingCost(base[i]!, target[j]!);
-      memo.set(key, cost);
-    }
-    return cost;
-  });
-}
-
-/** An aligned pair with what changed inside it; the difference of a one-sided pair is unused. */
-export interface MeasuredPair extends AlignedPair {
-  readonly difference: UnitDifference;
-}
-
-/** Per-slide (or per-page) changes, from aligned pairs that have each been measured. */
-export function sequenceChanges(
-  pairs: ReadonlyArray<MeasuredPair>,
-): ReadonlyArray<DeliverableUnitChange> {
-  return pairs.map(({ baseIndex, targetIndex, difference: measured }): DeliverableUnitChange => {
-    if (baseIndex === null) {
-      return {
-        status: "added",
-        baseIndex: null,
-        targetIndex,
-        difference: 1,
-        anchor: { kind: "slide", index: targetIndex! },
-      };
-    }
-    if (targetIndex === null) {
-      return {
-        status: "removed",
-        baseIndex,
-        targetIndex: null,
-        difference: 1,
-        anchor: { kind: "slide", index: baseIndex },
-      };
-    }
-    const { difference, region } = measured;
-    const changed = difference > 0;
-    return {
-      status: changed ? "changed" : "unchanged",
-      baseIndex,
-      targetIndex,
-      difference,
-      anchor: changed
-        ? { kind: "slide", index: targetIndex, ...(region === null ? {} : { region }) }
-        : null,
-    };
-  });
-}
-
-/** Changes between two unit lists when pixels cannot settle it: a unit matches or it does not. */
-export function compareHashes(
-  base: ReadonlyArray<UnitSignature>,
-  target: ReadonlyArray<UnitSignature>,
-): ReadonlyArray<DeliverableUnitChange> {
-  return sequenceChanges(
-    alignSequences(base, target).map((pair) => ({
-      ...pair,
-      difference:
-        pair.baseIndex !== null &&
-        pair.targetIndex !== null &&
-        pairingCost(base[pair.baseIndex]!, target[pair.targetIndex]!) === 0
-          ? SAME
-          : { difference: 1, region: null },
-    })),
-  );
-}
-
-export interface TimelineShot {
-  readonly index: number;
-  readonly start: number;
-  readonly end: number;
-}
-
-export interface Timeline {
-  readonly duration: number;
-  readonly shots: ReadonlyArray<TimelineShot>;
-  /** Frames sampled at a fixed rate, in time order. */
-  readonly samples: ReadonlyArray<{ readonly t: number; readonly frame: Raster }>;
-}
-
-/** Splits a file of back-to-back `grid` x `grid` RGB frames sampled at `fps` into timed samples. */
-export function samplesFromBytes(
-  bytes: Uint8Array,
-  fps: number,
-  grid: number,
-): Timeline["samples"] {
-  const size = grid * grid * 3;
-  const samples: Array<Timeline["samples"][number]> = [];
-  for (let offset = 0; offset + size <= bytes.length; offset += size) {
-    samples.push({
-      t: offset / size / fps,
-      frame: { width: grid, height: grid, data: bytes.subarray(offset, offset + size) },
-    });
-  }
-  return samples;
-}
-
-const EDGE_EPSILON = 0.05;
-
-function nearestSample(timeline: Timeline, t: number) {
-  const { samples } = timeline;
-  let low = 0;
-  let high = samples.length - 1;
-  while (low < high) {
-    const mid = (low + high) >> 1;
-    if (samples[mid]!.t < t) low = mid + 1;
-    else high = mid;
-  }
-  const after = samples[low];
-  const before = samples[low - 1];
-  if (before !== undefined && (after === undefined || t - before.t <= after.t - t)) return before;
-  return after;
-}
-
-const unionRegion = (a: DeliverableRegion | null, b: DeliverableRegion | null) => {
+export const unionRegion = (
+  a: DeliverableRegion | null,
+  b: DeliverableRegion | null,
+): DeliverableRegion | null => {
   if (a === null) return b;
   if (b === null) return a;
   const x = Math.min(a.x, b.x);
@@ -534,79 +358,3 @@ const unionRegion = (a: DeliverableRegion | null, b: DeliverableRegion | null) =
     h: Math.max(a.y + a.h, b.y + b.h) - y,
   };
 };
-
-/**
- * What changed in one shot of `target`, against whatever `base` shows at the same times. A shot
- * past the base's end is added.
- */
-export function shotChange(
-  base: Timeline,
-  target: Timeline,
-  shot: TimelineShot,
-): DeliverableUnitChange {
-  if (shot.start >= base.duration - EDGE_EPSILON) {
-    return {
-      status: "added",
-      baseIndex: null,
-      targetIndex: shot.index,
-      difference: 1,
-      anchor: { kind: "time", t: shot.start, tEnd: shot.end },
-    };
-  }
-  const end = Math.min(shot.end, base.duration);
-  const middle = (shot.start + end) / 2;
-  let inside = target.samples.filter((sample) => sample.t >= shot.start && sample.t < end);
-  if (inside.length === 0) {
-    const nearest = nearestSample(target, middle);
-    inside = nearest === undefined ? [] : [nearest];
-  }
-  let difference = 0;
-  let region: DeliverableRegion | null = null;
-  for (const sample of inside) {
-    const counterpart = nearestSample(base, sample.t);
-    const found =
-      counterpart === undefined
-        ? { difference: 1, region: null }
-        : rasterDifference(counterpart.frame, sample.frame, VIDEO_TOLERANCE);
-    region = unionRegion(region, found.region);
-    difference = Math.max(difference, found.difference);
-  }
-  const changed = difference > 0;
-  return {
-    status: changed ? "changed" : "unchanged",
-    baseIndex:
-      base.shots.find((other) => middle >= other.start && middle < other.end)?.index ?? null,
-    targetIndex: shot.index,
-    difference,
-    anchor: changed
-      ? { kind: "time", t: shot.start, tEnd: shot.end, ...(region === null ? {} : { region }) }
-      : null,
-  };
-}
-
-/** Shots of `base` that start after `target` has ended. */
-export function removedShots(
-  base: Timeline,
-  target: Timeline,
-): ReadonlyArray<DeliverableUnitChange> {
-  return base.shots
-    .filter((shot) => shot.start >= target.duration - EDGE_EPSILON)
-    .map((shot) => ({
-      status: "removed",
-      baseIndex: shot.index,
-      targetIndex: null,
-      difference: 1,
-      anchor: { kind: "time", t: shot.start, tEnd: shot.end },
-    }));
-}
-
-/** Per-shot changes between two videos aligned by timestamp. */
-export function compareTimelines(
-  base: Timeline,
-  target: Timeline,
-): ReadonlyArray<DeliverableUnitChange> {
-  return [
-    ...target.shots.map((shot) => shotChange(base, target, shot)),
-    ...removedShots(base, target),
-  ];
-}

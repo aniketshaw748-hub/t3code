@@ -1,4 +1,5 @@
-import type { Raster, TimelineShot } from "./perceptualDiff.ts";
+import type { Raster } from "./perceptualDiff.ts";
+import type { TimelineShot } from "./timelineDiff.ts";
 
 /** Cut times ffmpeg's `showinfo` printed for frames the scene filter selected. */
 export function parseSceneCuts(stderr: string): ReadonlyArray<number> {
