@@ -74,7 +74,24 @@ export interface NewDeliverableVersion {
   readonly version: StoredDeliverableVersion;
   /** Moves the deliverable's current pointer to the new version in the same transaction. */
   readonly updatedAt: DateTime.Utc;
+  /** Content hashes of every stored file the version's snapshot points at. */
+  readonly blobs: ReadonlyArray<string>;
 }
+
+/** What the deliverable store must keep: everything else in it is left over. */
+export interface StoreReferences {
+  /** Content hashes of stored files that a version, its snapshot or a note still points at. */
+  readonly blobs: ReadonlySet<string>;
+  /** `renditionKey` of every rendition some version shows. */
+  readonly renditions: ReadonlySet<string>;
+  /** Store-relative paths of note snapshots. */
+  readonly noteSnapshots: ReadonlySet<string>;
+}
+
+export const renditionKey = (content: {
+  readonly contentSha256: string;
+  readonly kind: DeliverableKind;
+}) => `${content.contentSha256}:${content.kind}`;
 
 export class DeliverableRepository extends Context.Service<
   DeliverableRepository,
@@ -106,10 +123,15 @@ export class DeliverableRepository extends Context.Service<
       readonly deliverableId: DeliverableId;
       readonly strayVersionOf: DeliverableId | null;
     }) => Effect.Effect<void, DeliverableRepositoryError>;
-    /** Removes a deliverable with its versions, restores and review status; notes go first. */
+    /**
+     * Removes a deliverable with its versions, notes, restores and review status in one step, and
+     * returns the Git refs its versions were kept under. What it stored is left for cleanup.
+     */
     readonly deleteDeliverable: (
       deliverableId: DeliverableId,
-    ) => Effect.Effect<void, DeliverableRepositoryError>;
+    ) => Effect.Effect<ReadonlyArray<string>, DeliverableRepositoryError>;
+    /** Every project that has deliverables, whether or not the project still exists. */
+    readonly listProjects: Effect.Effect<ReadonlyArray<ProjectId>, DeliverableRepositoryError>;
     readonly listVersions: (
       deliverableId: DeliverableId,
     ) => Effect.Effect<ReadonlyArray<StoredDeliverableVersion>, DeliverableRepositoryError>;
@@ -119,8 +141,11 @@ export class DeliverableRepository extends Context.Service<
     readonly insertVersion: (
       input: NewDeliverableVersion,
     ) => Effect.Effect<void, DeliverableRepositoryError>;
-    /** Versions whose content has no finished rendition, oldest first. */
-    readonly listUnrendered: Effect.Effect<
+    /**
+     * Versions with work left for the render queue, oldest first: content with no finished
+     * rendition, or expected changes that have no self-check yet.
+     */
+    readonly listUnfinished: Effect.Effect<
       ReadonlyArray<DeliverableVersionId>,
       DeliverableRepositoryError
     >;
@@ -136,9 +161,10 @@ export class DeliverableRepository extends Context.Service<
       }>,
       DeliverableRepositoryError
     >;
+    /** Records a version's self-check, or clears it with null so it runs again. */
     readonly setSelfCheck: (input: {
       readonly versionId: DeliverableVersionId;
-      readonly result: DeliverableSelfCheckResult;
+      readonly result: DeliverableSelfCheckResult | null;
     }) => Effect.Effect<void, DeliverableRepositoryError>;
     readonly getRendition: (input: {
       readonly contentSha256: string;
@@ -147,6 +173,36 @@ export class DeliverableRepository extends Context.Service<
     readonly putRendition: (
       rendition: StoredRendition,
     ) => Effect.Effect<void, DeliverableRepositoryError>;
+    readonly listRenditions: Effect.Effect<
+      ReadonlyArray<StoredRendition>,
+      DeliverableRepositoryError
+    >;
+    readonly deleteRendition: (input: {
+      readonly contentSha256: string;
+      readonly kind: DeliverableKind;
+    }) => Effect.Effect<void, DeliverableRepositoryError>;
+    /**
+     * Puts renditions a process left mid-render back in line: nothing is rendering when a server
+     * starts. Returns how many there were.
+     */
+    readonly requeueInterruptedRenditions: Effect.Effect<number, DeliverableRepositoryError>;
+    readonly storeReferences: Effect.Effect<StoreReferences, DeliverableRepositoryError>;
+    /** Versions recorded before snapshots listed their stored files, with where to read them. */
+    readonly listVersionsWithoutBlobs: Effect.Effect<
+      ReadonlyArray<{
+        readonly versionId: DeliverableVersionId;
+        readonly projectId: ProjectId;
+        readonly commitOid: string;
+        readonly contentSha256: string;
+      }>,
+      DeliverableRepositoryError
+    >;
+    readonly recordVersionBlobs: (input: {
+      readonly versionId: DeliverableVersionId;
+      readonly blobs: ReadonlyArray<string>;
+    }) => Effect.Effect<void, DeliverableRepositoryError>;
+    /** Forgets which Git blobs held this content, so the bytes are stored afresh if seen again. */
+    readonly forgetBlob: (contentSha256: string) => Effect.Effect<void, DeliverableRepositoryError>;
     /** Content hashes already stored for these Git blob ids. */
     readonly lookupBlobs: (
       gitBlobOids: ReadonlyArray<string>,
@@ -237,10 +293,14 @@ const make = Effect.gen(function* () {
     `,
   });
 
-  const findRendition = SqlSchema.findOneOption({
-    Request: Schema.Struct({ contentSha256: Schema.String, kind: DeliverableKind }),
+  const findRenditions = SqlSchema.findAll({
+    Request: Schema.Struct({
+      content: Schema.optional(
+        Schema.Struct({ contentSha256: Schema.String, kind: DeliverableKind }),
+      ),
+    }),
     Result: RenditionRow,
-    execute: ({ contentSha256, kind }) => sql`
+    execute: ({ content }) => sql`
       SELECT
         content_sha256 AS "contentSha256",
         kind,
@@ -250,9 +310,25 @@ const make = Effect.gen(function* () {
         rendition_json AS "data",
         updated_at AS "updatedAt"
       FROM deliverable_renditions
-      WHERE content_sha256 = ${contentSha256} AND kind = ${kind}
+      WHERE ${sql.and(
+        content === undefined
+          ? []
+          : [sql`content_sha256 = ${content.contentSha256}`, sql`kind = ${content.kind}`],
+      )}
+      ORDER BY content_sha256 ASC, kind ASC
     `,
   });
+
+  const insertVersionBlobs = (versionId: DeliverableVersionId, blobs: ReadonlyArray<string>) =>
+    Effect.forEach(
+      new Set(blobs),
+      (contentSha256) => sql`
+        INSERT INTO deliverable_version_blobs (version_id, content_sha256)
+        VALUES (${versionId}, ${contentSha256})
+        ON CONFLICT (version_id, content_sha256) DO NOTHING
+      `,
+      { discard: true },
+    );
 
   const encodeVersion = Schema.encodeEffect(VersionRow);
   const encodeDeliverable = Schema.encodeEffect(DeliverableRow);
@@ -336,14 +412,37 @@ const make = Effect.gen(function* () {
     ),
     deleteDeliverable: Effect.fn("DeliverableRepository.deleteDeliverable")(
       function* (deliverableId) {
-        yield* Effect.gen(function* () {
+        return yield* Effect.gen(function* () {
+          const refs = yield* sql<{ readonly ref: string }>`
+            SELECT version_ref AS "ref" FROM deliverable_versions
+            WHERE deliverable_id = ${deliverableId}
+          `;
+          yield* sql`DELETE FROM deliverable_notes WHERE deliverable_id = ${deliverableId}`;
           yield* sql`DELETE FROM deliverable_review_status WHERE deliverable_id = ${deliverableId}`;
           yield* sql`DELETE FROM deliverable_restores WHERE deliverable_id = ${deliverableId}`;
+          yield* sql`
+            DELETE FROM deliverable_version_blobs WHERE version_id IN (
+              SELECT version_id FROM deliverable_versions WHERE deliverable_id = ${deliverableId}
+            )
+          `;
           yield* sql`DELETE FROM deliverable_versions WHERE deliverable_id = ${deliverableId}`;
+          yield* sql`
+            UPDATE deliverables SET stray_version_of = NULL
+            WHERE stray_version_of = ${deliverableId}
+          `;
           yield* sql`DELETE FROM deliverables WHERE deliverable_id = ${deliverableId}`;
+          return refs.map((row) => row.ref);
         }).pipe(sql.withTransaction);
       },
       Effect.mapError(sqlError("deleteDeliverable")),
+    ),
+    listProjects: sql<{ readonly projectId: ProjectId }>`
+      SELECT DISTINCT project_id AS "projectId" FROM deliverables ORDER BY project_id ASC
+    `.pipe(
+      NodeSqliteClient.readOnly,
+      Effect.map((rows) => rows.map((row) => row.projectId)),
+      Effect.mapError(sqlError("listProjects")),
+      Effect.withSpan("DeliverableRepository.listProjects"),
     ),
     listVersions: Effect.fn("DeliverableRepository.listVersions")(function* (deliverableId) {
       return yield* findVersions({ deliverableId }).pipe(
@@ -376,6 +475,7 @@ const make = Effect.gen(function* () {
             ${row.createdAt}
           )
         `;
+          yield* insertVersionBlobs(input.version.id, [row.contentSha256, ...input.blobs]);
           yield* sql`
           UPDATE deliverables
           SET current_version_id = ${row.id}, updated_at = ${updatedAt}
@@ -385,19 +485,21 @@ const make = Effect.gen(function* () {
       },
       Effect.mapError(sqlError("insertVersion")),
     ),
-    listUnrendered: sql<{ readonly id: DeliverableVersionId }>`
+    listUnfinished: sql<{ readonly id: DeliverableVersionId }>`
       SELECT v.version_id AS "id"
       FROM deliverable_versions v
       JOIN deliverables d ON d.deliverable_id = v.deliverable_id
       LEFT JOIN deliverable_renditions r
         ON r.content_sha256 = v.content_sha256 AND r.kind = d.kind
-      WHERE r.status IS NULL OR r.status IN ('pending', 'rendering')
+      WHERE r.status IS NULL
+        OR r.status IN ('pending', 'rendering')
+        OR (v.self_check_json IS NULL AND v.expected_changes_json <> '[]')
       ORDER BY v.created_at ASC
     `.pipe(
       NodeSqliteClient.readOnly,
       Effect.map((rows) => rows.map((row) => row.id)),
-      Effect.mapError(sqlError("listUnrendered")),
-      Effect.withSpan("DeliverableRepository.listUnrendered"),
+      Effect.mapError(sqlError("listUnfinished")),
+      Effect.withSpan("DeliverableRepository.listUnfinished"),
     ),
     listRestoresSince: Effect.fn("DeliverableRepository.listRestoresSince")(
       function* (input) {
@@ -419,7 +521,7 @@ const make = Effect.gen(function* () {
     ),
     setSelfCheck: Effect.fn("DeliverableRepository.setSelfCheck")(
       function* (input) {
-        const encoded = yield* encodeSelfCheck(input.result);
+        const encoded = input.result === null ? null : yield* encodeSelfCheck(input.result);
         yield* sql`
         UPDATE deliverable_versions SET self_check_json = ${encoded}
         WHERE version_id = ${input.versionId}
@@ -428,11 +530,102 @@ const make = Effect.gen(function* () {
       Effect.mapError(sqlError("setSelfCheck")),
     ),
     getRendition: Effect.fn("DeliverableRepository.getRendition")(function* (input) {
-      return yield* findRendition(input).pipe(
-        NodeSqliteClient.readOnly,
-        Effect.mapError(sqlError("getRendition")),
+      return first(
+        yield* findRenditions({ content: input }).pipe(
+          NodeSqliteClient.readOnly,
+          Effect.mapError(sqlError("getRendition")),
+        ),
       );
     }),
+    listRenditions: findRenditions({}).pipe(
+      NodeSqliteClient.readOnly,
+      Effect.mapError(sqlError("listRenditions")),
+      Effect.withSpan("DeliverableRepository.listRenditions"),
+    ),
+    deleteRendition: Effect.fn("DeliverableRepository.deleteRendition")(
+      function* (input) {
+        yield* sql`
+          DELETE FROM deliverable_renditions
+          WHERE content_sha256 = ${input.contentSha256} AND kind = ${input.kind}
+        `;
+      },
+      Effect.mapError(sqlError("deleteRendition")),
+    ),
+    requeueInterruptedRenditions: sql<{ readonly sha: string }>`
+      UPDATE deliverable_renditions SET status = 'pending', detail = NULL
+      WHERE status = 'rendering'
+      RETURNING content_sha256 AS "sha"
+    `.pipe(
+      Effect.map((rows) => rows.length),
+      Effect.mapError(sqlError("requeueInterruptedRenditions")),
+      Effect.withSpan("DeliverableRepository.requeueInterruptedRenditions"),
+    ),
+    storeReferences: Effect.gen(function* () {
+      const blobs = yield* sql<{ readonly sha: string }>`
+        SELECT content_sha256 AS "sha" FROM deliverable_versions
+        UNION
+        SELECT content_sha256 AS "sha" FROM deliverable_version_blobs
+      `;
+      const renditions = yield* sql<{ readonly sha: string; readonly kind: DeliverableKind }>`
+        SELECT DISTINCT v.content_sha256 AS "sha", d.kind AS "kind"
+        FROM deliverable_versions v
+        JOIN deliverables d ON d.deliverable_id = v.deliverable_id
+      `;
+      const snapshots = yield* sql<{ readonly path: string }>`
+        SELECT snapshot_path AS "path" FROM deliverable_notes WHERE snapshot_path IS NOT NULL
+      `;
+      // A note's picture is a stored file like any other; older ones sit in their own folder.
+      const pictures = snapshots.flatMap((row) => {
+        const sha = /^objects\/[0-9a-f]{2}\/[0-9a-f]{2}\/([0-9a-f]{64})$/.exec(row.path)?.[1];
+        return sha === undefined ? [] : [sha];
+      });
+      return {
+        blobs: new Set([...blobs.map((row) => row.sha), ...pictures]),
+        renditions: new Set(
+          renditions.map((row) => renditionKey({ contentSha256: row.sha, kind: row.kind })),
+        ),
+        noteSnapshots: new Set(snapshots.map((row) => row.path)),
+      } satisfies StoreReferences;
+    }).pipe(
+      // One read of all three, so a note or version added meanwhile is in none or in all.
+      sql.withTransaction,
+      Effect.mapError(sqlError("storeReferences")),
+      Effect.withSpan("DeliverableRepository.storeReferences"),
+    ),
+    listVersionsWithoutBlobs: sql<{
+      readonly versionId: DeliverableVersionId;
+      readonly projectId: ProjectId;
+      readonly commitOid: string;
+      readonly contentSha256: string;
+    }>`
+      SELECT
+        v.version_id AS "versionId",
+        d.project_id AS "projectId",
+        v.commit_oid AS "commitOid",
+        v.content_sha256 AS "contentSha256"
+      FROM deliverable_versions v
+      JOIN deliverables d ON d.deliverable_id = v.deliverable_id
+      WHERE NOT EXISTS (
+        SELECT 1 FROM deliverable_version_blobs b WHERE b.version_id = v.version_id
+      )
+      ORDER BY v.created_at ASC
+    `.pipe(
+      NodeSqliteClient.readOnly,
+      Effect.mapError(sqlError("listVersionsWithoutBlobs")),
+      Effect.withSpan("DeliverableRepository.listVersionsWithoutBlobs"),
+    ),
+    recordVersionBlobs: Effect.fn("DeliverableRepository.recordVersionBlobs")(
+      function* (input) {
+        yield* insertVersionBlobs(input.versionId, input.blobs).pipe(sql.withTransaction);
+      },
+      Effect.mapError(sqlError("recordVersionBlobs")),
+    ),
+    forgetBlob: Effect.fn("DeliverableRepository.forgetBlob")(
+      function* (contentSha256) {
+        yield* sql`DELETE FROM deliverable_blob_index WHERE content_sha256 = ${contentSha256}`;
+      },
+      Effect.mapError(sqlError("forgetBlob")),
+    ),
     putRendition: Effect.fn("DeliverableRepository.putRendition")(
       function* (input) {
         const row = yield* encodeRendition(input);

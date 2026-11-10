@@ -1,4 +1,3 @@
-import { useAtomValue } from "@effect/atom-react";
 import type {
   DeliverableKind,
   DeliverableRegion,
@@ -11,16 +10,15 @@ import {
   compareUnitLabel,
   UNIT_CHANGE_LABEL,
 } from "@t3tools/client-runtime/work/anchors";
-import { AsyncResult } from "effect/reactivity";
 import { useState } from "react";
 
-import { workEnvironment } from "../../state/work";
 import { Badge } from "../ui/badge";
 import { InlineButton } from "../ui/button";
 import { Toggle, ToggleGroup } from "../ui/toggle-group";
+import { ComparisonNotice } from "./ComparisonNotice";
 import { MediaStage } from "./MediaStage";
 import { RegionOutline } from "./RegionOutline";
-import { useRendition } from "./useWorkData";
+import { useComparison, useRendition } from "./useWorkData";
 
 type CompareLayout = "side" | "overlay";
 
@@ -35,12 +33,11 @@ export function CompareView(props: {
 }) {
   const [layout, setLayout] = useState<CompareLayout>("side");
   const [showUnchanged, setShowUnchanged] = useState(false);
-  const comparison = useAtomValue(
-    workEnvironment.compare({
-      environmentId: props.environmentId,
-      input: { baseVersionId: props.base.id, targetVersionId: props.target.id },
-    }),
-  );
+  const {
+    result,
+    comparison: value,
+    retry,
+  } = useComparison(props.environmentId, props.base, props.target);
   const baseRendition = useRendition(
     props.environmentId,
     props.base.id,
@@ -51,7 +48,6 @@ export function CompareView(props: {
     props.target.id,
     props.target.renditionStatus,
   );
-  const value = AsyncResult.getOrElse(comparison, () => null);
   const changes = value?.units ?? [];
   const shown = showUnchanged ? changes : changes.filter((unit) => unit.status !== "unchanged");
   const image = (rendition: DeliverableRendition | null, index: number | null) => {
@@ -70,11 +66,7 @@ export function CompareView(props: {
           {value?.summary ? (
             <p className="max-w-2xl text-sm text-muted-foreground">{value.summary}</p>
           ) : null}
-          {AsyncResult.isFailure(comparison) ? (
-            <p className="text-sm text-muted-foreground">
-              These versions can't be compared until both finish rendering.
-            </p>
-          ) : null}
+          <ComparisonNotice result={result} onRetry={retry} />
         </div>
         <div className="flex items-center gap-2">
           <ToggleGroup
@@ -98,7 +90,7 @@ export function CompareView(props: {
         </div>
       </div>
       <ol className="flex min-h-0 flex-1 flex-col gap-5 overflow-y-auto">
-        {value !== null && shown.length === 0 ? (
+        {value !== null && value.unavailable === null && shown.length === 0 ? (
           <li className="rounded-xl border border-dashed border-border px-4 py-10 text-center text-sm text-muted-foreground">
             Nothing visible changed between these versions.
           </li>
@@ -111,7 +103,10 @@ export function CompareView(props: {
             <li key={`${change.baseIndex}:${change.targetIndex}`} className="flex flex-col gap-2">
               <div className="flex items-center gap-2">
                 <span className="text-xs font-medium text-foreground">
-                  {compareUnitLabel(props.kind, change, targetRendition ?? baseRendition)}
+                  {compareUnitLabel(props.kind, change, {
+                    base: { versionId: props.base.id, rendition: baseRendition },
+                    target: { versionId: props.target.id, rendition: targetRendition },
+                  })}
                 </span>
                 <Badge size="sm" variant={change.status === "unchanged" ? "secondary" : "info"}>
                   {UNIT_CHANGE_LABEL[change.status]}

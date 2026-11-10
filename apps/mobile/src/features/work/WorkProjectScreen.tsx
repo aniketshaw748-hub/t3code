@@ -70,6 +70,7 @@ import { WorkNoteComposer } from "./WorkNoteComposer";
 import { NoteCard, NotesSummary, WorkChatLog } from "./WorkNotes";
 import {
   PendingRequestCards,
+  RenderFailureBanner,
   RunFailureBanner,
   SpendApprovalCard,
   StrayFileBanner,
@@ -352,7 +353,9 @@ function WorkProjectScreen(props: WorkProjectParams) {
     }
   };
 
-  const meta = renditionMeta(kind, rendition);
+  // A render that ended without a preview has no slides to count.
+  const meta =
+    rendition?.status === "ready" || kind === "video" ? renditionMeta(kind, rendition) : null;
   const viewingOld = viewed !== null && viewed.id !== currentVersionId && comparePair === null;
   const subtitle =
     viewed === null
@@ -444,7 +447,8 @@ function WorkProjectScreen(props: WorkProjectParams) {
       return rendition.status === "pending" || rendition.status === "rendering" ? (
         <StageNotice busy title={`Rendering V${viewed.ordinal}…`} />
       ) : (
-        <StageNotice title={`V${viewed.ordinal} could not be rendered`} detail={rendition.detail} />
+        // The banner above says why and offers to render it again.
+        <StageNotice title={`No preview of V${viewed.ordinal}`} />
       );
     }
     if (kind === "deck" || kind === "pdf") {
@@ -519,6 +523,16 @@ function WorkProjectScreen(props: WorkProjectParams) {
               onOpenChat={openChat}
             />
           )}
+          {viewed !== null &&
+          rendition !== null &&
+          (rendition.status === "failed" || rendition.status === "unsupported") ? (
+            <RenderFailureBanner
+              environmentId={environmentId}
+              version={viewed}
+              rendition={rendition}
+              canOperate={canOperate}
+            />
+          ) : null}
           {deliverable !== null && strayOriginal !== null ? (
             <StrayFileBanner
               environmentId={environmentId}
@@ -598,7 +612,10 @@ function WorkProjectScreen(props: WorkProjectParams) {
                 version={viewed}
                 parent={versions.find((version) => version.id === viewed.parentVersionId) ?? null}
                 rendition={rendition}
-                onUnit={focusAnchor}
+                onUnit={(place) => {
+                  viewVersion(place.versionId);
+                  focusAnchor(place.anchor);
+                }}
                 onCompare={() =>
                   setCompare(
                     viewed.parentVersionId === null

@@ -1,16 +1,15 @@
-import { useAtomValue } from "@effect/atom-react";
-import { UNIT_CHANGE_LABEL } from "@t3tools/client-runtime/work/anchors";
+import { compareUnitPlace, UNIT_CHANGE_LABEL } from "@t3tools/client-runtime/work/anchors";
 import type {
   DeliverableAnchor,
   DeliverableKind,
   DeliverableRendition,
   DeliverableSelfCheckResult,
   DeliverableVersion,
+  DeliverableVersionId,
   EnvironmentId,
 } from "@t3tools/contracts";
 import { agentPreviewText } from "@t3tools/shared/agentPreviewText";
 import { formatTimecode } from "@t3tools/shared/deliverableNotes";
-import { AsyncResult } from "effect/reactivity";
 import { useState } from "react";
 import { View } from "react-native";
 
@@ -19,7 +18,8 @@ import { AppText as Text } from "../../components/ui/AppText";
 import { Button } from "../../components/ui/Button";
 import { ListRow } from "../../components/ui/ListRow";
 import { ListSection } from "../../components/ui/ListSection";
-import { workEnvironment } from "../../state/work";
+import { useComparison, useRendition } from "./useWorkData";
+import { WorkComparisonNotice } from "./WorkComparisonNotice";
 import { WorkLink } from "./WorkLink";
 
 interface WhatChangedProps {
@@ -28,7 +28,11 @@ interface WhatChangedProps {
   readonly version: DeliverableVersion;
   readonly parent: DeliverableVersion | null;
   readonly rendition: DeliverableRendition | null;
-  readonly onUnit: (anchor: DeliverableAnchor) => void;
+  /** Opens a changed slide or shot in the version that has it: the older one once removed. */
+  readonly onUnit: (place: {
+    readonly versionId: DeliverableVersionId;
+    readonly anchor: DeliverableAnchor;
+  }) => void;
   readonly onCompare: () => void;
 }
 
@@ -101,13 +105,20 @@ export function WorkWhatChanged(props: WhatChangedProps) {
 }
 
 function Comparison(props: WhatChangedProps & { readonly parent: DeliverableVersion }) {
-  const result = useAtomValue(
-    workEnvironment.compare({
-      environmentId: props.environmentId,
-      input: { baseVersionId: props.parent.id, targetVersionId: props.version.id },
-    }),
+  const { result, comparison, retry } = useComparison(
+    props.environmentId,
+    props.parent,
+    props.version,
   );
-  const comparison = AsyncResult.getOrElse(result, () => null);
+  const parentRendition = useRendition(
+    props.environmentId,
+    props.parent.id,
+    props.parent.renditionStatus,
+  );
+  const sides = {
+    base: { versionId: props.parent.id, rendition: parentRendition },
+    target: { versionId: props.version.id, rendition: props.rendition },
+  };
   const changed = (comparison?.units ?? []).filter((unit) => unit.status !== "unchanged");
   const noun = props.kind === "video" ? "Shot" : props.kind === "pdf" ? "Page" : "Slide";
   return (
@@ -118,26 +129,22 @@ function Comparison(props: WhatChangedProps & { readonly parent: DeliverableVers
           {comparison === null ? "" : ` · ${comparison.headline}`}
         </Text>
         <VersionSummary version={props.version} />
+        <WorkComparisonNotice result={result} onRetry={retry} />
       </View>
       {changed.length > 0 ? (
         <ListSection>
           {changed.map((unit) => {
-            const index = unit.targetIndex ?? unit.baseIndex ?? 0;
-            const shot = props.rendition?.units.find((candidate) => candidate.index === index);
-            const anchor: DeliverableAnchor =
-              props.kind === "video"
-                ? { kind: "time", t: shot?.start ?? 0 }
-                : { kind: "slide", index };
+            const place = compareUnitPlace(props.kind, unit, sides);
             const at =
-              props.kind === "video" && shot?.start !== undefined
-                ? ` at ${formatTimecode(shot.start)}`
+              props.kind === "video" && place.unit?.start !== undefined
+                ? ` at ${formatTimecode(place.unit.start)}`
                 : "";
             return (
               <ListRow
                 key={`${unit.baseIndex}:${unit.targetIndex}`}
-                label={`${noun} ${index + 1}${at}`}
+                label={`${noun} ${place.position}${at}`}
                 detail={UNIT_CHANGE_LABEL[unit.status]}
-                onPress={() => props.onUnit(anchor)}
+                onPress={() => props.onUnit(place)}
               />
             );
           })}

@@ -879,6 +879,15 @@ export const layer: Layer.Layer<
             projectId: projection.thread.projectId,
             since: previousStart,
           });
+      const attachments = Option.isNone(turnNotes)
+        ? message.attachments
+        : [
+            ...message.attachments,
+            ...(yield* turnNotes.value.attachments({
+              threadId: projection.thread.id,
+              messageId: message.id,
+            })),
+          ];
       const restartNote = [
         restartCancelledWork.length === 0
           ? ""
@@ -1033,7 +1042,7 @@ export const layer: Layer.Layer<
               tokenCap,
               modelContextWindow,
               userText: restartNote === "" ? userText : `${restartNote}\n\n${userText}`,
-              attachments: message.attachments,
+              attachments,
               providerThread: budgetProviderThread,
               nativeContextEstimate:
                 budgetProviderThread.contextUsage?.usedTokens === undefined
@@ -1725,7 +1734,7 @@ export const layer: Layer.Layer<
         message: {
           messageId: message.id,
           text: userText,
-          attachments: message.attachments,
+          attachments,
           createdBy: message.createdBy,
           creationSource: message.creationSource,
           ...(message.scheduledTaskId === undefined

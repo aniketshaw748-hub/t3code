@@ -1,4 +1,4 @@
-import type { ProjectId } from "@t3tools/contracts";
+import type { ChatAttachment, MessageId, ProjectId, ThreadId } from "@t3tools/contracts";
 import * as Context from "effect/Context";
 import type * as DateTime from "effect/DateTime";
 import type * as Effect from "effect/Effect";
@@ -16,5 +16,13 @@ export class TurnContextNotes extends Context.Service<
       readonly projectId: ProjectId;
       readonly since: DateTime.Utc;
     }) => Effect.Effect<ReadonlyArray<string>>;
+    /**
+     * Pictures to give the agent with a message beside the ones the user attached, such as what
+     * the Work notes sent in it point at. Each is already a file in the attachment store.
+     */
+    readonly attachments: (input: {
+      readonly threadId: ThreadId;
+      readonly messageId: MessageId;
+    }) => Effect.Effect<ReadonlyArray<ChatAttachment>>;
   }
 >()("t3/orchestration-v2/TurnContextNotes") {}

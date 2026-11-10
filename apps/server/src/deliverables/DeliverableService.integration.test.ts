@@ -10,21 +10,26 @@ import {
   CheckpointScopeId,
   MessageId,
   NodeId,
+  type DeliverableRegion,
   type OrchestrationV2Checkpoint,
   ProjectId,
   RunId,
   ThreadId,
 } from "@t3tools/contracts";
 import * as DateTime from "effect/DateTime";
+import * as Deferred from "effect/Deferred";
+import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
+import * as Option from "effect/Option";
 import * as Path from "effect/Path";
 import * as SqlClient from "effect/sql/SqlClient";
 
 import * as AssetSigner from "../assets/AssetSigner.ts";
 import * as CheckpointStore from "../checkpointing/CheckpointStore.ts";
 import * as ServerConfig from "../config.ts";
+import { resolveAttachmentPath } from "../attachmentStore.ts";
 import * as DeliverableNoteRepository from "../persistence/DeliverableNotes.ts";
 import * as DeliverableRepository from "../persistence/Deliverables.ts";
 import * as SqlitePersistence from "../persistence/Sqlite.ts";
@@ -32,10 +37,15 @@ import * as VcsDriverRegistry from "../vcs/VcsDriverRegistry.ts";
 import * as VcsProcess from "../vcs/VcsProcess.ts";
 import { parseBlobPointer } from "./blobPointer.ts";
 import * as DeliverableBlobStore from "./DeliverableBlobStore.ts";
+import * as DeliverableComparer from "./DeliverableComparer.ts";
 import * as DeliverableContext from "./DeliverableContext.ts";
 import * as DeliverableGit from "./DeliverableGit.ts";
+import * as DeliverableNoteSnapshots from "./DeliverableNoteSnapshots.ts";
 import * as DeliverableRenderers from "./DeliverableRenderers.ts";
+import * as DeliverableRenditions from "./DeliverableRenditions.ts";
 import * as DeliverableSelfCheck from "./DeliverableSelfCheck.ts";
+import * as DeliverableStoreCleanup from "./DeliverableStoreCleanup.ts";
+import { frameRegion, OUTLINE_GRID, VIDEO_GRID } from "./perceptualDiff.ts";
 
 const TURN_REPLY =
   "## **Made the title slide bolder** in [the deck](C:/work/deck.pptx)\n\nDetails follow.";
@@ -49,24 +59,120 @@ import * as TurnContextNotes from "../orchestration-v2/TurnContextNotes.ts";
 const projectId = ProjectId.make("project-work");
 const threadId = ThreadId.make("thread-work");
 
-/** Stands in for PowerPoint: each line of the fixture "deck" is a slide, compared by hash. */
+const rendererCalls = {
+  sampleFrames: 0,
+  readImage: 0,
+  outlineImage: 0,
+  notePictures: [] as Array<{
+    readonly source: string;
+    readonly seconds: number | undefined;
+    readonly region: DeliverableRegion | null;
+  }>,
+};
+/** How the stand-in renderer behaves; a test sets it and puts it back. */
+const rendering: {
+  mode: "works" | "crashes" | "hangs";
+  /** Completed when a render that hangs has begun. */
+  hung: Deferred.Deferred<void> | null;
+} = { mode: "works", hung: null };
+
+/** A dark raster with a white bar across its top, `length` pixels wide. */
+const barRaster = (side: number, length: number) => {
+  const data = new Uint8Array(side * side * 3).fill(30);
+  for (let y = 0; y < 8; y++) data.fill(255, y * side * 3, (y * side + length) * 3);
+  return { width: side, height: side, data };
+};
+
+const PNG_SIGNATURE = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a];
+/** What the stand-in renderer writes as a note's picture. */
+const SERVER_PICTURE = new Uint8Array([...PNG_SIGNATURE, 1, 2, 3]);
+
+/**
+ * Stands in for PowerPoint and ffmpeg, working on text files. A deck is one slide a line, compared
+ * by hash. An image's display file holds its trimmed text and every image shares one outline, so
+ * only `readImage`, which draws a bar as long as the text, can tell two apart. A video and a PDF
+ * render as older servers did, with samples and outlines the comparison has to redo first.
+ */
 const layerLineRenderer = Layer.effect(
   DeliverableRenderers.DeliverableRenderers,
   Effect.gen(function* () {
     const fileSystem = yield* FileSystem.FileSystem;
+    const path = yield* Path.Path;
+    const base = {
+      renderer: "test-lines@1",
+      width: null,
+      height: null,
+      durationSeconds: null,
+      poster: null,
+      proxy: null,
+      samples: null,
+      detail: null,
+    };
     return DeliverableRenderers.DeliverableRenderers.of({
       render: (input) =>
-        fileSystem.readFileString(input.sourcePath).pipe(
-          Effect.orDie,
-          Effect.map((text) => ({
-            renderer: "test-lines@1",
-            width: null,
-            height: null,
-            durationSeconds: null,
-            poster: null,
-            proxy: null,
-            samples: null,
-            detail: null,
+        Effect.gen(function* () {
+          if (rendering.mode === "crashes") throw new Error("The renderer fell over.");
+          if (rendering.mode === "hangs") {
+            if (rendering.hung !== null) yield* Deferred.succeed(rendering.hung, undefined);
+            return yield* Effect.never;
+          }
+          const text = yield* fileSystem.readFileString(input.sourcePath);
+          yield* fileSystem.makeDirectory(input.outDir, { recursive: true });
+          const write = (file: string, bytes: Uint8Array) =>
+            fileSystem.writeFile(path.join(input.outDir, file), bytes);
+          if (input.kind === "image") {
+            yield* write("image-0001.jpg", new TextEncoder().encode(text.trim()));
+            yield* write("image-0001.rgb", new Uint8Array(OUTLINE_GRID * OUTLINE_GRID * 3));
+            return {
+              ...base,
+              units: [
+                {
+                  index: 0,
+                  kind: "image" as const,
+                  image: "image-0001.jpg",
+                  thumb: null,
+                  signature: { file: "image-0001.rgb", grid: OUTLINE_GRID },
+                },
+              ],
+            };
+          }
+          if (input.kind === "pdf") {
+            yield* write("page-0001.jpg", new TextEncoder().encode(text.trim()));
+            yield* write("page-0001.rgb", new Uint8Array(32 * 32 * 3));
+            return {
+              ...base,
+              units: [
+                {
+                  index: 0,
+                  kind: "page" as const,
+                  image: "page-0001.jpg",
+                  thumb: null,
+                  signature: { file: "page-0001.rgb" },
+                },
+              ],
+            };
+          }
+          if (input.kind === "video") {
+            yield* write("samples.rgb", new Uint8Array(32 * 32 * 3));
+            return {
+              ...base,
+              durationSeconds: 1,
+              samples: { file: "samples.rgb", fps: 1 },
+              units: [
+                {
+                  index: 0,
+                  kind: "shot" as const,
+                  start: 0,
+                  end: 1,
+                  image: null,
+                  thumb: null,
+                  signature: null,
+                },
+              ],
+            };
+          }
+          return {
+            ...base,
             units: text.split("\n").map((line, index) => ({
               index,
               kind: "slide" as const,
@@ -74,8 +180,41 @@ const layerLineRenderer = Layer.effect(
               thumb: null,
               signature: { hash: NodeCrypto.createHash("sha256").update(line).digest("hex") },
             })),
-          })),
-        ),
+          };
+        }).pipe(Effect.orDie),
+      sampleFrames: (input) =>
+        Effect.gen(function* () {
+          rendererCalls.sampleFrames++;
+          const text = yield* fileSystem.readFileString(input.sourcePath);
+          const file = `frames-${VIDEO_GRID}.rgb`;
+          yield* fileSystem.writeFile(
+            path.join(input.outDir, file),
+            barRaster(VIDEO_GRID, text.length).data,
+          );
+          return { file, fps: 1, grid: VIDEO_GRID };
+        }).pipe(Effect.orDie),
+      outlineImage: (input) =>
+        Effect.gen(function* () {
+          rendererCalls.outlineImage++;
+          yield* fileSystem.writeFile(
+            input.outlinePath,
+            new Uint8Array(OUTLINE_GRID * OUTLINE_GRID * 3),
+          );
+        }).pipe(Effect.orDie),
+      notePicture: (input) =>
+        Effect.gen(function* () {
+          rendererCalls.notePictures.push({
+            source: path.basename(input.sourcePath),
+            seconds: input.seconds,
+            region: input.region,
+          });
+          yield* fileSystem.writeFile(input.outPath, SERVER_PICTURE);
+        }).pipe(Effect.orDie),
+      readImage: (input) =>
+        Effect.gen(function* () {
+          rendererCalls.readImage++;
+          return barRaster(96, (yield* fileSystem.readFileString(input.imagePath)).length);
+        }).pipe(Effect.orDie),
     });
   }),
 );
@@ -104,11 +243,25 @@ const setup = Effect.gen(function* () {
 });
 
 const busy = { value: false };
+/** Projects the engine is told were deleted, or could not be read just now. */
+const projects = { deleted: new Set<ProjectId>(), unreadable: false };
+const otherProjectId = ProjectId.make("project-other");
 const layerContext = (root: string) =>
   Layer.succeed(
     DeliverableContext.DeliverableContext,
     DeliverableContext.DeliverableContext.of({
-      projectRoot: (id) => Effect.succeed(id === projectId ? root : null),
+      projectRoot: (id) =>
+        Effect.sync(() =>
+          (id === projectId || id === otherProjectId) && !projects.deleted.has(id) ? root : null,
+        ),
+      projectState: (id) =>
+        Effect.sync((): DeliverableContext.ProjectState =>
+          projects.unreadable
+            ? { type: "unknown" }
+            : id !== projectId && id !== otherProjectId
+              ? { type: "missing" }
+              : { type: projects.deleted.has(id) ? "deleted" : "active", workspaceRoot: root },
+        ),
       turn: () =>
         Effect.succeed({
           projectId,
@@ -122,10 +275,18 @@ const layerContext = (root: string) =>
 
 const layerPlatform = Layer.mergeAll(NodeServices.layer, NodeCryptoLayer.layer);
 const layerVcsProcess = VcsProcess.layer.pipe(Layer.provide(layerPlatform));
-const layerEngine = (root: string) =>
+const layerEngine = (root: string, deadline: Duration.Duration) =>
   DeliverableService.layer.pipe(
     Layer.provideMerge(DeliverableNotes.layer),
-    Layer.provide(
+    Layer.provideMerge(
+      Layer.mergeAll(
+        DeliverableComparer.layer,
+        DeliverableStoreCleanup.layer,
+        DeliverableNoteSnapshots.layer,
+      ),
+    ),
+    Layer.provideMerge(DeliverableRenditions.layerWith({ deadline })),
+    Layer.provideMerge(
       Layer.mergeAll(
         DeliverableGit.layer,
         layerLineRenderer,
@@ -142,7 +303,7 @@ const layerEngine = (root: string) =>
     Layer.provideMerge(WorkProjectEvents.layer),
     Layer.provideMerge(
       Layer.mergeAll(DeliverableRepository.layer, DeliverableNoteRepository.layer).pipe(
-        Layer.provide(SqlitePersistence.layerMemory),
+        Layer.provideMerge(SqlitePersistence.layerMemory),
       ),
     ),
     Layer.provide(Layer.mock(AssetSigner.AssetSigner)({ sign: () => Effect.succeed("signature") })),
@@ -175,10 +336,22 @@ const withEngine = <A, E>(
   body: (
     repo: Effect.Success<typeof setup>,
   ) => Effect.Effect<A, E, Layer.Success<ReturnType<typeof layerEngine>>>,
+  options: { readonly renderDeadline?: Duration.Duration } = {},
 ) =>
   Effect.gen(function* () {
     const repo = yield* setup;
-    return yield* body(repo).pipe(Effect.provide(layerEngine(repo.root)));
+    return yield* body(repo).pipe(
+      Effect.provide(layerEngine(repo.root, options.renderDeadline ?? Duration.minutes(30))),
+      Effect.ensuring(
+        Effect.sync(() => {
+          rendering.mode = "works";
+          rendering.hung = null;
+          rendererCalls.notePictures.length = 0;
+          projects.deleted.clear();
+          projects.unreadable = false;
+        }),
+      ),
+    );
   }).pipe(Effect.scoped, Effect.provide(Layer.mergeAll(layerPlatform, layerVcsProcess)));
 
 it.live(
@@ -486,6 +659,8 @@ it.live("offers a revision saved under a new name as the next version, and adopt
       const [fixed] = yield* notes.list(projectId);
       assert.equal(fixed?.status, "fixed");
       assert.equal(fixed?.fixedInVersionId, adopted.deliverable.currentVersionId);
+      // The copy's own version history is gone from Git too.
+      assert.notInclude(yield* repo.git("for-each-ref", "--format=%(refname)"), strayV1.ref);
 
       // Kept as its own file, a later copy stops asking.
       yield* repo.write("deck (2).pptx", "Title\nOther");
@@ -522,4 +697,584 @@ it.live("offers a revision saved under a new name as the next version, and adopt
       assert.equal(registered.deliverable.strayVersionOf, brief.id);
     }),
   ),
+);
+
+it.live("judges an image on its display pixels, reading them only when the files differ", () =>
+  withEngine((repo) =>
+    Effect.gen(function* () {
+      const deliverables = yield* DeliverableService.DeliverableService;
+      const record = Effect.fn("test.record")(function* (text: string) {
+        yield* repo.write("cover.png", text);
+        return (yield* deliverables.registerVersion({ projectId, path: "cover.png" })).version;
+      });
+      const v1 = yield* record("Draft");
+      const v2 = yield* record("Draft two");
+      // New bytes that render to the same display image.
+      const v3 = yield* record("Draft two\n");
+      yield* deliverables.drain;
+      rendererCalls.readImage = 0;
+
+      const edited = yield* deliverables.compare({ targetVersionId: v2.id });
+      assert.equal(edited.method, "perceptual");
+      assert.equal(edited.headline, "1 image changed");
+      // The bar grew from 5 to 9 pixels and the outlines of the two are the same. One pixel of
+      // the growth passes as a one-pixel shift; the other three are the change.
+      assert.deepEqual(edited.units[0]?.anchor, {
+        kind: "slide",
+        index: 0,
+        region: frameRegion({ x: 5 / 96, y: 0, w: 3 / 96, h: 8 / 96 }),
+      });
+      assert.equal(rendererCalls.readImage, 2);
+      assert.equal(v1.id, edited.baseVersionId);
+
+      // Asked again, the answer is kept; the same display bytes are never decoded at all.
+      yield* deliverables.compare({ targetVersionId: v2.id });
+      const resaved = yield* deliverables.compare({ targetVersionId: v3.id });
+      assert.equal(resaved.headline, "No visible change");
+      assert.equal(rendererCalls.readImage, 2);
+    }),
+  ),
+);
+
+it.live("resamples a video rendered before the frame grid grew, once, then compares it", () =>
+  withEngine((repo) =>
+    Effect.gen(function* () {
+      const deliverables = yield* DeliverableService.DeliverableService;
+      const repository = yield* DeliverableRepository.DeliverableRepository;
+      const blobs = yield* DeliverableBlobStore.DeliverableBlobStore;
+      const fileSystem = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      const record = Effect.fn("test.record")(function* (text: string) {
+        yield* repo.write("cut.mp4", text);
+        return (yield* deliverables.registerVersion({ projectId, path: "cut.mp4" })).version;
+      });
+      const v1 = yield* record("a short caption");
+      const v2 = yield* record("a rather longer caption, by a good way");
+      yield* deliverables.drain;
+      rendererCalls.sampleFrames = 0;
+
+      const comparison = yield* deliverables.compare({ targetVersionId: v2.id });
+      assert.equal(comparison.method, "perceptual");
+      assert.equal(comparison.headline, "1 shot changed");
+      assert.deepEqual(comparison.units[0]?.anchor, {
+        kind: "time",
+        t: 0,
+        tEnd: 1,
+        region: frameRegion({ x: 15 / VIDEO_GRID, y: 0, w: 23 / VIDEO_GRID, h: 8 / VIDEO_GRID }),
+      });
+      assert.equal(rendererCalls.sampleFrames, 2);
+
+      // The finer frames are saved on the rendition and the old file is gone.
+      for (const version of [v1, v2]) {
+        const stored = yield* repository.getRendition({
+          contentSha256: version.contentSha256,
+          kind: "video",
+        });
+        assert.deepEqual(
+          (Option.getOrThrow(stored).data as DeliverableRenderers.RenderOutput).samples,
+          { file: `frames-${VIDEO_GRID}.rgb`, fps: 1, grid: VIDEO_GRID },
+        );
+        const directory = blobs.renditionDir({ sha256: version.contentSha256, kind: "video" });
+        assert.isFalse(yield* fileSystem.exists(path.join(directory, "samples.rgb")));
+      }
+      yield* deliverables.compare({ targetVersionId: v2.id });
+      assert.equal(rendererCalls.sampleFrames, 2);
+    }),
+  ),
+);
+
+it.live("ends a render that crashes or has lost its file as failed, and renders it again", () =>
+  withEngine((repo) =>
+    Effect.gen(function* () {
+      const deliverables = yield* DeliverableService.DeliverableService;
+      const repository = yield* DeliverableRepository.DeliverableRepository;
+      const blobs = yield* DeliverableBlobStore.DeliverableBlobStore;
+      const fileSystem = yield* FileSystem.FileSystem;
+      yield* repo.write("deck.pptx", "Title\nAgenda");
+      rendering.mode = "crashes";
+      const v1 = (yield* deliverables.registerVersion({ projectId, path: "deck.pptx" })).version;
+      yield* deliverables.drain;
+      const crashed = yield* deliverables.rendition(v1.id);
+      assert.equal(crashed.status, "failed");
+      assert.equal(crashed.detail, "Rendering stopped unexpectedly.");
+
+      // The stored file is gone: said in plain words, and still a final state.
+      rendering.mode = "works";
+      const stored = blobs.blobPath(v1.contentSha256);
+      const bytes = yield* fileSystem.readFile(stored);
+      yield* fileSystem.remove(stored);
+      yield* deliverables.retryRendition(v1.id);
+      yield* deliverables.drain;
+      const lost = yield* deliverables.rendition(v1.id);
+      assert.equal(lost.status, "failed");
+      assert.equal(lost.detail, DeliverableRenditions.SOURCE_MISSING_DETAIL);
+
+      yield* fileSystem.writeFile(stored, bytes);
+      yield* deliverables.retryRendition(v1.id);
+      yield* deliverables.drain;
+      assert.equal((yield* deliverables.rendition(v1.id)).status, "ready");
+
+      // What a process that stopped mid-render leaves behind is back in line when the next starts.
+      const content = { contentSha256: v1.contentSha256, kind: "deck" } as const;
+      yield* repository.putRendition({
+        ...content,
+        status: "rendering",
+        renderer: null,
+        detail: null,
+        data: null,
+        updatedAt: yield* DateTime.now,
+      });
+      yield* DeliverableRenditions.DeliverableRenditions.pipe(
+        Effect.provide(DeliverableRenditions.layerWith({ deadline: Duration.minutes(30) })),
+      );
+      assert.equal(Option.getOrThrow(yield* repository.getRendition(content)).status, "pending");
+      assert.deepEqual(yield* repository.listUnfinished, [v1.id]);
+    }),
+  ),
+);
+
+it.live("stops a render that outlasts its deadline and records why", () =>
+  withEngine(
+    (repo) =>
+      Effect.gen(function* () {
+        const deliverables = yield* DeliverableService.DeliverableService;
+        yield* repo.write("deck.pptx", "Title");
+        rendering.mode = "hangs";
+        const v1 = (yield* deliverables.registerVersion({ projectId, path: "deck.pptx" })).version;
+        yield* deliverables.drain;
+        const stopped = yield* deliverables.rendition(v1.id);
+        assert.equal(stopped.status, "failed");
+        assert.equal(stopped.detail, "Rendering took longer than 0 minutes and was stopped.");
+      }),
+    { renderDeadline: Duration.zero },
+  ),
+);
+
+it.live("says why two versions cannot be compared, one cause at a time", () =>
+  withEngine((repo) =>
+    Effect.gen(function* () {
+      const deliverables = yield* DeliverableService.DeliverableService;
+      const blobs = yield* DeliverableBlobStore.DeliverableBlobStore;
+      const fileSystem = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      const record = Effect.fn("test.record")(function* (text: string) {
+        yield* repo.write("cover.png", text);
+        return (yield* deliverables.registerVersion({
+          projectId,
+          path: "cover.png",
+          expectedChanges: [{ kind: "slide", index: 0 }],
+        })).version;
+      });
+      const unavailable = (versionId: typeof v1.id, baseVersionId?: typeof v1.id) =>
+        Effect.map(
+          deliverables.compare({ targetVersionId: versionId, baseVersionId }),
+          (comparison) => ({
+            headline: comparison.headline,
+            units: comparison.units.length,
+            ...comparison.unavailable,
+          }),
+        );
+      const selfCheck = (versionId: typeof v1.id) =>
+        Effect.map(
+          deliverables.versions(v1.deliverableId),
+          ({ versions }) => versions.find((version) => version.id === versionId)?.selfCheck,
+        );
+      const v1 = yield* record("Draft");
+      yield* deliverables.drain;
+
+      rendering.mode = "crashes";
+      const v2 = yield* record("Draft two");
+      yield* deliverables.drain;
+      const notRendered = {
+        headline: "Not rendered",
+        units: 0,
+        reason: "render_failed",
+        versionId: v2.id,
+        message:
+          "V2 could not be rendered, so there is nothing to compare it with. Open it to see why and to render it again.",
+      } as const;
+      assert.deepEqual(yield* unavailable(v2.id), notRendered);
+      // The check that needed the comparison says the same, and is owed once V2 renders.
+      assert.deepEqual(
+        {
+          status: (yield* selfCheck(v2.id))?.status,
+          findings: (yield* selfCheck(v2.id))?.findings,
+        },
+        { status: "skipped", findings: [notRendered.message] },
+      );
+
+      const stored = blobs.blobPath(v2.contentSha256);
+      const bytes = yield* fileSystem.readFile(stored);
+      yield* fileSystem.remove(stored);
+      assert.deepEqual(yield* unavailable(v2.id), {
+        headline: "File missing",
+        units: 0,
+        reason: "source_missing",
+        versionId: v2.id,
+        message: "V2's file is missing from the store on this computer, so it cannot be compared.",
+      });
+
+      yield* fileSystem.writeFile(stored, bytes);
+      rendering.mode = "works";
+      yield* deliverables.retryRendition(v2.id);
+      yield* deliverables.drain;
+      const compared = yield* deliverables.compare({ targetVersionId: v2.id });
+      assert.isNull(compared.unavailable);
+      assert.equal(compared.headline, "1 image changed");
+      assert.equal((yield* selfCheck(v2.id))?.status, "passed");
+
+      const v3 = yield* record("Draft three");
+      yield* deliverables.drain;
+      yield* fileSystem.remove(
+        path.join(
+          blobs.renditionDir({ sha256: v3.contentSha256, kind: "image" }),
+          "image-0001.rgb",
+        ),
+      );
+      // Its self-check already compared it with V2 and that answer is kept; V1 is a new pair.
+      assert.deepEqual(yield* unavailable(v3.id, v1.id), {
+        headline: "Not compared",
+        units: 0,
+        reason: "comparison_failed",
+        versionId: v3.id,
+        message: "V3's rendered files could not be read, so the comparison failed.",
+      });
+
+      rendering.mode = "hangs";
+      rendering.hung = yield* Deferred.make<void>();
+      const v4 = yield* record("Draft four");
+      yield* Deferred.await(rendering.hung);
+      assert.deepEqual(yield* unavailable(v4.id), {
+        headline: "Still rendering",
+        units: 0,
+        reason: "rendering",
+        versionId: v4.id,
+        message: "V4 is still rendering. The comparison appears when it is done.",
+      });
+    }),
+  ),
+);
+
+it.live("redoes page outlines made on the coarser grid, once, then compares them", () =>
+  withEngine((repo) =>
+    Effect.gen(function* () {
+      const deliverables = yield* DeliverableService.DeliverableService;
+      const repository = yield* DeliverableRepository.DeliverableRepository;
+      const blobs = yield* DeliverableBlobStore.DeliverableBlobStore;
+      const fileSystem = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      const record = Effect.fn("test.record")(function* (text: string) {
+        yield* repo.write("brief.pdf", text);
+        return (yield* deliverables.registerVersion({ projectId, path: "brief.pdf" })).version;
+      });
+      const v1 = yield* record("Brief");
+      const v2 = yield* record("Brief, tighter");
+      yield* deliverables.drain;
+      rendererCalls.outlineImage = 0;
+
+      const comparison = yield* deliverables.compare({ targetVersionId: v2.id });
+      assert.equal(comparison.headline, "1 page changed");
+      assert.equal(rendererCalls.outlineImage, 2);
+      for (const version of [v1, v2]) {
+        const stored = yield* repository.getRendition({
+          contentSha256: version.contentSha256,
+          kind: "pdf",
+        });
+        assert.deepEqual(
+          (Option.getOrThrow(stored).data as DeliverableRenderers.RenderOutput).units[0]?.signature,
+          { file: `page-0001-outline${OUTLINE_GRID}.rgb`, grid: OUTLINE_GRID },
+        );
+        const directory = blobs.renditionDir({ sha256: version.contentSha256, kind: "pdf" });
+        assert.isFalse(yield* fileSystem.exists(path.join(directory, "page-0001.rgb")));
+      }
+      yield* deliverables.compare({ targetVersionId: v2.id });
+      assert.equal(rendererCalls.outlineImage, 2);
+    }),
+  ),
+);
+
+const PNG_DATA_URL =
+  "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==";
+
+it.live(
+  "cleans out what a deleted project stored and what a crash left, and nothing still in use",
+  () =>
+    withEngine((repo) =>
+      Effect.gen(function* () {
+        const deliverables = yield* DeliverableService.DeliverableService;
+        const notes = yield* DeliverableNotes.DeliverableNotes;
+        const cleanup = yield* DeliverableStoreCleanup.DeliverableStoreCleanup;
+        const repository = yield* DeliverableRepository.DeliverableRepository;
+        const blobs = yield* DeliverableBlobStore.DeliverableBlobStore;
+        const fileSystem = yield* FileSystem.FileSystem;
+        const path = yield* Path.Path;
+        const sql = yield* SqlClient.SqlClient;
+        const plant = (file: string) =>
+          fileSystem
+            .makeDirectory(path.dirname(file), { recursive: true })
+            .pipe(Effect.andThen(fileSystem.writeFileString(file, "left over")));
+        const counts = ({ bytes: _bytes, ...report }: DeliverableStoreCleanup.CleanupReport) =>
+          report;
+        const nothing = {
+          blobs: 0,
+          renditions: 0,
+          renditionFiles: 0,
+          noteSnapshots: 0,
+          blobsSwept: true,
+        };
+
+        // The other project's deck is in the folder first, so both projects' snapshots hold it.
+        yield* repo.write("other.pptx", "Other deck");
+        const other = (yield* deliverables.registerVersion({
+          projectId: otherProjectId,
+          path: "other.pptx",
+        })).version;
+        const record = Effect.fn("test.record")(function* (deck: string) {
+          yield* repo.write("deck.pptx", deck);
+          return (yield* deliverables.registerVersion({ projectId, path: "deck.pptx" })).version;
+        });
+        const v1 = yield* record("Title\nAgenda");
+        yield* repo.write("logo.png", "logo");
+        const logo = yield* blobs.hash(path.join(repo.root, "logo.png"));
+        const v2 = yield* record("Title\nAgenda v2");
+        // Undone and forked away from: V2 and the logo only it has are no longer on the line.
+        yield* deliverables.undo(v1.deliverableId);
+        const v3 = yield* record("Title\nAppendix");
+        const note = yield* notes.create({
+          deliverableId: v1.deliverableId,
+          versionId: v1.id,
+          anchor: { kind: "slide", index: 0 },
+          body: "Bigger title",
+          snapshotDataUrl: PNG_DATA_URL,
+        });
+        const [pictureRow] = yield* sql<{ readonly path: string }>`
+          SELECT snapshot_path AS "path" FROM deliverable_notes WHERE note_id = ${note.id}
+        `;
+        const snapshot = path.join(blobs.root, ...pictureRow!.path.split("/"));
+        yield* deliverables.drain;
+        const inUse = [v1, v2, v3, other].map((version) => version.contentSha256);
+
+        assert.deepEqual(counts(yield* cleanup.run), nothing);
+        for (const sha256 of [...inUse, logo.sha256]) assert.isTrue(yield* blobs.has(sha256));
+        assert.isTrue(yield* fileSystem.exists(snapshot));
+
+        // What a crash between writing bytes and recording them leaves behind.
+        const unrecorded = "ab".repeat(32);
+        const strayBlob = blobs.blobPath(unrecorded);
+        const partial = path.join(path.dirname(strayBlob), ".partial-crash");
+        const strayRendition = path.join(
+          blobs.renditionDir({ sha256: unrecorded, kind: "deck" }),
+          "slide-0001.jpg",
+        );
+        const staleFile = path.join(
+          blobs.renditionDir({ sha256: v1.contentSha256, kind: "deck" }),
+          "slide-0099.jpg",
+        );
+        const straySnapshot = path.join(blobs.root, "notes", "note_gone.png");
+        yield* Effect.forEach(
+          [strayBlob, partial, strayRendition, staleFile, straySnapshot],
+          plant,
+          { discard: true },
+        );
+        yield* repository.recordBlob({
+          gitBlobOid: "f".repeat(40),
+          contentSha256: unrecorded,
+          sizeBytes: 9,
+        });
+        yield* repository.putRendition({
+          contentSha256: unrecorded,
+          kind: "deck",
+          status: "ready",
+          renderer: "test-lines@1",
+          detail: null,
+          data: null,
+          updatedAt: yield* DateTime.now,
+        });
+        assert.deepEqual(counts(yield* cleanup.run), {
+          ...nothing,
+          blobs: 1,
+          renditions: 1,
+          renditionFiles: 1,
+          noteSnapshots: 1,
+        });
+        for (const file of [strayBlob, partial, strayRendition, staleFile, straySnapshot]) {
+          assert.isFalse(yield* fileSystem.exists(file), file);
+        }
+        assert.equal((yield* repository.lookupBlobs(["f".repeat(40)])).size, 0);
+        for (const sha256 of [...inUse, logo.sha256]) assert.isTrue(yield* blobs.has(sha256));
+        assert.isTrue(yield* fileSystem.exists(snapshot));
+
+        // A version from before snapshots listed their files keeps every stored file until its
+        // commit has been read; once it has, the logo only its snapshot holds is still kept.
+        yield* sql`DELETE FROM deliverable_version_blobs WHERE version_id = ${v2.id}`;
+        yield* plant(strayBlob);
+        projects.unreadable = true;
+        assert.deepEqual(counts(yield* cleanup.run), { ...nothing, blobsSwept: false });
+        assert.isTrue(yield* fileSystem.exists(strayBlob));
+        projects.unreadable = false;
+        assert.deepEqual(counts(yield* cleanup.run), { ...nothing, blobs: 1 });
+        assert.isTrue(yield* blobs.has(logo.sha256));
+
+        // The undone version restores with its logo: nothing it needs was taken.
+        yield* deliverables.restore({ deliverableId: v1.deliverableId, versionId: v2.id });
+        assert.equal(yield* repo.read("logo.png"), "logo");
+
+        // A project that is still there loses nothing when asked.
+        assert.equal(yield* deliverables.removeProject(projectId), 0);
+        projects.deleted.add(projectId);
+        assert.equal(yield* deliverables.removeProject(projectId), 1);
+        yield* cleanup.drain;
+
+        for (const version of [v1, v2, v3]) {
+          assert.isFalse(yield* blobs.has(version.contentSha256));
+          assert.isFalse(
+            yield* fileSystem.exists(
+              blobs.renditionDir({ sha256: version.contentSha256, kind: "deck" }),
+            ),
+          );
+          assert.isTrue(
+            Option.isNone(
+              yield* repository.getRendition({
+                contentSha256: version.contentSha256,
+                kind: "deck",
+              }),
+            ),
+          );
+        }
+        assert.isFalse(yield* blobs.has(logo.sha256));
+        assert.isFalse(yield* fileSystem.exists(snapshot));
+        assert.deepEqual(yield* notes.list(projectId), []);
+        const refs = yield* repo.git("for-each-ref", "--format=%(refname)");
+        assert.notInclude(refs, v1.deliverableId);
+        assert.include(refs, other.ref);
+
+        // The other project's deck, which the deleted project's snapshots also held, is intact.
+        assert.isTrue(yield* blobs.has(other.contentSha256));
+        assert.equal((yield* deliverables.rendition(other.id)).status, "ready");
+        assert.deepEqual(
+          (yield* deliverables.list(otherProjectId)).map((deliverable) => deliverable.path),
+          ["other.pptx"],
+        );
+      }),
+    ),
+);
+
+it.live(
+  "makes a note's picture from the stored version, keeps a client's drawing, and gives both to the turn",
+  () =>
+    withEngine((repo) =>
+      Effect.gen(function* () {
+        const deliverables = yield* DeliverableService.DeliverableService;
+        const notes = yield* DeliverableNotes.DeliverableNotes;
+        const cleanup = yield* DeliverableStoreCleanup.DeliverableStoreCleanup;
+        const blobs = yield* DeliverableBlobStore.DeliverableBlobStore;
+        const config = yield* ServerConfig.ServerConfig;
+        const fileSystem = yield* FileSystem.FileSystem;
+        const path = yield* Path.Path;
+        const storedPicture = (noteId: string) =>
+          Effect.gen(function* () {
+            const sql = yield* SqlClient.SqlClient;
+            const [row] = yield* sql<{ readonly path: string | null }>`
+              SELECT snapshot_path AS "path" FROM deliverable_notes WHERE note_id = ${noteId}
+            `;
+            return row?.path == null ? null : path.join(blobs.root, ...row.path.split("/"));
+          });
+
+        yield* repo.write("cut.mp4", "a short caption");
+        const video = (yield* deliverables.registerVersion({ projectId, path: "cut.mp4" })).version;
+        yield* repo.write("cover.png", "Draft");
+        const cover = (yield* deliverables.registerVersion({ projectId, path: "cover.png" }))
+          .version;
+        yield* deliverables.drain;
+
+        // As the phone sends it: where the note points, and no picture of its own.
+        const region = { x: 0.25, y: 0.5, w: 0.2, h: 0.1 };
+        const timed = yield* notes.create({
+          deliverableId: video.deliverableId,
+          versionId: video.id,
+          anchor: { kind: "time", t: 0.4, region },
+          body: "The caption is cut off here",
+        });
+        const marked = yield* notes.create({
+          deliverableId: cover.deliverableId,
+          versionId: cover.id,
+          anchor: { kind: "region", ...region },
+          body: "Too dark",
+        });
+        assert.deepEqual(rendererCalls.notePictures, [
+          { source: video.contentSha256, seconds: 0.4, region },
+          { source: "image-0001.jpg", seconds: undefined, region },
+        ]);
+        assert.isNotNull(timed.snapshotUrl);
+        assert.isNotNull(marked.snapshotUrl);
+        // Both pictures are the same bytes, so the store holds them once.
+        const picture = yield* storedPicture(timed.id);
+        assert.isNotNull(picture);
+        assert.equal(yield* storedPicture(marked.id), picture);
+        assert.include(picture.replaceAll("\\", "/"), "/objects/");
+        assert.deepEqual(yield* fileSystem.readFile(picture), SERVER_PICTURE);
+
+        // A drawing only the client has is kept as sent; nothing is made in its place.
+        const drawn = yield* notes.create({
+          deliverableId: video.deliverableId,
+          versionId: video.id,
+          anchor: { kind: "time", t: 0.6, region },
+          body: "Move this up",
+          snapshotDataUrl: PNG_DATA_URL,
+        });
+        assert.lengthOf(rendererCalls.notePictures, 2);
+        const drawing = yield* storedPicture(drawn.id);
+        assert.isNotNull(drawing);
+        assert.notEqual(drawing, picture);
+        // A note about the whole file has nothing to show.
+        const whole = yield* notes.create({
+          deliverableId: video.deliverableId,
+          versionId: video.id,
+          anchor: null,
+          body: "Shorter overall",
+        });
+        assert.isNull(whole.snapshotUrl);
+
+        // The message that sends the notes gets their pictures, whichever client sent it.
+        const messageId = MessageId.make("message-pictures");
+        yield* notes.markSent({ noteIds: [timed.id, drawn.id, whole.id], threadId, messageId });
+        const attached = yield* Effect.gen(function* () {
+          const turnNotes = yield* TurnContextNotes.TurnContextNotes;
+          return yield* turnNotes.attachments({ threadId, messageId });
+        }).pipe(
+          Effect.provide(
+            DeliverableTurnNotes.layer.pipe(
+              Layer.provide(ProjectStore.layer.pipe(Layer.provide(SqlitePersistence.layerMemory))),
+            ),
+          ),
+        );
+        assert.deepEqual(
+          attached.map((attachment) => [attachment.type, attachment.name, attachment.mimeType]),
+          [
+            ["image", "note-1.png", "image/png"],
+            ["image", "note-2.png", "image/png"],
+          ],
+        );
+        const sentFiles = yield* Effect.forEach(attached, (attachment) =>
+          fileSystem.readFile(
+            resolveAttachmentPath({ attachmentsDir: config.attachmentsDir, attachment })!,
+          ),
+        );
+        assert.deepEqual(sentFiles[0], SERVER_PICTURE);
+        assert.deepEqual(sentFiles[1], yield* fileSystem.readFile(drawing));
+
+        // Cleanup keeps a picture while any note shows it, and takes it once none does.
+        const kept = yield* cleanup.run;
+        assert.equal(kept.blobs, 0);
+        yield* notes.remove(timed.id);
+        yield* cleanup.drain;
+        assert.isTrue(yield* fileSystem.exists(picture));
+        yield* notes.remove(marked.id);
+        yield* notes.remove(drawn.id);
+        yield* cleanup.drain;
+        assert.isFalse(yield* fileSystem.exists(picture));
+        assert.isFalse(yield* fileSystem.exists(drawing));
+        assert.isTrue(yield* blobs.has(video.contentSha256));
+      }),
+    ),
 );

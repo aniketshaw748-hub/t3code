@@ -19,6 +19,8 @@ import {
 import { type WorkRunFailure, workRunFailureDetail } from "@t3tools/client-runtime/work/shelf";
 import type {
   Deliverable,
+  DeliverableRendition,
+  DeliverableVersion,
   EnvironmentId,
   ProviderApprovalDecision,
   RuntimeRequestId,
@@ -64,6 +66,49 @@ export function RunFailureBanner(props: {
           label="Retry"
           disabled={props.retrying}
           onPress={props.onRetry}
+        />
+      ) : null}
+    </WorkBanner>
+  );
+}
+
+/** A version's render ended without a preview: why, in plain words, and a way to render again. */
+export function RenderFailureBanner(props: {
+  readonly environmentId: EnvironmentId;
+  readonly version: DeliverableVersion;
+  readonly rendition: DeliverableRendition;
+  readonly canOperate: boolean;
+}) {
+  const retryRendition = useAtomCommand(workEnvironment.retryRendition, { reportFailure: false });
+  const [pending, setPending] = useState(false);
+  const retry = async () => {
+    setPending(true);
+    const result = await retryRendition({
+      environmentId: props.environmentId,
+      input: { versionId: props.version.id },
+    });
+    setPending(false);
+    if (result._tag === "Failure" && !isAtomCommandInterrupted(result)) {
+      const error = squashAtomCommandFailure(result);
+      Dialog.alert("Could not render it again", error instanceof Error ? error.message : undefined);
+    }
+  };
+  return (
+    <WorkBanner
+      alert
+      tone="warning"
+      icon="exclamationmark.circle"
+      title={`V${props.version.ordinal} could not be rendered`}
+      detail={props.rendition.detail}
+    >
+      {props.canOperate ? (
+        <Button
+          tone="secondary"
+          size="compact"
+          icon="arrow.clockwise"
+          label="Render again"
+          disabled={pending}
+          onPress={() => void retry()}
         />
       ) : null}
     </WorkBanner>

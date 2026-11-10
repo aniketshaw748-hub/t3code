@@ -62,6 +62,10 @@ export class DeliverableNoteRepository extends Context.Service<
     readonly getNote: (
       noteId: DeliverableNoteId,
     ) => Effect.Effect<Option.Option<StoredDeliverableNote>, DeliverableNoteRepositoryError>;
+    /** Notes sent to the agent in one message, in the order they were written. */
+    readonly listNotesSentIn: (
+      messageId: MessageId,
+    ) => Effect.Effect<ReadonlyArray<StoredDeliverableNote>, DeliverableNoteRepositoryError>;
     /** Inserts or replaces the whole note. */
     readonly putNote: (
       note: StoredDeliverableNote,
@@ -102,6 +106,7 @@ const make = Effect.gen(function* () {
     Request: Schema.Struct({
       projectId: Schema.optional(ProjectId),
       noteId: Schema.optional(DeliverableNoteId),
+      sentMessageId: Schema.optional(Schema.String),
     }),
     Result: NoteRow,
     execute: (request) => sql`
@@ -129,6 +134,9 @@ const make = Effect.gen(function* () {
       WHERE ${sql.and([
         ...(request.projectId === undefined ? [] : [sql`project_id = ${request.projectId}`]),
         ...(request.noteId === undefined ? [] : [sql`note_id = ${request.noteId}`]),
+        ...(request.sentMessageId === undefined
+          ? []
+          : [sql`sent_message_id = ${request.sentMessageId}`]),
       ])}
       ORDER BY created_at ASC, note_id ASC
     `,
@@ -168,6 +176,12 @@ const make = Effect.gen(function* () {
         Effect.mapError(sqlError("getNote")),
       );
       return Option.fromNullishOr(rows[0]);
+    }),
+    listNotesSentIn: Effect.fn("DeliverableNoteRepository.listNotesSentIn")(function* (messageId) {
+      return yield* findNotes({ sentMessageId: messageId }).pipe(
+        NodeSqliteClient.readOnly,
+        Effect.mapError(sqlError("listNotesSentIn")),
+      );
     }),
     putNote: Effect.fn("DeliverableNoteRepository.putNote")(
       function* (note) {

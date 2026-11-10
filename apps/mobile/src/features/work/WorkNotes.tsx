@@ -24,6 +24,7 @@ import { agentPreviewText } from "@t3tools/shared/agentPreviewText";
 import { describeAnchor } from "@t3tools/shared/deliverableNotes";
 import * as DateTime from "effect/DateTime";
 import { Image } from "expo-image";
+import { useState } from "react";
 import { Pressable, View } from "react-native";
 
 import { RelativeTime } from "../../components/RelativeTime";
@@ -36,6 +37,7 @@ import { useAtomCommand } from "../../state/use-atom-command";
 import { workEnvironment } from "../../state/work";
 import { isThreadBusy, useThreadMessages, useWorkAssetUrl } from "./useWorkData";
 import { AGENT_AUTHOR, AuthorLine, YOU_AUTHOR } from "./WorkAuthor";
+import { renditionAspect } from "./WorkDeckStage";
 import { WorkLink } from "./WorkLink";
 import { MediaStage, RegionOutline } from "./WorkMediaStage";
 import { NoteStatusLabel, noteStatusFillClassName } from "./WorkStatus";
@@ -69,8 +71,10 @@ export function NotesSummary(props: { readonly notes: ReadonlyArray<DeliverableN
 }
 
 /**
- * The frame a note points at, small: the snapshot saved with the note when it has one, or else
- * the rendered slide or shot with the note's area outlined on it.
+ * A picture of where a note points, small. The server makes one for a note on a time, slide or
+ * area: the frame with the area outlined and, for an area, a close-up under it, so it is shown
+ * whole and nothing is drawn over it. A note without one gets the rendered slide or shot with
+ * its area outlined here.
  */
 function NoteFrame(props: {
   readonly environmentId: EnvironmentId;
@@ -81,21 +85,17 @@ function NoteFrame(props: {
 }) {
   const { note } = props;
   const assetUrl = useWorkAssetUrl(props.environmentId);
-  const snapshot = assetUrl(note.snapshotUrl);
+  // A picture with a close-up is taller than its frame; its real shape is known once it loads.
+  const [pictureAspect, setPictureAspect] = useState<number | null>(null);
+  const picture = assetUrl(note.snapshotUrl);
   const region = anchorRegion(note.anchor);
   const frame =
-    snapshot === null && region !== null && props.rendition?.versionId === note.versionId
+    picture === null && region !== null && props.rendition?.versionId === note.versionId
       ? assetUrl(anchorFrameUrl(note.anchor, props.rendition))
       : null;
-  const source = snapshot ?? frame;
+  const source = picture ?? frame;
   if (source === null) return null;
-  const aspect =
-    props.rendition !== null &&
-    props.rendition.width !== null &&
-    props.rendition.height !== null &&
-    props.rendition.height > 0
-      ? props.rendition.width / props.rendition.height
-      : 16 / 9;
+  const frameAspect = props.rendition === null ? 16 / 9 : renditionAspect(props.rendition, 16 / 9);
   return (
     <Pressable
       accessibilityRole="button"
@@ -105,9 +105,21 @@ function NoteFrame(props: {
     >
       <MediaStage
         className="rounded-md border border-border"
-        style={{ height: 80, aspectRatio: aspect }}
+        style={{
+          width: 160,
+          aspectRatio: picture === null ? frameAspect : (pictureAspect ?? frameAspect),
+        }}
       >
-        <Image source={{ uri: source }} contentFit="cover" style={{ flex: 1 }} />
+        <Image
+          source={{ uri: source }}
+          contentFit="contain"
+          style={{ flex: 1 }}
+          onLoad={({ source: loaded }) => {
+            if (picture !== null && loaded.height > 0) {
+              setPictureAspect(loaded.width / loaded.height);
+            }
+          }}
+        />
         {frame === null || region === null ? null : <RegionOutline region={region} />}
       </MediaStage>
     </Pressable>

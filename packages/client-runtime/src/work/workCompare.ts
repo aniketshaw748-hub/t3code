@@ -1,4 +1,8 @@
-import type { DeliverableVersion, DeliverableVersionId } from "@t3tools/contracts";
+import type {
+  DeliverableComparison,
+  DeliverableVersion,
+  DeliverableVersionId,
+} from "@t3tools/contracts";
 
 /** The two versions picked for comparison, kept in the order the user picked them. */
 export interface CompareSelection {
@@ -30,6 +34,31 @@ export function pickCompareVersion(
 ): CompareSelection {
   if (versionId === selection.first || versionId === selection.second) return selection;
   return { first: selection.second, second: versionId };
+}
+
+const RENDERING = new Set<DeliverableVersion["renditionStatus"]>(["pending", "rendering"]);
+const NOT_RENDERED = new Set<DeliverableVersion["renditionStatus"]>(["failed", "unsupported"]);
+
+/**
+ * Whether an answer that the versions could not be compared was overtaken by how they render
+ * now, so asking again will say something else: the render it waited for ended, or the version
+ * that failed is rendering again.
+ */
+export function comparisonIsOutdated(
+  comparison: Pick<DeliverableComparison, "unavailable">,
+  versions: ReadonlyArray<Pick<DeliverableVersion, "id" | "renditionStatus">>,
+): boolean {
+  const { unavailable } = comparison;
+  if (unavailable === null) return false;
+  if (unavailable.reason === "rendering") {
+    return versions.every((version) => !RENDERING.has(version.renditionStatus));
+  }
+  const held = versions.find((version) => version.id === unavailable.versionId);
+  return (
+    (unavailable.reason === "render_failed" || unavailable.reason === "source_missing") &&
+    held !== undefined &&
+    !NOT_RENDERED.has(held.renditionStatus)
+  );
 }
 
 /** Base is the lower version, target the higher, whatever order they were picked in. */

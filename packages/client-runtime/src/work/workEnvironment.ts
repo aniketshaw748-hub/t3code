@@ -53,6 +53,10 @@ export function createWorkEnvironmentAtoms<R, E>(
       tag: WS_METHODS.deliverablesResolveStray,
       concurrency: historyConcurrency,
     }),
+    retryRendition: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:work:retry-rendition",
+      tag: WS_METHODS.deliverablesRetryRendition,
+    }),
     createNote: createEnvironmentRpcCommand(runtime, {
       label: "environment-data:work:create-note",
       tag: WS_METHODS.deliverableNotesCreate,

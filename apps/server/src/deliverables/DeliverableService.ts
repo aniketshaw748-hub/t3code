@@ -13,7 +13,6 @@ import {
   type DeliverableResolveStrayInput,
   type DeliverableResolveStrayResult,
   type DeliverableRestoreResult,
-  type DeliverableUnitChange,
   type DeliverableVersion,
   type DeliverableVersionGraph,
   DeliverableVersionId,
@@ -38,31 +37,28 @@ import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Path from "effect/Path";
-import * as Schema from "effect/Schema";
 import * as SecureRandom from "effect/crypto/SecureRandom";
 
 import * as AssetAccess from "../assets/AssetAccess.ts";
 import * as DeliverableRepository from "../persistence/Deliverables.ts";
+import {
+  comparisonHeadline,
+  comparisonUnavailable,
+  comparisonUnavailableHeadline,
+} from "./comparisonWords.ts";
 import * as DeliverableBlobStore from "./DeliverableBlobStore.ts";
+import * as DeliverableComparer from "./DeliverableComparer.ts";
 import * as DeliverableContext from "./DeliverableContext.ts";
 import * as DeliverableGit from "./DeliverableGit.ts";
 import * as DeliverableNotes from "./DeliverableNotes.ts";
-import * as DeliverableRenderers from "./DeliverableRenderers.ts";
+import * as DeliverableRenditions from "./DeliverableRenditions.ts";
 import * as DeliverableSelfCheck from "./DeliverableSelfCheck.ts";
+import * as DeliverableStoreCleanup from "./DeliverableStoreCleanup.ts";
 import { strayVersionTarget } from "./strayVersions.ts";
 import { versionSummary, versionSummarySource } from "./versionSummary.ts";
 import * as WorkProjectEvents from "./WorkProjectEvents.ts";
-import {
-  compareSequences,
-  compareTimelines,
-  samplesFromBytes,
-  type UnitSignature,
-} from "./perceptualDiff.ts";
-
 const fail = (reason: DeliverableFailureReason) => (cause?: unknown) =>
   new DeliverableError({ reason, ...(cause === undefined ? {} : { cause }) });
-
-const decodeRenderOutput = Schema.decodeUnknownOption(DeliverableRenderers.RenderOutput);
 
 const MIME_BY_EXTENSION: Readonly<Record<string, string>> = {
   jpg: "image/jpeg",
@@ -76,26 +72,6 @@ const MIME_BY_EXTENSION: Readonly<Record<string, string>> = {
 const mimeFor = (name: string) =>
   MIME_BY_EXTENSION[name.slice(name.lastIndexOf(".") + 1).toLowerCase()] ??
   "application/octet-stream";
-
-function comparisonHeadline(
-  kind: DeliverableKind,
-  units: ReadonlyArray<DeliverableUnitChange>,
-): string {
-  const noun =
-    kind === "video" ? "shot" : kind === "deck" ? "slide" : kind === "pdf" ? "page" : "image";
-  const count = (status: DeliverableUnitChange["status"]) =>
-    units.filter((unit) => unit.status === status).length;
-  const parts = (
-    [
-      ["changed", count("changed")],
-      ["added", count("added")],
-      ["removed", count("removed")],
-    ] as const
-  )
-    .filter(([, n]) => n > 0)
-    .map(([status, n]) => `${n} ${noun}${n === 1 ? "" : "s"} ${status}`);
-  return parts.length === 0 ? `No visible change` : parts.join(", ");
-}
 
 export class DeliverableService extends Context.Service<
   DeliverableService,
@@ -141,6 +117,18 @@ export class DeliverableService extends Context.Service<
     readonly resolveStray: (
       input: DeliverableResolveStrayInput,
     ) => Effect.Effect<DeliverableResolveStrayResult, DeliverableError>;
+    /** Renders a version again after its rendition failed or had no renderer. */
+    readonly retryRendition: (
+      versionId: DeliverableVersionId,
+    ) => Effect.Effect<DeliverableRendition, DeliverableError>;
+    /**
+     * Removes the deliverables of a project that was deleted: versions, notes and the Git refs
+     * that kept their commits, then asks for the store to be cleaned. A project that is still
+     * there is left alone. Returns how many deliverables went.
+     */
+    readonly removeProject: (projectId: ProjectId) => Effect.Effect<number, DeliverableError>;
+    /** `removeProject` for every project that was deleted while the server was not looking. */
+    readonly removeDeletedProjects: Effect.Effect<void, DeliverableError>;
     /** Resolves once queued renditions and self-checks have finished. */
     readonly drain: Effect.Effect<void>;
   }
@@ -150,7 +138,9 @@ const make = Effect.gen(function* () {
   const repository = yield* DeliverableRepository.DeliverableRepository;
   const git = yield* DeliverableGit.DeliverableGit;
   const blobs = yield* DeliverableBlobStore.DeliverableBlobStore;
-  const renderers = yield* DeliverableRenderers.DeliverableRenderers;
+  const renditions = yield* DeliverableRenditions.DeliverableRenditions;
+  const comparer = yield* DeliverableComparer.DeliverableComparer;
+  const cleanup = yield* DeliverableStoreCleanup.DeliverableStoreCleanup;
   const selfCheck = yield* DeliverableSelfCheck.DeliverableSelfCheck;
   const context = yield* DeliverableContext.DeliverableContext;
   const notes = yield* DeliverableNotes.DeliverableNotes;
@@ -209,7 +199,11 @@ const make = Effect.gen(function* () {
   };
 
   /** Records one version of `relativePath` from a snapshot commit, unless it matches the current one. */
-  const recordVersion = Effect.fn("DeliverableService.recordVersion")(function* (input: {
+  const recordVersion = (input: RecordVersionInput) =>
+    // Held from the first stored byte to the row that needs it, so cleanup sees both or neither.
+    blobs.whileWriting(recordVersionUnlocked(input));
+
+  interface RecordVersionInput {
     readonly projectId: ProjectId;
     readonly cwd: string;
     readonly relativePath: string;
@@ -218,7 +212,11 @@ const make = Effect.gen(function* () {
     readonly title?: string | undefined;
     readonly summary: string | null;
     readonly expectedChanges: ReadonlyArray<DeliverableAnchor>;
-  }) {
+  }
+
+  const recordVersionUnlocked = Effect.fn("DeliverableService.recordVersion")(function* (
+    input: RecordVersionInput,
+  ) {
     const kind = deliverableKindForPath(input.relativePath);
     const blobOid = yield* git
       .blobAt({ cwd: input.cwd, commit: input.sourceCommit, path: input.relativePath })
@@ -285,7 +283,13 @@ const make = Effect.gen(function* () {
       selfCheck: null,
       createdAt: now,
     };
-    yield* repository.insertVersion({ version, updatedAt: now }).pipe(persistence);
+    yield* repository
+      .insertVersion({
+        version,
+        updatedAt: now,
+        blobs: [...snapshot.media.values()].map((media) => media.sha256),
+      })
+      .pipe(persistence);
     yield* worker.enqueue(version.id);
     const refreshed = yield* loadDeliverable(deliverable.id);
     const recorded = yield* loadVersion(version.id);
@@ -467,27 +471,15 @@ const make = Effect.gen(function* () {
           mimeType: mimeFor(file),
         }).pipe(Effect.provide(assetContext), Effect.mapError(fail("storage_failed")));
 
-  const storedOutput = Effect.fn("DeliverableService.storedOutput")(function* (
-    sha256: string,
-    kind: DeliverableKind,
-  ) {
-    const stored = yield* repository
-      .getRendition({ contentSha256: sha256, kind })
-      .pipe(persistence);
-    if (Option.isNone(stored)) return { stored: null, output: null };
-    const output =
-      stored.value.status === "ready"
-        ? Option.getOrNull(decodeRenderOutput(stored.value.data))
-        : null;
-    return { stored: stored.value, output };
-  });
-
   const rendition: DeliverableService["Service"]["rendition"] = Effect.fn(
     "DeliverableService.rendition",
   )(function* (versionId) {
     const version = yield* loadVersion(versionId);
     const deliverable = yield* loadDeliverable(version.deliverableId);
-    const { stored, output } = yield* storedOutput(version.contentSha256, deliverable.kind);
+    const { stored, output } = yield* renditions.get({
+      sha256: version.contentSha256,
+      kind: deliverable.kind,
+    });
     const sha = version.contentSha256;
     const sourceUrl = yield* AssetAccess.issueDeliverableFileUrl({
       relativePath: path.relative(blobs.root, blobs.blobPath(sha)).split(path.sep).join("/"),
@@ -521,91 +513,26 @@ const make = Effect.gen(function* () {
     } satisfies DeliverableRendition;
   });
 
-  const readFile = (sha256: string, kind: DeliverableKind, file: string) =>
-    fileSystem
-      .readFile(path.join(blobs.renditionDir({ sha256, kind }), file))
-      .pipe(Effect.mapError(fail("storage_failed")));
-
-  const signatures = Effect.fn("DeliverableService.signatures")(function* (
-    sha256: string,
-    kind: DeliverableKind,
-    output: DeliverableRenderers.RenderOutput,
-  ) {
-    return yield* Effect.forEach(output.units, (unit) =>
-      unit.signature === null
-        ? Effect.succeed<UnitSignature>({ type: "hash", value: `${sha256}:${unit.index}` })
-        : "hash" in unit.signature
-          ? Effect.succeed<UnitSignature>({ type: "hash", value: unit.signature.hash })
-          : Effect.map(readFile(sha256, kind, unit.signature.file), (data): UnitSignature => ({
-              type: "pixels",
-              data,
-            })),
-    );
-  });
-
-  const timeline = Effect.fn("DeliverableService.timeline")(function* (
-    sha256: string,
-    output: DeliverableRenderers.RenderOutput,
-  ) {
-    const samples =
-      output.samples === null
-        ? []
-        : samplesFromBytes(
-            yield* readFile(sha256, "video", output.samples.file),
-            output.samples.fps,
-          );
-    return {
-      duration: output.durationSeconds ?? 0,
-      shots: output.units.map((unit) => ({
-        index: unit.index,
-        start: unit.start ?? 0,
-        end: unit.end ?? 0,
-      })),
-      samples,
-    };
-  });
-
   const compareVersions = Effect.fn("DeliverableService.compareVersions")(function* (
     deliverable: Deliverable,
     base: DeliverableRepository.StoredDeliverableVersion,
     target: DeliverableRepository.StoredDeliverableVersion,
   ) {
     const kind = deliverable.kind;
-    const [baseOut, targetOut] = [
-      (yield* storedOutput(base.contentSha256, kind)).output,
-      (yield* storedOutput(target.contentSha256, kind)).output,
-    ];
-    let method: DeliverableComparison["method"];
-    let units: ReadonlyArray<DeliverableUnitChange>;
-    if (baseOut === null || targetOut === null) {
-      method = "bytes";
-      const same = base.contentSha256 === target.contentSha256;
-      units = [
-        {
-          status: same ? "unchanged" : "changed",
-          baseIndex: 0,
-          targetIndex: 0,
-          difference: same ? 0 : 1,
-          anchor: null,
-        },
-      ];
-    } else if (kind === "video") {
-      method = "perceptual";
-      units = compareTimelines(
-        yield* timeline(base.contentSha256, baseOut),
-        yield* timeline(target.contentSha256, targetOut),
-      );
-    } else {
-      const [baseSignatures, targetSignatures] = [
-        yield* signatures(base.contentSha256, kind, baseOut),
-        yield* signatures(target.contentSha256, kind, targetOut),
-      ];
-      method = targetSignatures.every((signature) => signature.type === "pixels")
-        ? "perceptual"
-        : "structural";
-      units = compareSequences(baseSignatures, targetSignatures);
-    }
-    const count = (status: DeliverableUnitChange["status"]) =>
+    const compared = yield* comparer.compare({
+      kind,
+      baseSha256: base.contentSha256,
+      targetSha256: target.contentSha256,
+    });
+    const units = compared.type === "compared" ? compared.units : [];
+    const unavailable =
+      compared.type === "compared"
+        ? null
+        : comparisonUnavailable(
+            compared.reason,
+            compared.side === null ? null : compared.side === "base" ? base : target,
+          );
+    const count = (status: DeliverableComparison["units"][number]["status"]) =>
       units.filter((unit) => unit.status === status).length;
     return {
       comparison: {
@@ -613,18 +540,24 @@ const make = Effect.gen(function* () {
         kind,
         baseVersionId: base.id,
         targetVersionId: target.id,
-        method,
+        method: compared.type === "compared" ? compared.method : "bytes",
         units,
         counts: {
           changed: count("changed"),
           unchanged: count("unchanged"),
           added: count("added"),
           removed: count("removed"),
+          moved: count("moved"),
         },
         summary: versionSummary(target.summary),
-        headline: comparisonHeadline(kind, units),
+        headline:
+          unavailable === null
+            ? comparisonHeadline(kind, units)
+            : comparisonUnavailableHeadline(unavailable.reason),
+        unavailable,
       } satisfies DeliverableComparison,
-      targetUnits: targetOut?.units ?? [],
+      targetUnits:
+        (yield* renditions.get({ sha256: target.contentSha256, kind })).output?.units ?? [],
     };
   });
 
@@ -768,73 +701,87 @@ const make = Effect.gen(function* () {
             version: publicVersion(version),
           })
           .pipe(Effect.mapError(fail("persistence_failed")));
-        yield* repository.deleteDeliverable(stray.id).pipe(persistence);
+        yield* removeDeliverable(stray, root);
+        yield* cleanup.request;
         yield* events.publish({ type: "changed", projectId: original.projectId });
         return { deliverable: yield* loadDeliverable(original.id) };
       }),
     );
   });
 
+  /** Removes a deliverable's records and the refs that kept its version commits in Git. */
+  const removeDeliverable = Effect.fn("DeliverableService.removeDeliverable")(function* (
+    deliverable: Deliverable,
+    workspaceRoot: string | null,
+  ) {
+    const refs = yield* repository.deleteDeliverable(deliverable.id).pipe(persistence);
+    if (workspaceRoot === null) return;
+    // The folder may be gone with the project; the refs then went with it.
+    yield* git.deleteRefs({ cwd: workspaceRoot, refs }).pipe(
+      Effect.catch((error) =>
+        Effect.logWarning("Could not delete a removed deliverable's version refs", {
+          deliverableId: deliverable.id,
+          cause: error.cause,
+        }),
+      ),
+    );
+  });
+
+  const removeProject: DeliverableService["Service"]["removeProject"] = Effect.fn(
+    "DeliverableService.removeProject",
+  )(function* (projectId) {
+    return yield* projectLock.withLock(
+      projectId,
+      Effect.gen(function* () {
+        const project = yield* context.projectState(projectId);
+        if (project.type === "active" || project.type === "unknown") return 0;
+        const list = yield* repository.listDeliverables(projectId).pipe(persistence);
+        const workspaceRoot = project.type === "deleted" ? project.workspaceRoot : null;
+        yield* Effect.forEach(
+          list,
+          (deliverable) => removeDeliverable(deliverable, workspaceRoot),
+          {
+            discard: true,
+          },
+        );
+        if (list.length === 0) return 0;
+        yield* cleanup.request;
+        yield* events.publish({ type: "changed", projectId });
+        return list.length;
+      }),
+    );
+  });
+
   /** Renders a version's content once; identical bytes in later versions reuse it. */
-  const ensureRendered = Effect.fn("DeliverableService.ensureRendered")(function* (
+  const ensureRendered = (
     version: DeliverableRepository.StoredDeliverableVersion,
     deliverable: Deliverable,
-  ) {
-    const sha = version.contentSha256;
-    const existing = yield* repository
-      .getRendition({ contentSha256: sha, kind: deliverable.kind })
-      .pipe(persistence);
-    if (
-      Option.isNone(existing) ||
-      existing.value.status === "pending" ||
-      existing.value.status === "rendering"
-    ) {
-      const put = (
-        fields: Pick<
-          DeliverableRepository.StoredRendition,
-          "status" | "renderer" | "detail" | "data"
-        >,
-      ) =>
-        Effect.flatMap(DateTime.now, (updatedAt) =>
-          repository
-            .putRendition({ contentSha256: sha, kind: deliverable.kind, updatedAt, ...fields })
-            .pipe(
-              persistence,
-              Effect.andThen(events.publish({ type: "changed", projectId: deliverable.projectId })),
-            ),
-        );
-      yield* put({ status: "rendering", renderer: null, detail: null, data: null });
-      const outDir = blobs.renditionDir({ sha256: sha, kind: deliverable.kind });
-      yield* Effect.scoped(
-        Effect.gen(function* () {
-          const scratchDir = yield* blobs.scratchDir.pipe(Effect.mapError(fail("storage_failed")));
-          return yield* renderers.render({
-            kind: deliverable.kind,
-            sourcePath: blobs.blobPath(sha),
-            fileName: path.basename(deliverable.path),
-            outDir,
-            scratchDir,
-          });
-        }),
-      ).pipe(
-        Effect.flatMap((output) =>
-          put({ status: "ready", renderer: output.renderer, detail: output.detail, data: output }),
-        ),
-        Effect.catchTags({
-          DeliverableRenderUnsupportedError: (error) =>
-            put({ status: "unsupported", renderer: null, detail: error.detail, data: null }),
-          DeliverableRenderError: (error) =>
-            Effect.logWarning("Deliverable rendering failed", {
-              stage: error.stage,
-              cause: error.cause,
-            }).pipe(
-              Effect.andThen(
-                put({ status: "failed", renderer: null, detail: error.message, data: null }),
-              ),
-            ),
-        }),
-      );
+  ) =>
+    renditions.ensure({
+      sha256: version.contentSha256,
+      kind: deliverable.kind,
+      fileName: deliverable.path,
+      projectId: deliverable.projectId,
+    });
+
+  const retryRendition: DeliverableService["Service"]["retryRendition"] = Effect.fn(
+    "DeliverableService.retryRendition",
+  )(function* (versionId) {
+    const version = yield* loadVersion(versionId);
+    const deliverable = yield* loadDeliverable(version.deliverableId);
+    const again = yield* renditions.retry({
+      sha256: version.contentSha256,
+      kind: deliverable.kind,
+    });
+    if (again) {
+      // A check skipped because nothing could be compared is owed once this renders.
+      if (version.selfCheck?.status === "skipped") {
+        yield* repository.setSelfCheck({ versionId, result: null }).pipe(persistence);
+      }
+      yield* events.publish({ type: "changed", projectId: deliverable.projectId });
+      yield* worker.enqueue(versionId);
     }
+    return yield* rendition(versionId);
   });
 
   const renderVersion = Effect.fn("DeliverableService.renderVersion")(function* (
@@ -865,11 +812,13 @@ const make = Effect.gen(function* () {
   const worker = yield* makeDrainableWorker((versionId: DeliverableVersionId) =>
     renderVersion(versionId),
   );
-  // Renditions interrupted by a restart pick up where they were.
-  yield* repository.listUnrendered.pipe(
+  // Renditions and self-checks a restart interrupted, or an upgrade asked for again, pick up here.
+  yield* repository.listUnfinished.pipe(
     Effect.flatMap((ids) => Effect.forEach(ids, worker.enqueue, { discard: true })),
     Effect.catch((error) =>
-      Effect.logWarning("Could not resume deliverable renditions", { error: error.message }),
+      Effect.logWarning("Could not resume deliverable renditions and self-checks", {
+        error: error.message,
+      }),
     ),
   );
 
@@ -903,6 +852,13 @@ const make = Effect.gen(function* () {
       );
     }),
     resolveStray,
+    retryRendition,
+    removeProject,
+    removeDeletedProjects: repository.listProjects.pipe(
+      persistence,
+      Effect.flatMap((projects) => Effect.forEach(projects, removeProject, { discard: true })),
+      Effect.withSpan("DeliverableService.removeDeletedProjects"),
+    ),
     restore: Effect.fn("DeliverableService.restore")(function* (input) {
       return yield* moveTo(input.deliverableId, "restore", (versions) =>
         versions.some((version) => version.id === input.versionId)

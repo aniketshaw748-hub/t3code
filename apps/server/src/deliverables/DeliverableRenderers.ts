@@ -1,4 +1,4 @@
-import type { DeliverableKind } from "@t3tools/contracts";
+import type { DeliverableKind, DeliverableRegion } from "@t3tools/contracts";
 import * as HostProcess from "@t3tools/shared/HostProcess";
 import * as Context from "effect/Context";
 import type * as Duration from "effect/Duration";
@@ -12,6 +12,7 @@ import * as Schema from "effect/Schema";
 import * as ProcessRunner from "../processRunner.ts";
 import { openZipArchive } from "../zipArchive.ts";
 import {
+  parsePpm,
   parseProbe,
   parseSceneCuts,
   pptxSlideOrder,
@@ -19,7 +20,8 @@ import {
   pptxSlideTitle,
   shotsFromCuts,
 } from "./mediaParsing.ts";
-import { SIGNATURE_GRID } from "./perceptualDiff.ts";
+import { notePictureFilter } from "./notePicture.ts";
+import { OUTLINE_GRID, type Raster, VIDEO_GRID } from "./perceptualDiff.ts";
 
 /** The renderer cannot run here; `detail` says what to install. */
 export class DeliverableRenderUnsupportedError extends Schema.TaggedError<DeliverableRenderUnsupportedError>()(
@@ -31,23 +33,27 @@ export class DeliverableRenderUnsupportedError extends Schema.TaggedError<Delive
   }
 }
 
+/** What the renderer was doing at each stage, in words a reviewer reads. */
+const STAGE_WORK = {
+  probe: "reading the file",
+  scenes: "finding the shots",
+  frames: "making the preview images",
+  proxy: "making the preview video",
+  slides: "exporting the slides",
+  structure: "reading the deck's contents",
+  signature: "sampling it for comparison",
+  pixels: "reading an image",
+} as const;
+
 export class DeliverableRenderError extends Schema.TaggedError<DeliverableRenderError>()(
   "DeliverableRenderError",
   {
-    stage: Schema.Literals([
-      "probe",
-      "scenes",
-      "frames",
-      "proxy",
-      "slides",
-      "structure",
-      "signature",
-    ]),
+    stage: Schema.Literals(Object.keys(STAGE_WORK) as Array<keyof typeof STAGE_WORK>),
     cause: Schema.Defect(),
   },
 ) {
   override get message(): string {
-    return `Rendering failed while extracting ${this.stage}.`;
+    return `Rendering stopped while ${STAGE_WORK[this.stage]}.`;
   }
 }
 
@@ -60,12 +66,28 @@ export const RenderedUnit = Schema.Struct({
   /** File names inside the rendition directory. */
   image: Schema.NullOr(Schema.String),
   thumb: Schema.NullOr(Schema.String),
-  /** A SIGNATURE_GRID² RGB file, or a structural hash when nothing was rendered. */
+  /** A `grid`² RGB file for lining units up, or a structural hash when nothing was rendered. */
   signature: Schema.NullOr(
-    Schema.Union([Schema.Struct({ file: Schema.String }), Schema.Struct({ hash: Schema.String })]),
+    Schema.Union([
+      Schema.Struct({
+        file: Schema.String,
+        /** Missing on renditions made when the grid was 32 a side; those are redone before use. */
+        grid: Schema.optional(Schema.Number),
+      }),
+      Schema.Struct({ hash: Schema.String }),
+    ]),
   ),
 });
 export type RenderedUnit = typeof RenderedUnit.Type;
+
+/** Frames sampled across a video at `fps`, back to back in one file, each `grid` x `grid` RGB. */
+export const SampledFrames = Schema.Struct({
+  file: Schema.String,
+  fps: Schema.Number,
+  /** Missing on renditions made when the grid was 32 a side; those are resampled before use. */
+  grid: Schema.optional(Schema.Number),
+});
+export type SampledFrames = typeof SampledFrames.Type;
 
 export const RenderOutput = Schema.Struct({
   renderer: Schema.String,
@@ -75,8 +97,7 @@ export const RenderOutput = Schema.Struct({
   poster: Schema.NullOr(Schema.String),
   proxy: Schema.NullOr(Schema.String),
   units: Schema.Array(RenderedUnit),
-  /** Frames sampled across a video at `fps`, SIGNATURE_BYTES each. */
-  samples: Schema.NullOr(Schema.Struct({ file: Schema.String, fps: Schema.Number })),
+  samples: Schema.NullOr(SampledFrames),
   /** What this rendition could not do, such as slide images without a slide renderer. */
   detail: Schema.NullOr(Schema.String),
 });
@@ -94,6 +115,33 @@ export class DeliverableRenderers extends Context.Service<
       readonly outDir: string;
       readonly scratchDir: string;
     }) => Effect.Effect<RenderOutput, DeliverableRenderUnsupportedError | DeliverableRenderError>;
+    /** Samples a video's frames onto the comparison grid, writing one file into `outDir`. */
+    readonly sampleFrames: (input: {
+      readonly sourcePath: string;
+      readonly outDir: string;
+      readonly durationSeconds: number;
+    }) => Effect.Effect<SampledFrames, DeliverableRenderUnsupportedError | DeliverableRenderError>;
+    /** Reduces a rendered image to its outline on the current grid, written to `outlinePath`. */
+    readonly outlineImage: (input: {
+      readonly imagePath: string;
+      readonly outlinePath: string;
+    }) => Effect.Effect<void, DeliverableRenderUnsupportedError | DeliverableRenderError>;
+    /**
+     * A PNG of where a note points: the frame `seconds` into a video, or a still image, with the
+     * note's area outlined and shown again close up.
+     */
+    readonly notePicture: (input: {
+      readonly sourcePath: string;
+      /** Left out for a still image. */
+      readonly seconds?: number;
+      readonly region: DeliverableRegion | null;
+      readonly outPath: string;
+    }) => Effect.Effect<void, DeliverableRenderUnsupportedError | DeliverableRenderError>;
+    /** A rendered image's pixels, decoded by way of `scratchPath`. */
+    readonly readImage: (input: {
+      readonly imagePath: string;
+      readonly scratchPath: string;
+    }) => Effect.Effect<Raster, DeliverableRenderUnsupportedError | DeliverableRenderError>;
   }
 >()("t3/deliverables/DeliverableRenderers") {}
 
@@ -208,7 +256,24 @@ const make = Effect.gen(function* () {
   });
 
   const scaleFilter = (width: number) => `scale='min(${width},iw)':-2:flags=lanczos`;
-  const signatureFilter = `scale=${SIGNATURE_GRID}:${SIGNATURE_GRID}:flags=area,format=rgb24`;
+  const gridFilter = (grid: number) => `scale=${grid}:${grid}:flags=area,format=rgb24`;
+
+  const outlineImage: DeliverableRenderers["Service"]["outlineImage"] = Effect.fn(
+    "DeliverableRenderers.outlineImage",
+  )(function* (input) {
+    yield* requireFfmpeg;
+    yield* ffmpeg("signature", [
+      "-v",
+      "error",
+      "-i",
+      input.imagePath,
+      "-vf",
+      gridFilter(OUTLINE_GRID),
+      "-f",
+      "rawvideo",
+      input.outlinePath,
+    ]);
+  });
 
   /** A still image's display copy, thumbnail and pixel signature. */
   const stillUnit = Effect.fn("DeliverableRenderers.stillUnit")(function* (
@@ -243,18 +308,79 @@ const make = Effect.gen(function* () {
       "4",
       path.join(outDir, thumb),
     ]);
+    yield* outlineImage({ imagePath: source, outlinePath: path.join(outDir, signature) });
+    return { image, thumb, signature: { file: signature, grid: OUTLINE_GRID } } as const;
+  });
+
+  const sampleFrames: DeliverableRenderers["Service"]["sampleFrames"] = Effect.fn(
+    "DeliverableRenderers.sampleFrames",
+  )(function* (input) {
+    yield* requireFfmpeg;
+    const fps = Math.min(2, SAMPLE_BUDGET / input.durationSeconds);
+    // Named by grid, so resampling an older rendition never writes over the file it still reads.
+    const file = `frames-${VIDEO_GRID}.rgb`;
     yield* ffmpeg("signature", [
       "-v",
       "error",
       "-i",
-      source,
+      input.sourcePath,
       "-vf",
-      signatureFilter,
+      `fps=${fps.toFixed(4)},${gridFilter(VIDEO_GRID)}`,
       "-f",
       "rawvideo",
-      path.join(outDir, signature),
+      path.join(input.outDir, file),
     ]);
-    return { image, thumb, signature: { file: signature } } as const;
+    return { file, fps, grid: VIDEO_GRID };
+  });
+
+  const notePicture: DeliverableRenderers["Service"]["notePicture"] = Effect.fn(
+    "DeliverableRenderers.notePicture",
+  )(function* (input) {
+    yield* requireFfmpeg;
+    yield* ffmpeg("frames", [
+      "-v",
+      "error",
+      ...(input.seconds === undefined ? [] : ["-ss", input.seconds.toFixed(3)]),
+      "-i",
+      input.sourcePath,
+      "-filter_complex",
+      notePictureFilter(input.region),
+      "-frames:v",
+      "1",
+      "-update",
+      "1",
+      input.outPath,
+    ]);
+  });
+
+  const readImage: DeliverableRenderers["Service"]["readImage"] = Effect.fn(
+    "DeliverableRenderers.readImage",
+  )(function* (input) {
+    yield* requireFfmpeg;
+    yield* ffmpeg("pixels", [
+      "-v",
+      "error",
+      "-i",
+      input.imagePath,
+      "-frames:v",
+      "1",
+      "-update",
+      "1",
+      "-c:v",
+      "ppm",
+      "-f",
+      "image2",
+      input.scratchPath,
+    ]);
+    const raster = parsePpm(
+      yield* fileSystem
+        .readFile(input.scratchPath)
+        .pipe(Effect.mapError((cause) => new DeliverableRenderError({ stage: "pixels", cause }))),
+    );
+    if (raster === null) {
+      return yield* new DeliverableRenderError({ stage: "pixels", cause: "Not a binary PPM." });
+    }
+    return raster;
   });
 
   const renderVideo = Effect.fn("DeliverableRenderers.renderVideo")(function* (
@@ -281,18 +407,7 @@ const make = Effect.gen(function* () {
       "-",
     ]);
     const shots = shotsFromCuts(parseSceneCuts(scenes.stderr), duration);
-    const fps = Math.min(2, SAMPLE_BUDGET / duration);
-    yield* ffmpeg("signature", [
-      "-v",
-      "error",
-      "-i",
-      sourcePath,
-      "-vf",
-      `fps=${fps.toFixed(4)},${signatureFilter}`,
-      "-f",
-      "rawvideo",
-      path.join(outDir, "samples.rgb"),
-    ]);
+    const samples = yield* sampleFrames({ sourcePath, outDir, durationSeconds: duration });
     const units: RenderedUnit[] = [];
     for (const shot of shots) {
       const middle = ((shot.start + shot.end) / 2).toFixed(3);
@@ -352,14 +467,14 @@ const make = Effect.gen(function* () {
       path.join(outDir, "proxy.mp4"),
     ]);
     return {
-      renderer: "video-ffmpeg@2",
+      renderer: "video-ffmpeg@3",
       width: probed.width,
       height: probed.height,
       durationSeconds: duration,
       poster: units[0]?.image ?? null,
       proxy: "proxy.mp4",
       units,
-      samples: { file: "samples.rgb", fps },
+      samples,
       detail: null,
     } satisfies RenderOutput;
   });
@@ -630,6 +745,10 @@ const make = Effect.gen(function* () {
           });
       }
     }),
+    sampleFrames,
+    outlineImage,
+    notePicture,
+    readImage,
   });
 });
 

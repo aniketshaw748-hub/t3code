@@ -35,6 +35,11 @@ one-line summary. If the agent saves a revision as a new file instead (`deck-v2.
 removes the copy. **Keep as its own file** leaves both. Undo, redo and **Restore** move the files back and forth; they wait until the
 agent's turn ends. Editing after an undo starts a new branch, and the old versions stay restorable.
 **Compare** shows two versions side by side or overlaid, with the changed slides or shots marked.
+Slides and shots are matched by what they show, so one you added, removed or moved is marked as
+that and the rest are not. If a version could not be rendered, **Render again** tries it once more.
+
+Deleting a Work project removes its versions and notes from the app and frees the space they
+used. The files in the project's folder stay where they are.
 
 Before a paid generation step, the agent shows what it will make and what it costs. Nothing is
 spent until you choose **Approve**.

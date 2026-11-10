@@ -21,9 +21,10 @@ const comparison = (units: ReadonlyArray<DeliverableUnitChange>): DeliverableCom
   targetVersionId: DeliverableVersionId.make("v2"),
   method: "perceptual",
   units,
-  counts: { changed: 0, unchanged: 0, added: 0, removed: 0 },
+  counts: { changed: 0, unchanged: 0, added: 0, removed: 0, moved: 0 },
   summary: null,
   headline: "",
+  unavailable: null,
 });
 
 const unchanged = (index: number): DeliverableUnitChange => ({
@@ -92,5 +93,34 @@ describe("changedWhereRequested", () => {
         units: shots,
       }).status,
     ).toBe("skipped");
+    // Nothing to judge when the versions could not be compared: the cause is the finding.
+    const message = "V2 could not be rendered, so there is nothing to compare it with.";
+    expect(
+      changedWhereRequested.run({
+        expectedChanges: [{ kind: "time", t: 1 }],
+        comparison: {
+          ...comparison([]),
+          unavailable: { reason: "render_failed", versionId: null, message },
+        },
+        units: shots,
+      }),
+    ).toEqual({ status: "skipped", findings: [message] });
+  });
+
+  it("counts a shot moved to the requested place as the change landing there", () => {
+    const moved: DeliverableUnitChange = {
+      status: "moved",
+      baseIndex: 2,
+      targetIndex: 1,
+      difference: 0,
+      anchor: { kind: "time", t: 2, tEnd: 4 },
+    };
+    expect(
+      changedWhereRequested.run({
+        expectedChanges: [{ kind: "time", t: 3 }],
+        comparison: comparison([unchanged(0), moved, unchanged(2)]),
+        units: shots,
+      }).status,
+    ).toBe("passed");
   });
 });

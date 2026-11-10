@@ -1,9 +1,11 @@
+import { DeliverableVersionId } from "@t3tools/contracts";
 import { describe, expect, it } from "vite-plus/test";
 
 import {
   anchorFrameUrl,
   changeRegion,
   compareUnitLabel,
+  compareUnitPlace,
   noteAnchorChip,
   notePinAnchor,
   notePinLabel,
@@ -54,12 +56,65 @@ describe("note pinning", () => {
 });
 
 describe("compare rows", () => {
-  const rendition = { units: [{ index: 1, kind: "shot", start: 4, end: 9 }] } as never;
+  const shots = (...spans: ReadonlyArray<readonly [start: number, end: number]>) => ({
+    units: spans.map(([start, end], index) => ({
+      index,
+      kind: "shot" as const,
+      start,
+      end,
+      imageUrl: null,
+      thumbUrl: null,
+    })),
+  });
+  // The newer cut dropped the old second shot, so its own second shot is a different one.
+  const sides = {
+    base: { versionId: DeliverableVersionId.make("v1"), rendition: shots([0, 4], [4, 9], [9, 20]) },
+    target: { versionId: DeliverableVersionId.make("v2"), rendition: shots([0, 4], [4, 15]) },
+  };
+  const unloaded = {
+    base: { ...sides.base, rendition: null },
+    target: { ...sides.target, rendition: null },
+  };
+
   it("labels shots with their time span and slides by number", () => {
-    expect(compareUnitLabel("video", { baseIndex: 1, targetIndex: 1 }, rendition)).toBe(
-      "Shot 2 · 0:04-0:09",
-    );
-    expect(compareUnitLabel("deck", { baseIndex: 3, targetIndex: null }, null)).toBe("Slide 4");
+    expect(
+      compareUnitLabel("video", { baseIndex: 2, targetIndex: 1, status: "changed" }, sides),
+    ).toBe("Shot 2 · 0:04-0:15");
+    expect(
+      compareUnitLabel("deck", { baseIndex: null, targetIndex: 3, status: "added" }, unloaded),
+    ).toBe("Slide 4");
+  });
+
+  it("reads a removed shot from the older version, the only one that has it", () => {
+    const removed = { baseIndex: 1, targetIndex: null, status: "removed" } as const;
+    expect(compareUnitLabel("video", removed, sides)).toBe("Shot 2 · 0:04-0:09");
+    expect(compareUnitPlace("video", removed, sides)).toMatchObject({
+      versionId: "v1",
+      anchor: { kind: "time", t: 4 },
+    });
+    expect(compareUnitPlace("deck", removed, unloaded)).toMatchObject({
+      versionId: "v1",
+      anchor: { kind: "slide", index: 1 },
+    });
+  });
+
+  it("opens an added or changed one in the newer version", () => {
+    expect(
+      compareUnitPlace("video", { baseIndex: null, targetIndex: 1, status: "added" }, sides),
+    ).toMatchObject({ versionId: "v2", anchor: { kind: "time", t: 4 } });
+  });
+
+  it("shows where a moved one was and where it is, and opens it where it is", () => {
+    const moved = { baseIndex: 4, targetIndex: 1, status: "moved" } as const;
+    expect(compareUnitLabel("deck", moved, unloaded)).toBe("Slide 5 → 2");
+    expect(compareUnitPlace("deck", moved, unloaded)).toMatchObject({
+      versionId: "v2",
+      anchor: { kind: "slide", index: 1 },
+    });
+    // Others shift when one is inserted before them; only a real move names both places.
+    expect(
+      compareUnitLabel("deck", { baseIndex: 2, targetIndex: 3, status: "unchanged" }, unloaded),
+    ).toBe("Slide 4");
   });
 
   it("reads the changed region from either anchor shape", () => {

@@ -61,7 +61,7 @@ describe("formatNotesMessage", () => {
     });
     expect(message).toContain("Notes on Launch film (out/launch.mp4), V4:");
     expect(message).toContain(
-      "- [note_a] at 0:42 (my drawing on the frame is attached): Logo lands too late",
+      "- [note_a] at 0:42 (a picture of it is attached): Logo lands too late",
     );
     expect(message).toContain("- [note_b] the whole video: Warmer grade");
     expect(message).toContain("deliverable_mark_notes_fixed");

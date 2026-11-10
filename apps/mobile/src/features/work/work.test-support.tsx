@@ -7,6 +7,7 @@ import {
   ThreadId,
   type Deliverable,
   type DeliverableAnchor,
+  type DeliverableComparison,
   type DeliverableNote,
   type DeliverableRendition,
   type DeliverableVersion,
@@ -378,6 +379,8 @@ export interface WorkScene {
   } | null;
   readonly busy: boolean;
   readonly canOperate: boolean;
+  /** What the server says changed between any two versions; left out, it is still asking. */
+  readonly comparison?: DeliverableComparison;
 }
 
 interface HostCall {
@@ -443,6 +446,14 @@ export const workState = {
     useAgentProgress: () => ({ step: null, renderPercent: null }),
     usePendingSpendApprovals: () => [],
     useWorkPendingRequests: () => null,
+    useComparison: () => {
+      const { comparison } = scene();
+      return {
+        result: comparison === undefined ? AsyncResult.initial() : AsyncResult.success(comparison),
+        comparison: comparison ?? null,
+        retry: () => host.record("retryComparison", null),
+      };
+    },
   },
   actions: {
     useSendWorkMessage: () => async (message: { readonly text: string }) => {
@@ -467,7 +478,7 @@ export const workState = {
       redo: command("redo"),
       restore: command("restore"),
       resolveStray: command("resolveStray"),
-      compare: () => ({ value: AsyncResult.initial() }),
+      retryRendition: command("retryRendition"),
     },
   },
   server: { serverEnvironment: { answerSpendApproval: command("answerSpendApproval") } },
@@ -531,6 +542,7 @@ export function workNote(input: {
   readonly status?: DeliverableNote["status"];
   readonly fixedIn?: string;
   readonly reply?: string;
+  readonly snapshotUrl?: string;
 }): DeliverableNote {
   return {
     id: DeliverableNoteId.make(input.id ?? "note-1"),
@@ -541,7 +553,7 @@ export function workNote(input: {
     body: input.body,
     author: { kind: "user" },
     status: input.status ?? "open",
-    snapshotUrl: null,
+    snapshotUrl: input.snapshotUrl ?? null,
     sentMessageId: null,
     sentRunId: null,
     fixedInVersionId: input.fixedIn === undefined ? null : DeliverableVersionId.make(input.fixedIn),
@@ -556,12 +568,14 @@ export function workRendition(input: {
   readonly units: number;
   readonly unitKind: "slide" | "shot";
   readonly durationSeconds?: number;
+  /** Set for a render that ended without a preview: why, in the server's words. */
+  readonly failed?: string;
 }): DeliverableRendition {
   return {
     versionId: DeliverableVersionId.make(input.versionId),
-    status: "ready",
+    status: input.failed === undefined ? "ready" : "failed",
     renderer: null,
-    detail: null,
+    detail: input.failed ?? null,
     width: 1280,
     height: 720,
     durationSeconds: input.durationSeconds ?? null,

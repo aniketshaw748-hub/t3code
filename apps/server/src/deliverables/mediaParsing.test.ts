@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vite-plus/test";
 
 import {
+  parsePpm,
   parseProbe,
   parseSceneCuts,
   pptxSlideOrder,
@@ -71,5 +72,30 @@ describe("pptx structure", () => {
       "Q3 & beyond",
     );
     expect(pptxSlideTitle("<p:sld/>")).toBeUndefined();
+  });
+});
+
+describe("parsePpm", () => {
+  const ppm = (header: string, pixels: ReadonlyArray<number>) =>
+    new Uint8Array([...new TextEncoder().encode(header), ...pixels]);
+
+  it("reads a binary PPM's size and pixels, skipping comments", () => {
+    const pixels = [255, 0, 0, 0, 255, 0];
+    expect(parsePpm(ppm("P6\n2 1\n255\n", pixels))).toEqual({
+      width: 2,
+      height: 1,
+      data: new Uint8Array(pixels),
+    });
+    expect(parsePpm(ppm("P6\n# made by a tool\n1 2\n255\n", pixels))).toMatchObject({
+      width: 1,
+      height: 2,
+    });
+  });
+
+  it("refuses other formats and short files", () => {
+    expect(parsePpm(ppm("P5\n2 1\n255\n", [1, 2]))).toBeNull();
+    expect(parsePpm(ppm("P6\n2 1\n65535\n", [1, 2, 3, 4, 5, 6]))).toBeNull();
+    expect(parsePpm(ppm("P6\n2 2\n255\n", [1, 2, 3]))).toBeNull();
+    expect(parsePpm(new Uint8Array())).toBeNull();
   });
 });

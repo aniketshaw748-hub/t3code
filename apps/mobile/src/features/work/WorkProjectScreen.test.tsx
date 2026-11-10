@@ -1,3 +1,4 @@
+import type { DeliverableComparison } from "@t3tools/contracts";
 import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { expect, it, vi } from "vite-plus/test";
@@ -263,4 +264,107 @@ it("leaves a connection that can't leave notes without a way to mark an area", a
   await screen.press(screen.labelled("Slide 2: Part 2"));
   expect(screen.container.querySelector('[aria-label="Mark an area for a note"]')).toBeNull();
   expect((screen.labelled("Note for the agent") as HTMLTextAreaElement).readOnly).toBe(true);
+});
+
+it("shows the server's picture of a note whole, with no second box drawn over it", () => {
+  using screen = open(
+    deck([
+      workNote({
+        versionId: "v2",
+        anchor: { kind: "slide", index: 1, region: { x: 0.25, y: 0.5, w: 0.5, h: 0.25 } },
+        body: "Logo is too small",
+        snapshotUrl: "/notes/picture.png",
+      }),
+    ]),
+  );
+  // The picture already has the area outlined, and a close-up under it.
+  expect(screen.container.querySelector('img[src="/notes/picture.png"]')).not.toBeNull();
+  expect(screen.container.querySelectorAll('[style*="left: 25%"]')).toHaveLength(0);
+});
+
+it("says why a version has no preview and renders it again on request", async () => {
+  const scene = deck();
+  using screen = open({
+    ...scene,
+    renditions: [
+      {
+        ...workRendition({
+          versionId: "v2",
+          units: 0,
+          unitKind: "slide",
+          failed: "LibreOffice is not installed.",
+        }),
+      },
+    ],
+  });
+  expect(screen.container.textContent).toContain("V2 could not be rendered");
+  expect(screen.container.textContent).toContain("LibreOffice is not installed.");
+  expect(screen.container.textContent).toContain("No preview of V2");
+
+  await screen.press(screen.named("Render again"));
+  expect(hostCalls("retryRendition")).toEqual([{ versionId: "v2" }]);
+});
+
+const comparison = (
+  input: Pick<DeliverableComparison, "units" | "unavailable" | "headline">,
+): DeliverableComparison =>
+  ({
+    kind: "deck",
+    baseVersionId: "v1",
+    targetVersionId: "v2",
+    counts: { changed: 0, unchanged: 0, added: 0, removed: 0, moved: 0 },
+    summary: null,
+    ...input,
+  }) as unknown as DeliverableComparison;
+
+it("opens a removed slide in the older version, the only one that has it", async () => {
+  const scene = deck();
+  using screen = open({
+    ...scene,
+    renditions: [
+      workRendition({ versionId: "v1", units: 4, unitKind: "slide" }),
+      workRendition({ versionId: "v2", units: 3, unitKind: "slide" }),
+    ],
+    comparison: comparison({
+      headline: "1 slide removed, 1 moved",
+      unavailable: null,
+      units: [
+        { baseIndex: 3, targetIndex: null, status: "removed", difference: 1, anchor: null },
+        { baseIndex: 2, targetIndex: 0, status: "moved", difference: 0, anchor: null },
+        { baseIndex: 0, targetIndex: 1, status: "unchanged", difference: 0, anchor: null },
+      ] as unknown as DeliverableComparison["units"],
+    }),
+  });
+  await screen.press(screen.named("What changed"));
+  // A moved slide says where it was and where it is; one that only shifted is left out.
+  expect(screen.named("Slide 3 → 1 Moved")).toBeTruthy();
+  expect(screen.container.textContent).not.toContain("Unchanged");
+
+  // The fourth slide exists only in V1.
+  await screen.press(screen.named("Slide 4 Removed"));
+  expect(screen.container.textContent).toContain("V1 · earlier version · 4 slides");
+  expect(screen.container.querySelector('img[alt="Slide 4: Part 4"]')).not.toBeNull();
+});
+
+it("says in the server's words why two versions can't be compared", async () => {
+  using screen = open({
+    ...deck(),
+    comparison: comparison({
+      headline: "Not compared",
+      units: [],
+      unavailable: {
+        reason: "comparison_failed",
+        versionId: null,
+        message: "The comparison stopped with an error.",
+      },
+    }),
+  });
+  await screen.press(screen.named("What changed"));
+  expect(screen.container.textContent).toContain("The comparison stopped with an error.");
+  await screen.press(screen.named("Try again"));
+  expect(hostCalls("retryComparison")).toHaveLength(1);
+
+  await screen.press(screen.named("Compare the two versions"));
+  // Nothing was compared, so the page does not claim that nothing changed.
+  expect(screen.container.textContent).not.toContain("Nothing visible changed");
 });

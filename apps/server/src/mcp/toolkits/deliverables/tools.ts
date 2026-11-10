@@ -67,7 +67,7 @@ const DeliverableVersionsTool = Tool.make("deliverable_versions", {
 const DeliverableCompareTool = Tool.make("deliverable_compare", {
   ...shared,
   description:
-    "What changed between two versions: each slide or shot marked changed, unchanged, added or removed, with a 0-1 difference and where in the frame it changed. Omit baseVersionId to compare with the version it was made from.",
+    "What changed between two versions: each slide or shot marked changed, unchanged, added, removed or moved, with a 0-1 difference and where in the frame it changed. Slides and shots are matched by what they show, not by position. When `unavailable` is set the versions could not be compared and its message says why. Omit baseVersionId to compare with the version it was made from.",
   parameters: Schema.Struct({
     targetVersionId: DeliverableVersionId,
     baseVersionId: Schema.optional(DeliverableVersionId),
@@ -135,7 +135,7 @@ const notesShared = {
 const DeliverableNotesTool = Tool.make("deliverable_notes", {
   ...notesShared,
   description:
-    "The user's and reviewers' notes on deliverables: each with its anchor (time in seconds, 0-based slide, region x/y/w/h 0-1), the version it was left on, a snapshotUrl of the frame or slide with their drawing, and its status. Read open and fixing notes before you change a deliverable.",
+    "The user's and reviewers' notes on deliverables: each with its anchor (time in seconds, 0-based slide, region x/y/w/h 0-1), the version it was left on, a snapshotUrl of the frame or slide with the marked area outlined or their drawing on it, and its status. Read open and fixing notes before you change a deliverable.",
   parameters: Schema.Struct({
     projectId: ProjectTarget,
     deliverableId: Schema.optional(DeliverableId),

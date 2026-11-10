@@ -24,7 +24,7 @@ export const DELIVERABLE_REFS_ROOT = `${HIDDEN_REFS_ROOT}/deliverables`;
 export class DeliverableGitError extends Schema.TaggedError<DeliverableGitError>()(
   "DeliverableGitError",
   {
-    operation: Schema.Literals(["init", "snapshot", "capture", "restore", "read"]),
+    operation: Schema.Literals(["init", "snapshot", "capture", "restore", "read", "refs"]),
     cause: Schema.Defect(),
   },
 ) {
@@ -103,6 +103,16 @@ export class DeliverableGit extends Context.Service<
       readonly message: string;
       readonly ref: string;
     }) => Effect.Effect<SnapshotResult, DeliverableGitError>;
+    /** Content hashes of every stored file a version commit points at. */
+    readonly storedBlobs: (input: {
+      readonly cwd: string;
+      readonly commit: string;
+    }) => Effect.Effect<ReadonlyArray<string>, DeliverableGitError>;
+    /** Deletes version refs, so Git can drop the commits of versions that no longer exist. */
+    readonly deleteRefs: (input: {
+      readonly cwd: string;
+      readonly refs: ReadonlyArray<string>;
+    }) => Effect.Effect<void, DeliverableGitError>;
     /**
      * Rewrites the workspace paths that differ between two version commits to match `to`.
      * Refuses when any of them no longer matches `from`.
@@ -283,9 +293,14 @@ const make = Effect.gen(function* () {
     sourceCommit: string,
     entries: ReadonlyArray<TreeEntry>,
   ) {
-    const known = yield* repository.lookupBlobs([...new Set(entries.map((entry) => entry.oid))]);
-    const missing = entries.filter((entry) => !known.has(entry.oid));
-    const stored = new Map(known);
+    const indexed = yield* repository.lookupBlobs([...new Set(entries.map((entry) => entry.oid))]);
+    // The index is only a shortcut: bytes that are not in the store are read out of Git again.
+    const stored = new Map<string, string>();
+    for (const [oid, sha256] of indexed) {
+      if (yield* blobs.has(sha256)) stored.set(oid, sha256);
+      else yield* repository.forgetBlob(sha256);
+    }
+    const missing = entries.filter((entry) => !stored.has(entry.oid));
     if (missing.length > 0) {
       yield* withIndex((env, scratch) =>
         Effect.gen(function* () {
@@ -414,6 +429,38 @@ const make = Effect.gen(function* () {
     return pointers;
   });
 
+  const storedBlobs: DeliverableGit["Service"]["storedBlobs"] = Effect.fn(
+    "DeliverableGit.storedBlobs",
+  )(
+    function* (input) {
+      const tree = parseTree(
+        (yield* git("lsTree", input.cwd, ["ls-tree", "-r", "-l", "-z", input.commit])).stdout,
+      );
+      const pointers = yield* readPointers(input.cwd, [
+        ...new Set(
+          tree
+            .filter((entry) => entry.type === "blob" && entry.size <= MAX_POINTER_BYTES)
+            .map((entry) => entry.oid),
+        ),
+      ]);
+      return [...new Set([...pointers.values()].map((pointer) => pointer.oid))];
+    },
+    Effect.mapError((cause) => new DeliverableGitError({ operation: "read", cause })),
+  );
+
+  const deleteRefs: DeliverableGit["Service"]["deleteRefs"] = Effect.fn(
+    "DeliverableGit.deleteRefs",
+  )(
+    function* (input) {
+      if (input.refs.length === 0 || !(yield* checkpoints.isGitRepository(input.cwd))) return;
+      yield* checkpoints.deleteCheckpointRefs({
+        cwd: input.cwd,
+        checkpointRefs: input.refs.map((ref) => CheckpointRef.make(ref)),
+      });
+    },
+    Effect.mapError((cause) => new DeliverableGitError({ operation: "refs", cause })),
+  );
+
   const restore: DeliverableGit["Service"]["restore"] = Effect.fn("DeliverableGit.restore")(
     function* (input) {
       const diff = (yield* git("diffTree", input.cwd, [
@@ -508,6 +555,8 @@ const make = Effect.gen(function* () {
     changedPaths,
     blobAt,
     snapshot,
+    storedBlobs,
+    deleteRefs,
     restore,
   });
 });

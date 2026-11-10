@@ -1,4 +1,3 @@
-import { useAtomValue } from "@effect/atom-react";
 import {
   changeRegion,
   compareUnitLabel,
@@ -12,15 +11,14 @@ import type {
   EnvironmentId,
 } from "@t3tools/contracts";
 import { Image } from "expo-image";
-import { AsyncResult } from "effect/reactivity";
 import { useState } from "react";
 import { View } from "react-native";
 
 import { AppText as Text } from "../../components/ui/AppText";
 import { SegmentedControl } from "../../components/ui/SegmentedControl";
 import { cn } from "../../lib/cn";
-import { workEnvironment } from "../../state/work";
-import { useRendition } from "./useWorkData";
+import { useComparison, useRendition } from "./useWorkData";
+import { WorkComparisonNotice } from "./WorkComparisonNotice";
 import { renditionAspect } from "./WorkDeckStage";
 import { WorkLink } from "./WorkLink";
 import { MediaStage, MediaStageMessage, RegionOutline } from "./WorkMediaStage";
@@ -39,12 +37,11 @@ export function WorkCompareView(props: {
   readonly onRestoreBase: (() => void) | null;
 }) {
   const [which, setWhich] = useState<"changed" | "all">("changed");
-  const comparison = useAtomValue(
-    workEnvironment.compare({
-      environmentId: props.environmentId,
-      input: { baseVersionId: props.base.id, targetVersionId: props.target.id },
-    }),
-  );
+  const {
+    result,
+    comparison: value,
+    retry,
+  } = useComparison(props.environmentId, props.base, props.target);
   const baseRendition = useRendition(
     props.environmentId,
     props.base.id,
@@ -55,13 +52,18 @@ export function WorkCompareView(props: {
     props.target.id,
     props.target.renditionStatus,
   );
-  const value = AsyncResult.getOrElse(comparison, () => null);
   const changes = value?.units ?? [];
   const shown = which === "all" ? changes : changes.filter((unit) => unit.status !== "unchanged");
   const image = (rendition: DeliverableRendition | null, index: number | null) => {
     if (index === null || rendition === null) return null;
     const unit = rendition.units.find((candidate) => candidate.index === index);
     return props.assetUrl(unit?.imageUrl ?? unit?.thumbUrl ?? rendition.posterUrl);
+  };
+  // Without a comparison there are no rows to choose between or to find empty.
+  const compared = value !== null && value.unavailable === null;
+  const sides = {
+    base: { versionId: props.base.id, rendition: baseRendition },
+    target: { versionId: props.target.id, rendition: targetRendition },
   };
   const aspect = renditionAspect(
     targetRendition ?? baseRendition ?? { width: null, height: null },
@@ -77,22 +79,20 @@ export function WorkCompareView(props: {
         {value?.summary ? (
           <Text className="text-sm text-foreground-muted">{value.summary}</Text>
         ) : null}
-        {AsyncResult.isFailure(comparison) ? (
-          <Text className="text-sm text-foreground-muted">
-            These versions can't be compared until both finish rendering.
-          </Text>
-        ) : null}
+        <WorkComparisonNotice result={result} onRetry={retry} />
       </View>
-      <SegmentedControl
-        size="compact"
-        options={[
-          { value: "changed", label: "Changed" },
-          { value: "all", label: "All" },
-        ]}
-        selected={which}
-        onSelect={setWhich}
-      />
-      {value !== null && shown.length === 0 ? (
+      {compared ? (
+        <SegmentedControl
+          size="compact"
+          options={[
+            { value: "changed", label: "Changed" },
+            { value: "all", label: "All" },
+          ]}
+          selected={which}
+          onSelect={setWhich}
+        />
+      ) : null}
+      {compared && shown.length === 0 ? (
         <Text className="py-8 text-center text-sm text-foreground-muted">
           Nothing visible changed between these versions.
         </Text>
@@ -101,7 +101,7 @@ export function WorkCompareView(props: {
         <View key={`${change.baseIndex}:${change.targetIndex}`} className="gap-2">
           <View className="flex-row items-center gap-2">
             <Text className="text-sm font-t3-medium">
-              {compareUnitLabel(props.kind, change, targetRendition ?? baseRendition)}
+              {compareUnitLabel(props.kind, change, sides)}
             </Text>
             <Text
               className={cn(

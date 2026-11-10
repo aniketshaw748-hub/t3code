@@ -25,7 +25,6 @@ import {
   type DeliverableVersionId,
   type EnvironmentId,
   type ProjectId,
-  type UploadChatAttachment,
 } from "@t3tools/contracts";
 import { formatWholeDeliverableMessage } from "@t3tools/shared/deliverableNotes";
 import { Link } from "@tanstack/react-router";
@@ -51,6 +50,7 @@ import { CompareView } from "./CompareView";
 import { DeckCanvas } from "./DeckCanvas";
 import type { Drawing } from "./DrawOverlay";
 import { NotesPanel, type NotesTab } from "./NotesPanel";
+import { RenderFailureBanner } from "./RenderFailureBanner";
 import { SelfCheckBadge } from "./SelfCheckBadge";
 import { StillCanvas } from "./StillCanvas";
 import { StrayFileBanner } from "./StrayFileBanner";
@@ -71,34 +71,6 @@ import { WhatChanged } from "./WhatChanged";
 
 const NO_NOTES: ReadonlyArray<DeliverableNote> = [];
 const NO_SPEND_APPROVALS: ReadonlyArray<SpendApprovalItem> = [];
-
-function snapshotAttachment(dataUrl: string): UploadChatAttachment {
-  const base64 = dataUrl.slice(dataUrl.indexOf(",") + 1);
-  const padding = base64.endsWith("==") ? 2 : base64.endsWith("=") ? 1 : 0;
-  return {
-    type: "image",
-    name: "note-drawing.png",
-    mimeType: "image/png",
-    sizeBytes: (base64.length * 3) / 4 - padding,
-    dataUrl,
-  };
-}
-
-/** Reads a stored note snapshot back, so resending a note still shows the agent the drawing. */
-async function fetchSnapshot(url: string): Promise<UploadChatAttachment | null> {
-  try {
-    const blob = await (await fetch(url)).blob();
-    const dataUrl = await new Promise<string>((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onload = () => resolve(String(reader.result));
-      reader.onerror = () => reject(reader.error);
-      reader.readAsDataURL(blob);
-    });
-    return snapshotAttachment(dataUrl);
-  } catch {
-    return null;
-  }
-}
 
 /** One Work project: the work itself as the canvas, its versions, and Notes & chat beside it. */
 export function WorkProjectScreen(props: {
@@ -226,22 +198,10 @@ export function WorkProjectScreen(props: {
     focusAnchor(check.anchor);
   };
 
-  const sendNotesNow = async (
-    toSend: ReadonlyArray<DeliverableNote>,
-    snapshots?: ReadonlyArray<UploadChatAttachment>,
-  ) => {
+  const sendNotesNow = async (toSend: ReadonlyArray<DeliverableNote>) => {
     if (deliverable === null || viewed === null || toSend.length === 0) return false;
     setSending(true);
-    const attachments =
-      snapshots ??
-      (
-        await Promise.all(
-          toSend.map((note) => {
-            const url = assetUrl(note.snapshotUrl);
-            return url === null ? null : fetchSnapshot(url);
-          }),
-        )
-      ).filter((attachment) => attachment !== null);
+    // The server gives the agent each note's picture with the message; none is uploaded here.
     const sent = await sendNotes({
       environmentId,
       projectId,
@@ -249,7 +209,6 @@ export function WorkProjectScreen(props: {
       deliverable,
       version: viewed,
       notes: toSend,
-      snapshots: attachments,
     });
     setSending(false);
     return sent;
@@ -306,10 +265,7 @@ export function WorkProjectScreen(props: {
     }
     setText("");
     setDrawing(null);
-    await sendNotesNow(
-      [created.value],
-      snapshotDataUrl === null ? undefined : [snapshotAttachment(snapshotDataUrl)],
-    );
+    await sendNotesNow([created.value]);
   };
 
   /** Sends the failed run's notes again, or else the message that started it. */
@@ -417,9 +373,7 @@ export function WorkProjectScreen(props: {
       return rendition.status === "pending" || rendition.status === "rendering" ? (
         <CanvasMessage busy title={`Rendering V${viewed.ordinal}…`} />
       ) : (
-        <CanvasMessage title={`V${viewed.ordinal} could not be rendered`}>
-          {rendition.detail}
-        </CanvasMessage>
+        <CanvasMessage title={`No preview of V${viewed.ordinal}`} />
       );
     }
     const shared = {
@@ -570,6 +524,16 @@ export function WorkProjectScreen(props: {
                   onShowChat={() => setTab("chat")}
                 />
               ) : null}
+              {viewed !== null &&
+              rendition !== null &&
+              (rendition.status === "failed" || rendition.status === "unsupported") ? (
+                <RenderFailureBanner
+                  environmentId={environmentId}
+                  version={viewed}
+                  rendition={rendition}
+                  canOperate={canOperate}
+                />
+              ) : null}
               {deliverable !== null && strayOriginal !== null ? (
                 <StrayFileBanner
                   environmentId={environmentId}
@@ -641,7 +605,12 @@ export function WorkProjectScreen(props: {
                   version={viewed}
                   parent={versions.find((version) => version.id === viewed.parentVersionId) ?? null}
                   rendition={rendition}
-                  onUnit={(anchor) => focusAnchor(anchor)}
+                  onUnit={(place) => {
+                    setViewedVersionId(
+                      place.versionId === currentVersionId ? null : place.versionId,
+                    );
+                    focusAnchor(place.anchor);
+                  }}
                   onCompare={() =>
                     setCompare(
                       viewed.parentVersionId === null

@@ -70,8 +70,8 @@ export function formatNotesMessage(input: {
 }): string {
   const { deliverable } = input;
   const lines = input.notes.map((note) => {
-    const drawing = note.hasSnapshot ? " (my drawing on the frame is attached)" : "";
-    return `- [${note.id}] ${describeAnchor(note.anchor, deliverable.kind)}${drawing}: ${note.body}`;
+    const picture = note.hasSnapshot ? " (a picture of it is attached)" : "";
+    return `- [${note.id}] ${describeAnchor(note.anchor, deliverable.kind)}${picture}: ${note.body}`;
   });
   const single = input.notes.length === 1;
   return [
