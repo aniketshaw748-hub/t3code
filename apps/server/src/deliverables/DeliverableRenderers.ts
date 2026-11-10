@@ -22,6 +22,7 @@ import {
 } from "./mediaParsing.ts";
 import { notePictureFilter } from "./notePicture.ts";
 import { OUTLINE_GRID, type Raster, VIDEO_GRID } from "./perceptualDiff.ts";
+import * as PowerPointExport from "./powerPointExport.ts";
 
 /** The renderer cannot run here; `detail` says what to install. */
 export class DeliverableRenderUnsupportedError extends Schema.TaggedError<DeliverableRenderUnsupportedError>()(
@@ -159,39 +160,18 @@ const SLIDE_WIDTH = 1280;
 const unitName = (prefix: string, index: number, suffix: string) =>
   `${prefix}-${String(index + 1).padStart(4, "0")}${suffix}`;
 
-const POWERPOINT_SCRIPT = `
-$ErrorActionPreference = 'Stop'
-try { $app = New-Object -ComObject PowerPoint.Application } catch { exit 3 }
-$pres = $app.Presentations.Open($env:DELIVERABLE_INPUT, -1, 0, 0)
-try {
-  $height = [int](${SLIDE_WIDTH} * $pres.PageSetup.SlideHeight / $pres.PageSetup.SlideWidth)
-  foreach ($slide in $pres.Slides) {
-    $name = 'slide-{0:D4}.png' -f $slide.SlideIndex
-    $slide.Export((Join-Path $env:DELIVERABLE_OUTPUT $name), 'PNG', ${SLIDE_WIDTH}, $height)
-  }
-} finally {
-  $pres.Close()
-  if ($app.Presentations.Count -eq 0) { $app.Quit() }
-}
-`;
-
 const make = Effect.gen(function* () {
   const runner = yield* ProcessRunner.ProcessRunner;
   const fileSystem = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
   const platform = yield* HostProcess.Platform;
+  const powerPoint = yield* PowerPointExport.make();
 
   const run = (
     command: string,
     args: ReadonlyArray<string>,
-    options: { readonly env?: NodeJS.ProcessEnv; readonly timeout?: Duration.Input } = {},
-  ) =>
-    runner.run({
-      command,
-      args,
-      timeout: options.timeout ?? "10 minutes",
-      ...(options.env === undefined ? {} : { env: options.env }),
-    });
+    options: { readonly timeout?: Duration.Input } = {},
+  ) => runner.run({ command, args, timeout: options.timeout ?? "10 minutes" });
 
   const available = (command: string, args: ReadonlyArray<string>) =>
     run(command, args, { timeout: "20 seconds" }).pipe(
@@ -535,20 +515,20 @@ const make = Effect.gen(function* () {
       Effect.mapError((cause) => new DeliverableRenderError({ stage: "slides", cause })),
     );
     if (platform === "win32") {
-      const result = yield* run(
-        "powershell.exe",
-        ["-NoProfile", "-NonInteractive", "-Command", POWERPOINT_SCRIPT],
-        {
-          env: { DELIVERABLE_INPUT: sourcePath, DELIVERABLE_OUTPUT: scratchDir },
-          timeout: "5 minutes",
-        },
-      ).pipe(Effect.mapError((cause) => new DeliverableRenderError({ stage: "slides", cause })));
-      if (result.code === 0) return { renderer: "deck-powerpoint@2", files: yield* listPngs };
-      if (result.code !== 3)
-        return yield* new DeliverableRenderError({
-          stage: "slides",
-          cause: result.stderr.slice(-2_000),
-        });
+      const exported = yield* powerPoint
+        .exportSlides({
+          deckPath: sourcePath,
+          outDir: scratchDir,
+          claimPath: `${scratchDir}.powerpoint-claim`,
+          slideWidth: SLIDE_WIDTH,
+        })
+        .pipe(Effect.mapError((cause) => new DeliverableRenderError({ stage: "slides", cause })));
+      if (exported.status === "exported") {
+        return { renderer: "deck-powerpoint@2", files: yield* listPngs };
+      }
+      if (exported.status === "failed") {
+        return yield* new DeliverableRenderError({ stage: "slides", cause: exported.detail });
+      }
     }
     const soffice = yield* sofficePath;
     if (Option.isNone(soffice) || !(yield* pdftoppmAvailable)) return null;
