@@ -42,13 +42,13 @@ export interface NotePinTarget {
   readonly region: DeliverableRegion | null;
 }
 
-/** `0:42`, `Slide 3`, `the drawing`, or null when a note can only be about the whole file. */
+/** `0:42`, `Slide 3`, `the marked area`, or null when a note can only be about the whole file. */
 export function notePinLabel(target: NotePinTarget): string | null {
   if (target.kind === "video") return formatTimecode(target.playheadSeconds);
   if ((target.kind === "deck" || target.kind === "pdf") && target.selectedSlide !== null) {
     return `${target.kind === "pdf" ? "Page" : "Slide"} ${target.selectedSlide + 1}`;
   }
-  return target.region === null ? null : "the drawing";
+  return target.region === null ? null : "the marked area";
 }
 
 /** The anchor a new note gets: the playhead or selected slide, or the whole file when unpinned. */
@@ -98,14 +98,44 @@ export const UNIT_CHANGE_LABEL: Record<DeliverableUnitChange["status"], string> 
   unchanged: "Unchanged",
 };
 
+/** The area an anchor boxes on its frame or slide, if it boxes one. */
+export function anchorRegion(anchor: DeliverableAnchor | null): DeliverableRegion | null {
+  if (anchor === null) return null;
+  if (anchor.kind === "region") return { x: anchor.x, y: anchor.y, w: anchor.w, h: anchor.h };
+  return anchor.region ?? null;
+}
+
 /** The highlighted region a comparison row points at, if it localized one. */
 export function changeRegion(
   change: Pick<DeliverableUnitChange, "anchor">,
 ): DeliverableRegion | null {
-  const anchor = change.anchor;
-  if (anchor === null) return null;
-  if (anchor.kind === "region") return { x: anchor.x, y: anchor.y, w: anchor.w, h: anchor.h };
-  return anchor.region ?? null;
+  return anchorRegion(change.anchor);
+}
+
+/**
+ * The rendered frame an anchor sits on: its slide, the shot playing at its time, or the only
+ * frame of a still. Null for a whole-file anchor or when the rendition has no image for it.
+ */
+export function anchorFrameUrl(
+  anchor: DeliverableAnchor | null,
+  rendition: Pick<DeliverableRendition, "units" | "posterUrl"> | null,
+): string | null {
+  if (anchor === null || rendition === null) return null;
+  const unit =
+    anchor.kind === "slide"
+      ? rendition.units.find((candidate) => candidate.index === anchor.index)
+      : anchor.kind === "time"
+        ? rendition.units.find(
+            (candidate) =>
+              candidate.start !== undefined &&
+              candidate.end !== undefined &&
+              anchor.t >= candidate.start &&
+              anchor.t < candidate.end,
+          )
+        : rendition.units[0];
+  // A poster is some other moment of a video, so only a still falls back to it.
+  const still = anchor.kind === "region" ? rendition.posterUrl : null;
+  return unit?.imageUrl ?? unit?.thumbUrl ?? still ?? null;
 }
 
 export type SpendApprovalTurnItem = Extract<

@@ -1,7 +1,7 @@
+import { fitContain } from "@t3tools/client-runtime/work/geometry";
 import { useState } from "react";
 
 import { observeResize } from "../../lib/observeResize";
-import { fitContain } from "./workGeometry";
 
 /**
  * A ref for a container and the largest box of `aspect` inside it, so overlays drawn over a

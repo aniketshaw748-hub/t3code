@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vite-plus/test";
 
 import {
+  anchorFrameUrl,
   changeRegion,
   compareUnitLabel,
   noteAnchorChip,
@@ -67,6 +68,26 @@ describe("compare rows", () => {
     expect(changeRegion({ anchor: { kind: "slide", index: 0, region } })).toEqual(region);
     expect(changeRegion({ anchor: { kind: "slide", index: 0 } })).toBeNull();
     expect(changeRegion({ anchor: null })).toBeNull();
+  });
+
+  it("finds the frame an anchor sits on", () => {
+    const unit = (index: number, start?: number, end?: number) => ({
+      index,
+      kind: "shot" as const,
+      ...(start === undefined ? {} : { start, end }),
+      imageUrl: `/frame-${index}.png`,
+      thumbUrl: null,
+    });
+    const film = { units: [unit(0, 0, 4), unit(1, 4, 9)], posterUrl: "/poster.png" };
+    expect(anchorFrameUrl({ kind: "time", t: 4 }, film)).toBe("/frame-1.png");
+    // Past the last shot there is no frame of that moment; the poster is a different one.
+    expect(anchorFrameUrl({ kind: "time", t: 30 }, film)).toBeNull();
+    expect(
+      anchorFrameUrl({ kind: "slide", index: 1 }, { units: [unit(0), unit(1)], posterUrl: null }),
+    ).toBe("/frame-1.png");
+    const region = { kind: "region" as const, x: 0, y: 0, w: 0.5, h: 0.5 };
+    expect(anchorFrameUrl(region, { units: [], posterUrl: "/poster.png" })).toBe("/poster.png");
+    expect(anchorFrameUrl(null, film)).toBeNull();
   });
 });
 
