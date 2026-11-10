@@ -151,7 +151,6 @@ import {
   useDelegatedUnderParent,
   useProjects,
   useServerConfigs,
-  useQuietThreadShells,
 } from "../state/entities";
 import { environmentPresentations } from "../state/presentation";
 import { primaryServerKeybindingsAtom } from "../state/server";
@@ -253,6 +252,8 @@ import {
 } from "./ui/combobox";
 import { SidebarContent, SidebarGroup, useSidebar } from "./ui/sidebar";
 import { SidebarChromeFooter, SidebarChromeHeader } from "./sidebar/SidebarChrome";
+import { AppModeSwitch } from "./work/AppModeSwitch";
+import { useCodeQuietThreadShells } from "../state/codeScope";
 import { SidebarHeaderIconButton, SidebarThreadHeader } from "./sidebar/SidebarThreadHeader";
 import { TooltipProvider } from "./ui/tooltip";
 import { composerDraftHasUserContent, DraftId, useComposerDraftStore } from "../composerDraftStore";
@@ -1103,7 +1104,7 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
             ),
           ),
         );
-  const threads = useQuietThreadShells();
+  const threads = useCodeQuietThreadShells();
   const routeRowThreadKey =
     routeThreadRef === null
       ? null
@@ -2994,6 +2995,7 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
     <>
       <ThreadContextDragGhost />
       <SidebarChromeHeader isElectron={isElectron} />
+      <AppModeSwitch />
       <SidebarContent
         ref={sidebarContentRef}
         className="min-h-full"

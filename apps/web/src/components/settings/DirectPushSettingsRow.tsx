@@ -84,10 +84,8 @@ export function DirectPushSettingsRow() {
   const save = async (path: string | null) => {
     setPending("save");
     const result = await setServiceAccount({ environmentId, input: { path } });
-    if (result._tag === "Success") {
-      setDraft("");
-      query.refresh();
-    } else {
+    setPending(null);
+    if (result._tag !== "Success") {
       toastManager.add(
         stackedThreadToast({
           type: "error",
@@ -95,13 +93,18 @@ export function DirectPushSettingsRow() {
           description: "Could not save the service-account key.",
         }),
       );
+      return;
     }
-    setPending(null);
+    setDraft("");
+    query.refresh();
   };
 
-  const sendTestAndReport = async () => {
+  const test = async () => {
+    setPending("test");
     const result = await sendTest({ environmentId, input: {} });
-    if (result._tag !== "Success") throw new Error("The host did not answer.");
+    setPending(null);
+    // A failed call is already reported by the command itself.
+    if (result._tag !== "Success") return;
     const { deliveries } = result.value;
     const failed = deliveries.filter((delivery) => !delivery.ok);
     toastManager.add(
@@ -128,11 +131,6 @@ export function DirectPushSettingsRow() {
       ),
     );
     query.refresh();
-  };
-
-  const test = async () => {
-    setPending("test");
-    await sendTestAndReport().finally(() => setPending(null));
   };
 
   return (
@@ -170,38 +168,42 @@ export function DirectPushSettingsRow() {
               </Button>
             ) : null}
           </div>
-        ) : canEdit ? (
-          <div className="flex flex-wrap items-center gap-2">
-            {pickFolder ? (
-              <Button
-                size="sm"
-                variant="outline"
-                disabled={pending !== null}
-                onClick={() =>
-                  void pickFolder().then((folder) => (folder ? save(folder) : undefined))
-                }
-              >
-                Choose folder…
-              </Button>
-            ) : null}
-            <div className="w-64">
-              <Input
-                size="sm"
-                placeholder="Path to the service-account JSON"
-                value={draft}
-                onChange={(event) => setDraft(event.currentTarget.value)}
-              />
-            </div>
-            <Button
-              size="sm"
-              disabled={pending !== null || draft.trim() === ""}
-              onClick={() => void save(draft.trim())}
-            >
-              Save
-            </Button>
-          </div>
         ) : null
       }
-    />
+    >
+      {/* Under the row, so the path field never squeezes the description into a column. */}
+      {!configured && canEdit ? (
+        <div className="mt-3 flex flex-wrap items-center gap-2">
+          {pickFolder ? (
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={pending !== null}
+              onClick={() =>
+                void pickFolder().then((folder) => (folder ? save(folder) : undefined))
+              }
+            >
+              Choose folder…
+            </Button>
+          ) : null}
+          <div className="min-w-48 flex-1 sm:max-w-80">
+            <Input
+              size="sm"
+              aria-label="Path to the service-account JSON"
+              placeholder="Path to the service-account JSON"
+              value={draft}
+              onChange={(event) => setDraft(event.currentTarget.value)}
+            />
+          </div>
+          <Button
+            size="sm"
+            disabled={pending !== null || draft.trim() === ""}
+            onClick={() => void save(draft.trim())}
+          >
+            Save
+          </Button>
+        </div>
+      ) : null}
+    </SettingsRow>
   );
 }

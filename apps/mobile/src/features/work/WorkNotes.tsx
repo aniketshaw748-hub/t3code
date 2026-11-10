@@ -17,7 +17,6 @@ import {
   formatSpendAmount,
   noteAnchorChip,
   noteAuthorLabel,
-  plainPreview,
   spendApprovalDetails,
   type SpendApprovalTurnItem,
 } from "@t3tools/client-runtime/work/anchors";
@@ -29,6 +28,7 @@ import {
 } from "@t3tools/client-runtime/work/notes";
 import { type WorkRunFailure, workRunFailureDetail } from "@t3tools/client-runtime/work/shelf";
 import type { DeliverableKind, DeliverableNote, EnvironmentId, ThreadId } from "@t3tools/contracts";
+import { agentPreviewText } from "@t3tools/shared/agentPreviewText";
 import { describeAnchor } from "@t3tools/shared/deliverableNotes";
 import * as DateTime from "effect/DateTime";
 import { Image } from "expo-image";
@@ -258,7 +258,7 @@ export function NoteCard(props: {
           <Avatar agent />
           <View className="min-w-0 flex-1 gap-1">
             <Text numberOfLines={3} className="text-xs">
-              {(note.reply === null ? null : plainPreview(note.reply)) ??
+              {(note.reply === null ? null : agentPreviewText(note.reply)) ??
                 (note.sentRunId === null ? "Sent. Waiting for the agent…" : "Working on it…")}
             </Text>
             {display.check !== null ? (
@@ -326,7 +326,7 @@ export function AgentLine(props: {
   const latest = useLatestAgentText(scopeThreadRef(props.environmentId, props.thread.id));
   const working = isThreadBusy(props.thread);
   if (latest === null && !working) return null;
-  const text = plainPreview(latest ?? "");
+  const text = agentPreviewText(latest);
   return (
     <View className="flex-row gap-2 px-1">
       <Avatar agent />

@@ -1,29 +1,9 @@
+import { agentPreviewLines } from "@t3tools/shared/agentPreviewText";
+
 /** How much of the agent's text a version keeps, so the full wording stays readable. */
 const VERSION_SUMMARY_SOURCE_MAX = 4_000;
 
 const SUMMARY_MAX = 200;
-
-// `C:\renders\deck.pptx`, `C:/…`, `/home/me/film.mp4`, `~/out/cut.mov`, `./deck-v2.pptx`, with a
-// leading "to"/"at"/… so "Saved it to C:/x.pptx." reads "Saved it."
-const FILE_PATH =
-  /(?:\s+(?:to|at|in|into|as|under|from)\b)?\s*(?:[A-Za-z]:[\\/]|~[\\/]|\.{1,2}[\\/]|\/(?=[^\s/]+\/))[^\s)\]"'`]*[^\s)\]"'`.,;:!?]/g;
-
-/** One line of markdown as plain text: links read as their text, marks and paths dropped. */
-function plainLine(line: string): string {
-  return line
-    .replace(/!?\[([^\]]*)\]\([^)]*\)/g, "$1")
-    .replace(/<(?:https?|file):[^>]*>/g, "")
-    .replace(/https?:\/\/\S+/g, "")
-    .replace(FILE_PATH, "")
-    .replace(/^\s*(?:#{1,6}\s+|>\s*|[-*+]\s+|\d+[.)]\s+)+/, "")
-    .replace(/(\*\*|__|~~)(.+?)\1/g, "$2")
-    .replace(/(^|[^\w*])[*_](?=\S)(.+?)(?<=\S)[*_](?!\w)/g, "$1$2")
-    .replace(/`+/g, "")
-    .replace(/\*{2,}|(?<=^|\s)[*#>]+(?=\s|$)/g, "")
-    .replace(/\s+([.,;:!?])/g, "$1")
-    .replace(/\s+/g, " ")
-    .trim();
-}
 
 /** The first sentence of `text`, kept whole when it runs to a list or a colon. */
 function firstSentence(text: string): string {
@@ -32,17 +12,11 @@ function firstSentence(text: string): string {
 }
 
 /**
- * The one line a version row shows: the agent's first sentence as plain text, without markdown,
- * links or file paths. Null when nothing readable is left.
+ * The one line a version row shows: the first sentence of the agent's text as a plain preview,
+ * the same reading every other preview of agent text gets. Null when nothing readable is left.
  */
 export function versionSummary(text: string | null | undefined): string | null {
-  if (text === null || text === undefined) return null;
-  const lines = text
-    .replace(/```[\s\S]*?(?:```|$)/g, "\n")
-    .split("\n")
-    .map(plainLine)
-    .filter((line) => /[\p{L}\p{N}]/u.test(line));
-  const first = lines[0];
+  const first = agentPreviewLines(text)[0];
   if (first === undefined) return null;
   const sentence = firstSentence(first);
   if (sentence.length <= SUMMARY_MAX) return sentence;

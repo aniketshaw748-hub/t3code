@@ -262,7 +262,7 @@ describe("shelfStatus", () => {
       [running],
       "Working on slide 4 of 9",
       snapshot(),
-      "Drafting · slide 4 of 9",
+      "Agent working · slide 4 of 9",
     ],
     ["nothing was made yet", [], null, snapshot({ deliverables: [], versions: [] }), "Not started"],
     [
@@ -297,7 +297,7 @@ describe("shelfStatus", () => {
           },
         ],
       }),
-      "In review · V1",
+      "In review",
     ],
     [
       "the last run failed",
@@ -306,9 +306,58 @@ describe("shelfStatus", () => {
       snapshot(),
       "Usage limit reached",
     ],
-    ["idle with a current version", [], null, snapshot(), "V2"],
+    ["idle with a current version", [], null, snapshot(), "Ready to review"],
+    [
+      "the user's own notes, most pressing first",
+      [],
+      null,
+      snapshot({
+        notes: (["open", "open", "fixed", "fixing", "resolved"] as const).map(
+          (status) =>
+            ({ deliverableId: deliverable.id, status, author: { kind: "user" } }) as never,
+        ),
+      }),
+      "2 notes open · 1 fixed to check · 1 with the agent",
+    ],
+    [
+      "notes on the project's other deliverables too",
+      [],
+      null,
+      snapshot({
+        notes: [
+          {
+            deliverableId: DeliverableId.make("another"),
+            status: "open",
+            author: { kind: "user" },
+          } as never,
+        ],
+      }),
+      "1 note open",
+    ],
+    [
+      "every note resolved",
+      [],
+      null,
+      snapshot({
+        notes: [
+          { deliverableId: deliverable.id, status: "resolved", author: { kind: "user" } } as never,
+        ],
+      }),
+      "All notes resolved",
+    ],
   ])("shows %s", (_name, threads, agentText, value, label) => {
     expect(shelfStatus({ snapshot: value, threads, agentText }).label).toBe(label);
+  });
+
+  it("names the version the status is about", () => {
+    expect(shelfStatus({ snapshot: snapshot(), threads: [], agentText: null }).version).toBe("V2");
+    expect(
+      shelfStatus({
+        snapshot: snapshot({ deliverables: [], versions: [] }),
+        threads: [],
+        agentText: null,
+      }).version,
+    ).toBeNull();
   });
 });
 
@@ -423,7 +472,12 @@ describe("workChatEntries", () => {
         message("a1", "assistant", "Looking at it", "r1"),
         message("a2", "assistant", "Warmed the palette.", "r1"),
         message("m2", "user", "A note on deck.pptx, V2: ...", null),
-        message("a3", "assistant", "Fixed slide 2.", "r2"),
+        message(
+          "a3",
+          "assistant",
+          "Saved [deck.pptx](C:/Work/deck.pptx) with **slide 2** fixed.",
+          "r2",
+        ),
         message("w1", "user", "Delegated result", null, "agent"),
       ],
       new Set(["m2"]),
@@ -431,7 +485,7 @@ describe("workChatEntries", () => {
     expect(entries).toEqual([
       { id: "m1", role: "user", text: "Warmer colours" },
       { id: "a2", role: "assistant", text: "Warmed the palette." },
-      { id: "a3", role: "assistant", text: "Fixed slide 2." },
+      { id: "a3", role: "assistant", text: "Saved deck.pptx with slide 2 fixed." },
     ]);
   });
 });

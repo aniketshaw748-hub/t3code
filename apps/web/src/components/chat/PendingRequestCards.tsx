@@ -5,6 +5,7 @@ import {
   squashAtomCommandFailure,
 } from "@t3tools/client-runtime/state/runtime";
 import type { EnvironmentId, ThreadId } from "@t3tools/contracts";
+import { ShieldAlertIcon } from "lucide-react";
 import { useState } from "react";
 
 import { environmentThreadDetails, threadEnvironment } from "~/state/threads";
@@ -30,17 +31,19 @@ export function PendingRequestCards(props: {
         <section
           key={approval.requestId}
           aria-label="Approval needed"
-          className="flex flex-col gap-1.5 rounded-lg border border-warning/40 bg-warning/8 p-2 text-xs"
+          className="flex min-w-0 shrink-0 flex-col gap-3 rounded-xl border border-border/60 bg-card p-3"
         >
-          <p className="font-medium text-warning">Approval needed</p>
+          <p className="flex items-center gap-2 text-xs font-medium text-foreground">
+            <ShieldAlertIcon className="size-3.5 shrink-0 text-warning" aria-hidden />
+            Approval needed
+          </p>
           {approval.detail ? (
-            <pre className="max-h-24 overflow-auto font-mono text-2xs whitespace-pre-wrap break-words">
+            <pre className="max-h-24 overflow-auto rounded-md bg-muted p-2 font-mono text-2xs wrap-anywhere whitespace-pre-wrap text-foreground">
               {approval.detail}
             </pre>
           ) : null}
-          <div className="flex flex-wrap gap-1.5">
+          <div className="flex flex-wrap items-center justify-end gap-2">
             <ComposerPendingApprovalActions
-              presentation="inline"
               requestId={approval.requestId}
               isResponding={responding}
               canRespond={approval.responseCapability === "live"}
@@ -61,7 +64,11 @@ export function PendingRequestCards(props: {
               }}
             />
           </div>
-          {error ? <p className="text-destructive">{error}</p> : null}
+          {error ? (
+            <p role="alert" className="text-xs text-destructive">
+              {error}
+            </p>
+          ) : null}
         </section>
       ))}
       {requests.userInputs.map((request) => (

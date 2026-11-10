@@ -276,7 +276,7 @@ export function BubbleChat(props: {
           message.type === "user_message" ? (
             <div key={message.id} className="flex flex-col items-end gap-1">
               {message.text.trim().length > 0 ? (
-                <p className="max-w-[85%] rounded-2xl rounded-br-md bg-primary/12 px-2.5 py-1.5 text-xs whitespace-pre-wrap break-words text-foreground">
+                <p className="max-w-[85%] rounded-2xl bg-message px-2.5 py-1.5 text-xs wrap-anywhere whitespace-pre-wrap text-message-foreground">
                   {message.text.length > USER_TEXT_MAX
                     ? `${message.text.slice(0, USER_TEXT_MAX).trimEnd()}…`
                     : message.text}

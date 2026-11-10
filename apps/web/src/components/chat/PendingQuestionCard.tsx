@@ -21,7 +21,8 @@ import { threadEnvironment } from "../../state/threads";
 import { useAtomCommand } from "../../state/use-atom-command";
 import { useOrchestrationCommand } from "../../state/use-orchestration-command";
 import { Button } from "../ui/button";
-import { Textarea } from "../ui/textarea";
+import { Input } from "../ui/input";
+import { Toggle } from "../ui/toggle";
 
 /**
  * An agent's question, answerable where it shows: pick an option or type an answer. Surfaces
@@ -71,10 +72,10 @@ export function PendingQuestionCard(props: {
   return (
     <section
       aria-label="The agent has a question"
-      className="flex min-w-0 flex-col gap-3 rounded-xl border border-border/60 bg-card p-3"
+      className="flex min-w-0 shrink-0 flex-col gap-3 rounded-xl border border-border/60 bg-card p-3"
     >
       <p className="flex items-center gap-2 text-xs font-medium text-foreground">
-        <MessageCircleQuestionMarkIcon className="size-3.5 shrink-0 text-warning" aria-hidden />
+        <MessageCircleQuestionMarkIcon className="size-3.5 shrink-0 text-info" aria-hidden />
         The agent has a question
       </p>
       {request.questions.map((question) => (
@@ -90,14 +91,14 @@ export function PendingQuestionCard(props: {
                   value,
                 );
                 return (
-                  <Button
+                  <Toggle
                     key={value}
-                    size="xs"
-                    variant={selected ? "contrast" : "outline"}
-                    aria-pressed={selected}
+                    size="segmented"
+                    variant="outline"
+                    pressed={selected}
                     disabled={!answerable || pending}
                     title={option.description}
-                    onClick={() =>
+                    onPressedChange={() =>
                       setEdits((current) => ({
                         ...current,
                         [question.id]: togglePendingUserInputOptionSelection(
@@ -109,15 +110,14 @@ export function PendingQuestionCard(props: {
                     }
                   >
                     {option.label}
-                  </Button>
+                  </Toggle>
                 );
               })}
             </div>
           ) : null}
           {question.allowCustomAnswer === false ? null : (
-            <Textarea
+            <Input
               size="sm"
-              rows={1}
               disabled={!answerable || pending}
               aria-label={`Answer: ${question.question}`}
               placeholder={question.options.length > 0 ? "Or type an answer" : "Type an answer"}
@@ -167,7 +167,6 @@ export function PendingQuestionCard(props: {
         {answerable ? (
           <Button
             size="xs"
-            variant="contrast"
             disabled={pending || answers === null}
             onClick={() => void run("answer")}
           >

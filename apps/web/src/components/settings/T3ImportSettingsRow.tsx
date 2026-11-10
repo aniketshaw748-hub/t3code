@@ -210,18 +210,22 @@ export function T3ImportSettingsRow() {
 
   const open = async () => {
     setLoading(true);
-    try {
-      setPreview(await bridge.preview());
-    } catch (error) {
-      toastManager.add(
-        stackedThreadToast({
-          type: "error",
-          title: "Could not read T3 Code's settings",
-          description: error instanceof Error ? error.message : "Something went wrong.",
-        }),
-      );
-    }
+    const read = await bridge.preview().then(
+      (value) => ({ ok: true as const, value }),
+      (error: unknown) => ({ ok: false as const, error }),
+    );
     setLoading(false);
+    if (read.ok) {
+      setPreview(read.value);
+      return;
+    }
+    toastManager.add(
+      stackedThreadToast({
+        type: "error",
+        title: "Could not read T3 Code's settings",
+        description: read.error instanceof Error ? read.error.message : "Something went wrong.",
+      }),
+    );
   };
 
   return (

@@ -5,6 +5,7 @@ import type {
   DeliverableVersionId,
   OrchestrationV2ConversationMessage,
 } from "@t3tools/contracts";
+import { agentPreviewText } from "@t3tools/shared/agentPreviewText";
 import { formatTimecode, wholeDeliverableMessageBody } from "@t3tools/shared/deliverableNotes";
 
 /** Display order for the summary bar: what needs the user first. */
@@ -183,6 +184,7 @@ export function agentProgress(text: string | null): AgentProgress {
 export interface WorkChatEntry {
   readonly id: string;
   readonly role: "user" | "assistant";
+  /** The user's own words, or the agent's reply as plain preview text. */
   readonly text: string;
 }
 
@@ -193,7 +195,8 @@ type ChatMessage = Pick<
 
 /**
  * The conversation beside the notes: what the user said outside notes, and each run's last
- * reply, newest last. Messages that sent notes show as their note cards instead.
+ * reply as a plain preview, newest last. Messages that sent notes show as their note cards
+ * instead.
  */
 export function workChatEntries(
   messages: ReadonlyArray<ChatMessage>,
@@ -214,7 +217,8 @@ export function workChatEntries(
       if (text !== "") entries.push({ id: message.id, role: "user", text });
     } else if (message.role === "assistant" && message.runId !== null) {
       if (lastReplyByRun.get(message.runId) === message.id) {
-        entries.push({ id: message.id, role: "assistant", text: message.text.trim() });
+        const text = agentPreviewText(message.text);
+        if (text !== "") entries.push({ id: message.id, role: "assistant", text });
       }
     }
   }

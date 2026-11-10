@@ -147,8 +147,3 @@ export function renditionMeta(
   }
   return null;
 }
-
-/** Agent text as a plain preview: markdown emphasis and code marks would show as stray characters. */
-export function plainPreview(text: string): string {
-  return text.replace(/[*_`#>]+/g, "").trim();
-}

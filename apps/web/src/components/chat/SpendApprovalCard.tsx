@@ -92,7 +92,7 @@ function PendingSpendApproval(props: {
     <section
       data-v2-item-type={item.type}
       aria-label="Approve before spending"
-      className="flex min-w-0 flex-col gap-3 rounded-xl border border-border/60 bg-card p-4"
+      className="flex min-w-0 shrink-0 flex-col gap-3 rounded-xl border border-border/60 bg-card p-4"
     >
       <div className="flex min-w-0 items-start gap-3">
         <CoinsIcon className="mt-0.5 size-4 shrink-0 text-muted-foreground" aria-hidden />
@@ -121,7 +121,7 @@ function PendingSpendApproval(props: {
       )}
       <div className="flex items-center justify-end gap-2">
         <Button
-          size="sm"
+          size="xs"
           variant="ghost-muted"
           disabled={!canAnswer || pending !== null}
           onClick={() => void send("decline")}
@@ -129,8 +129,7 @@ function PendingSpendApproval(props: {
           Decline
         </Button>
         <Button
-          size="sm"
-          variant="contrast"
+          size="xs"
           disabled={!canAnswer || pending !== null}
           onClick={() => void send("approve")}
         >

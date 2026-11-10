@@ -135,11 +135,11 @@ import {
   useAnyEnvironmentHiding,
   useHiddenThreadKeys,
   useEnvironmentThreadRefs,
-  useProjects,
   useServerConfigs,
-  useVisibleThreadShells,
   waitForProject,
 } from "../state/entities";
+import { useCodeProjects, useCodeVisibleThreadShells } from "../state/codeScope";
+import { useAppModeCommandItem } from "./work/AppModeSwitch";
 import { visibleLinkedThreads } from "@t3tools/client-runtime/state/threads";
 import { resolveThreadActionProjectRef, startNewThreadFromContext } from "../lib/chatThreadActions";
 import {
@@ -471,7 +471,8 @@ function OpenCommandPaletteDialog(props: {
   const { activeDraftThread, activeThread, defaultProjectRef, handleNewThread } =
     useHandleNewThread();
   const paletteRouteTarget = useThreadRouteTarget();
-  const projects = useProjects();
+  const projects = useCodeProjects();
+  const appModeItem = useAppModeCommandItem();
   const referenceThreadRef =
     pathname === "/pull-requests"
       ? environments.some((environment) => environment.serverConfig !== null)
@@ -504,7 +505,7 @@ function OpenCommandPaletteDialog(props: {
     await copyThreadReference(activeThreadReferenceCopyTarget);
   };
   // Side chats and subagents open inside their parent, so opening a project never lands on one.
-  const threads = useVisibleThreadShells().filter((thread) => !isSidebarHiddenThread(thread));
+  const threads = useCodeVisibleThreadShells().filter((thread) => !isSidebarHiddenThread(thread));
   const keybindings = useAtomValue(primaryServerKeybindingsAtom);
   const providersByEnvironment = useEnvironmentProviders();
   const { changeThemeItem, changeAppearanceItem, themeEditorItem } = useCommandPaletteThemeItems();
@@ -1314,6 +1315,8 @@ function OpenCommandPaletteDialog(props: {
       run: () => startScratchThread(scratchTargetEnvironmentId),
     });
   }
+
+  actionItems.push(appModeItem);
 
   if (triageEnvironmentId !== null && canTriage) {
     actionItems.push({

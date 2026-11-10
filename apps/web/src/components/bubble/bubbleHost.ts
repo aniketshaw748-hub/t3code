@@ -47,3 +47,18 @@ const getSnapshot = () => snapshot;
 export function useBubbleHostState(): BubbleHostState {
   return useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
 }
+
+// Zooming changes the CSS viewport, so a resize also signals a zoom change.
+const subscribeToZoom = (onChange: () => void) => {
+  window.addEventListener("resize", onChange);
+  return () => window.removeEventListener("resize", onChange);
+};
+const readZoomFactor = () => window.desktopBridge?.getWindowZoomFactor() ?? 1;
+
+/**
+ * The zoom the bubble page is drawn at. Chromium zooms per origin, so the bubble inherits the
+ * main window's zoom, while its own window is sized in screen pixels.
+ */
+export function useBubbleZoomFactor(): number {
+  return useSyncExternalStore(subscribeToZoom, readZoomFactor, readZoomFactor);
+}

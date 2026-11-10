@@ -3,8 +3,9 @@ import type { DeliverableNote, DeliverableRegion } from "@t3tools/contracts";
 import { formatTimecode } from "@t3tools/shared/deliverableNotes";
 import { useEffect, useRef, useState } from "react";
 
-import { CaptureToolbar } from "./CaptureToolbar";
+import { CaptureTools } from "./CaptureTools";
 import { DrawOverlay, type Drawing } from "./DrawOverlay";
+import { MediaStage } from "./MediaStage";
 import { RegionOutline } from "./RegionOutline";
 import { TransportBar } from "./TransportBar";
 import { useContainedBox } from "./useContainedBox";
@@ -18,7 +19,7 @@ export interface SeekRequest {
   readonly nonce: number;
 }
 
-/** The video project's canvas: a big player, its transport and the capture toolbar over it. */
+/** The video project's canvas: a big player, with its transport and note tools in a row below. */
 export function VideoStage(props: {
   readonly sourceUrl: string | null;
   readonly posterUrl: string | null;
@@ -76,10 +77,7 @@ export function VideoStage(props: {
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       <div ref={boxRef} className="relative flex min-h-0 flex-1 items-center justify-center">
-        <div
-          className="relative overflow-hidden rounded-xl bg-black"
-          style={box === null ? { width: "100%", aspectRatio: props.aspect } : box}
-        >
+        <MediaStage style={box === null ? { width: "100%", aspectRatio: props.aspect } : box}>
           {props.sourceUrl === null ? null : (
             <video
               ref={videoRef}
@@ -127,18 +125,8 @@ export function VideoStage(props: {
               onDone={props.onDrawDone}
               onCancel={props.onDrawCancel}
             />
-          ) : (
-            <CaptureToolbar
-              talking={props.talking}
-              talkAvailable={props.talkAvailable}
-              onTalk={props.onTalk}
-              onDraw={() => {
-                videoRef.current?.pause();
-                props.onDraw();
-              }}
-            />
-          )}
-        </div>
+          ) : null}
+        </MediaStage>
       </div>
       <TransportBar
         playing={playing}
@@ -162,6 +150,17 @@ export function VideoStage(props: {
           seekTo(marker.time);
           props.onMarker(marker);
         }}
+        tools={
+          <CaptureTools
+            talking={props.talking}
+            talkAvailable={props.talkAvailable}
+            onTalk={props.onTalk}
+            onDraw={() => {
+              videoRef.current?.pause();
+              props.onDraw();
+            }}
+          />
+        }
       />
     </div>
   );

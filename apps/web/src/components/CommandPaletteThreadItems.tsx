@@ -23,7 +23,7 @@ import {
   deriveProviderInstanceEntries,
   type ProviderInstanceEntry,
 } from "../providerInstances";
-import { useVisibleThreadShells } from "../state/entities";
+import { useCodeVisibleThreadShells } from "../state/codeScope";
 import {
   useEnvironmentProviders,
   useEnvironments,
@@ -99,7 +99,7 @@ export function useCommandPaletteThreadItems(input: {
 }) {
   const { activeThread, threadSearchQuery } = input;
   const navigate = useNavigate();
-  const threads = useVisibleThreadShells();
+  const threads = useCodeVisibleThreadShells();
   const { projectEnvironmentLocationById } = useEnvironmentLookups();
   const providerEntryByEnvironmentAndInstanceId = useProviderEntryByEnvironmentAndInstanceId();
   const messageSearch = useConnectedThreadSearch(threadSearchQuery);

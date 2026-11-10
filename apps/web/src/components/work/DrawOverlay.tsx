@@ -151,7 +151,7 @@ export function DrawOverlay(props: {
           drawing.current = false;
         }}
       />
-      <div className="absolute bottom-3 left-1/2 flex -translate-x-1/2 items-center gap-1 rounded-full border border-white/10 bg-black/75 p-1 text-white shadow-lg backdrop-blur">
+      <div className="absolute bottom-3 left-1/2 flex -translate-x-1/2 items-center gap-1 rounded-lg border border-white/10 bg-black/75 p-1 text-white shadow-lg backdrop-blur">
         <span className="px-2 text-xs text-white/70">
           {strokeCount === 0 ? "Draw on the frame" : "Add a note, then send"}
         </span>

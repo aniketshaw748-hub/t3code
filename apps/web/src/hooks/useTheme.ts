@@ -129,8 +129,6 @@ let snapshotStale = true;
 let lastDesktopTheme: "light" | "dark" | "system" | null = null;
 let lastAppliedTheme: Omit<ThemeSnapshot, "resolvedTheme"> | null = null;
 let themeStorageReadFailure: ThemeStorageError | null = null;
-/** An appearance a screen shows over the user's own, such as Work mode's dark review look. */
-let appearanceOverride: ThemeAppearance | null = null;
 
 function emitChange() {
   snapshotStale = true;
@@ -335,9 +333,8 @@ function applyTheme(theme: Theme, { suppressTransitions = false, preservePreview
     appearanceMode,
     themeHalves,
   );
-  const appearance = appearanceOverride ?? resolvedAppearance;
-  applyThemePalette(resolveThemeHalf(theme, themeHalves, appearance), appearance);
-  document.documentElement.classList.toggle("dark", appearance === "dark");
+  applyThemePalette(resolveThemeHalf(theme, themeHalves, resolvedAppearance), resolvedAppearance);
+  document.documentElement.classList.toggle("dark", resolvedAppearance === "dark");
   lastAppliedTheme = { theme, systemDark, followSystem, appearanceMode, themeHalves };
   syncBrowserChromeTheme();
   syncDesktopTheme(theme, followSystem, appearanceMode);
@@ -352,11 +349,13 @@ function applyTheme(theme: Theme, { suppressTransitions = false, preservePreview
 
 async function syncDesktopThemePreference(
   bridge: DesktopThemeBridge,
-  desktopTheme: "light" | "dark" | "system",
   theme: Theme,
+  followSystem?: boolean,
+  appearanceMode?: ThemePreferenceMode,
+  halves: ThemeHalves | null = readStoredThemeHalves(),
 ): Promise<void> {
   try {
-    await bridge.setTheme(desktopTheme);
+    await bridge.setTheme(resolveDesktopTheme(theme, followSystem, appearanceMode, halves));
   } catch (cause) {
     throw new DesktopThemeSyncError({ theme, cause });
   }
@@ -370,25 +369,26 @@ function syncDesktopTheme(
   if (typeof window === "undefined") return;
   const bridge = window.desktopBridge;
   const halves = readStoredThemeHalves();
-  const desktopTheme =
-    appearanceOverride ?? resolveDesktopTheme(theme, followSystem, appearanceMode, halves);
+  const desktopTheme = resolveDesktopTheme(theme, followSystem, appearanceMode, halves);
   if (!bridge || typeof bridge.setTheme !== "function" || lastDesktopTheme === desktopTheme) {
     return;
   }
 
   lastDesktopTheme = desktopTheme;
-  void syncDesktopThemePreference(bridge, desktopTheme, theme).catch((cause: unknown) => {
-    const error = isDesktopThemeSyncError(cause)
-      ? cause
-      : new DesktopThemeSyncError({ theme, cause });
-    console.error(error.message, {
-      theme: error.theme,
-      ...safeErrorLogAttributes(error),
-    });
-    if (lastDesktopTheme === desktopTheme) {
-      lastDesktopTheme = null;
-    }
-  });
+  void syncDesktopThemePreference(bridge, theme, followSystem, appearanceMode, halves).catch(
+    (cause: unknown) => {
+      const error = isDesktopThemeSyncError(cause)
+        ? cause
+        : new DesktopThemeSyncError({ theme, cause });
+      console.error(error.message, {
+        theme: error.theme,
+        ...safeErrorLogAttributes(error),
+      });
+      if (lastDesktopTheme === desktopTheme) {
+        lastDesktopTheme = null;
+      }
+    },
+  );
 }
 
 if (typeof document !== "undefined" && typeof window !== "undefined") {
@@ -406,9 +406,13 @@ function getSnapshot(): ThemeSnapshot {
   const systemDark = followSystem ? getSystemDark() : false;
   const themeHalves = readStoredThemeHalves();
 
-  const resolvedTheme =
-    appearanceOverride ??
-    resolveThemeAppearance(theme, systemDark, followSystem, appearanceMode, themeHalves);
+  const resolvedTheme = resolveThemeAppearance(
+    theme,
+    systemDark,
+    followSystem,
+    appearanceMode,
+    themeHalves,
+  );
   if (
     lastSnapshot &&
     lastSnapshot.theme === theme &&
@@ -626,16 +630,6 @@ function clearThemeHalves(): boolean {
   applyTheme(getStored(), { suppressTransitions: true });
   emitChange();
   return true;
-}
-
-/**
- * Shows `appearance` over the user's theme until called with null; Work mode uses it for its own
- * look. The user's stored preference is left untouched.
- */
-export function setAppearanceOverride(appearance: ThemeAppearance | null): void {
-  if (appearanceOverride === appearance) return;
-  appearanceOverride = appearance;
-  refreshTheme({ preservePreview: true });
 }
 
 export function refreshTheme({ preservePreview = false } = {}): void {

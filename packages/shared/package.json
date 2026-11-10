@@ -19,6 +19,10 @@
       "types": "./src/deliverableNotes.ts",
       "import": "./src/deliverableNotes.ts"
     },
+    "./agentPreviewText": {
+      "types": "./src/agentPreviewText.ts",
+      "import": "./src/agentPreviewText.ts"
+    },
     "./authScopeOptions": {
       "types": "./src/authScopeOptions.ts",
       "import": "./src/authScopeOptions.ts"

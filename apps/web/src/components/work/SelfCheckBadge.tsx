@@ -16,12 +16,12 @@ export function SelfCheckBadge({ result }: { readonly result: DeliverableSelfChe
         render={
           <span
             tabIndex={0}
-            className="hidden min-w-0 items-center gap-1 truncate rounded-md text-xs text-work-muted outline-hidden focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-work-highlight md:inline-flex"
+            className="hidden min-w-0 items-center gap-1 truncate rounded-sm text-xs text-muted-foreground outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring md:inline-flex"
           >
             {passed ? (
-              <CheckIcon className="size-3.5 shrink-0 text-work-status-resolved" aria-hidden />
+              <CheckIcon className="size-3.5 shrink-0 text-success" aria-hidden />
             ) : (
-              <CircleAlertIcon className="size-3.5 shrink-0 text-work-status-open" aria-hidden />
+              <CircleAlertIcon className="size-3.5 shrink-0 text-warning" aria-hidden />
             )}
             <span className="truncate">{label}</span>
           </span>

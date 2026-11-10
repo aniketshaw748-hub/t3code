@@ -52,10 +52,10 @@ export function TailscalePhoneSetupRow({
 
   const check = async () => {
     setChecking(true);
-    await bridge
-      .getTailscaleAvailability()
-      .then(setAvailability)
-      .finally(() => setChecking(false));
+    // A failed read keeps what was last known.
+    const next = await bridge.getTailscaleAvailability().catch(() => null);
+    setChecking(false);
+    if (next !== null) setAvailability(next);
   };
 
   const step = availability ? tailscalePhoneStep(availability, endpoints) : null;

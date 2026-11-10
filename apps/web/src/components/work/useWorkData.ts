@@ -2,6 +2,7 @@ import { useAtomRefresh, useAtomValue } from "@effect/atom-react";
 import { resolveAssetUrl } from "@t3tools/client-runtime/state/assets";
 import { threadRuntimeIsActive } from "@t3tools/client-runtime/state/shell";
 import type {
+  EnvironmentProject,
   EnvironmentThread,
   EnvironmentThreadShell,
 } from "@t3tools/client-runtime/state/shell";
@@ -15,7 +16,13 @@ import {
   type ScopedThreadRef,
   type WorkProjectSnapshot,
 } from "@t3tools/contracts";
+import { scopeThreadRef } from "@t3tools/client-runtime/environment";
 import { agentProgress, type AgentProgress } from "@t3tools/client-runtime/work/notes";
+import {
+  primaryDeliverable,
+  shelfStatus,
+  type ShelfStatus,
+} from "@t3tools/client-runtime/work/shelf";
 import { AsyncResult, Atom } from "effect/reactivity";
 import { useEffect } from "react";
 
@@ -104,7 +111,7 @@ const latestAgentText = (thread: EnvironmentThread | null): string | null =>
  * The agent's latest message, streaming included. Shells leave it out, so this reads the
  * thread's detail; the selector keeps readers from re-rendering on unrelated thread updates.
  */
-export function useLatestAgentText(threadRef: ScopedThreadRef | null): string | null {
+function useLatestAgentText(threadRef: ScopedThreadRef | null): string | null {
   return useAtomValue(
     threadRef === null ? NO_THREAD_ATOM : environmentThreadDetails.threadAtom(threadRef),
     latestAgentText,
@@ -137,4 +144,22 @@ export function useAgentProgress(threadRef: ScopedThreadRef | null): AgentProgre
     step: step === undefined || step === "" ? null : step,
     renderPercent: percent === undefined || percent === "" ? null : Number(percent),
   };
+}
+
+/** A Work project's status and the deliverable it describes, read live. */
+export function useWorkProjectStatus(project: EnvironmentProject) {
+  const snapshot = useWorkProjectSnapshot(project.environmentId, project.id);
+  const threads = useWorkThreads(project.environmentId, project.id);
+  const running = threads.find((thread) => isThreadBusy(thread)) ?? null;
+  // Only a running agent's words are read, so idle projects open no thread subscription.
+  const agentText = useLatestAgentText(
+    running === null ? null : scopeThreadRef(running.environmentId, running.id),
+  );
+  const status: ShelfStatus = shelfStatus({
+    snapshot,
+    threads: threads.map((thread) => thread.source),
+    agentText,
+  });
+  const deliverable = snapshot === null ? null : primaryDeliverable(snapshot.deliverables);
+  return { snapshot, deliverable, status };
 }

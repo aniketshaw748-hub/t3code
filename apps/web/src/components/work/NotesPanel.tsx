@@ -1,5 +1,6 @@
+import { scopeThreadRef } from "@t3tools/client-runtime/environment";
 import type { EnvironmentThreadShell } from "@t3tools/client-runtime/state/shell";
-import type { WorkRunFailure } from "@t3tools/client-runtime/work/shelf";
+import { noteAnchorChip, noteAuthorLabel } from "@t3tools/client-runtime/work/anchors";
 import {
   checkLinkLabel,
   noteDisplay,
@@ -8,11 +9,7 @@ import {
   workChatEntries,
   type NoteCheckTarget,
 } from "@t3tools/client-runtime/work/notes";
-import {
-  noteAnchorChip,
-  noteAuthorLabel,
-  plainPreview,
-} from "@t3tools/client-runtime/work/anchors";
+import type { WorkRunFailure } from "@t3tools/client-runtime/work/shelf";
 import type {
   Deliverable,
   DeliverableNote,
@@ -20,46 +17,39 @@ import type {
   DeliverableVersionId,
   EnvironmentId,
 } from "@t3tools/contracts";
+import { agentPreviewText } from "@t3tools/shared/agentPreviewText";
 import { describeAnchor } from "@t3tools/shared/deliverableNotes";
 import * as DateTime from "effect/DateTime";
-import {
-  CircleAlertIcon,
-  RotateCcwIcon,
-  SendIcon,
-  SparklesIcon,
-  Trash2Icon,
-  XIcon,
-} from "lucide-react";
-import { useState, type ReactNode, type RefObject } from "react";
+import { CircleAlertIcon, RotateCcwIcon, SendIcon, Trash2Icon } from "lucide-react";
+import type { ReactNode, RefObject } from "react";
 
 import { cn } from "../../lib/utils";
-import { TextFieldSpeechControls, type TextFieldSpeech } from "../../speech/useTextFieldSpeech";
 import { workEnvironment } from "../../state/work";
 import { useAtomCommand } from "../../state/use-atom-command";
 import { RelativeTime } from "../RelativeTime";
 import { PendingRequestCards } from "../chat/PendingRequestCards";
 import { SpendApprovalCard, type SpendApprovalItem } from "../chat/SpendApprovalCard";
-import { Button } from "../ui/button";
-import { Textarea } from "../ui/textarea";
+import { Badge } from "../ui/badge";
+import { Button, InlineButton } from "../ui/button";
+import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from "../ui/empty";
+import { Spinner } from "../ui/spinner";
 import { Toggle, ToggleGroup } from "../ui/toggle-group";
-import type { Drawing } from "./DrawOverlay";
+import { NoteComposer, type NoteComposerState } from "./NoteComposer";
 import { isThreadBusy, useThreadMessages, useWorkAssetUrl } from "./useWorkData";
-import { scopeThreadRef } from "@t3tools/client-runtime/environment";
+import { AGENT_AUTHOR, AuthorLine, YOU_AUTHOR } from "./WorkAuthor";
+import { NoteStatusLabel, noteStatusDotClass } from "./workStatus";
 import { WorkThreadChat } from "./WorkThreadChat";
-import { NoteStatusTag, noteStatusDotClass } from "./WorkStatusChip";
 
 export type NotesTab = "notes" | "changes" | "chat";
 
-export interface NoteComposerState {
-  readonly text: string;
-  readonly setText: (text: string) => void;
-  readonly speech: TextFieldSpeech;
-  /** Pin to the playhead or selected slide, or speak about the whole deliverable. */
-  readonly pinned: boolean;
-  readonly setPinned: (pinned: boolean) => void;
-  readonly drawing: Drawing | null;
-  readonly clearDrawing: () => void;
-}
+const TABS: ReadonlyArray<{ readonly id: NotesTab; readonly label: string }> = [
+  { id: "notes", label: "Notes & chat" },
+  { id: "changes", label: "What changed" },
+  { id: "chat", label: "Full chat" },
+];
+
+const isNotesTab = (value: unknown): value is NotesTab =>
+  TABS.some((candidate) => candidate.id === value);
 
 /**
  * Notes & chat: every note is a small thread with the agent, tracked open → agent fixing →
@@ -101,57 +91,56 @@ export function NotesPanel(props: {
   const unsent = props.notes.filter(
     (note) => note.status === "open" && note.sentMessageId === null,
   );
-  const tabs: ReadonlyArray<{ readonly id: NotesTab; readonly label: string }> = [
-    {
-      id: "notes",
-      label: props.notes.length === 0 ? "Notes & chat" : `Notes & chat · ${props.notes.length}`,
-    },
-    { id: "changes", label: "What changed" },
-    { id: "chat", label: "Full chat" },
-  ];
   return (
     <aside
       aria-label="Notes and chat"
-      className="flex min-h-0 w-full flex-col border-t border-work-line bg-work-panel lg:w-[24rem] lg:shrink-0 lg:border-t-0 lg:border-l"
+      className="flex min-h-0 w-full flex-1 flex-col border-t border-border bg-background lg:w-[24rem] lg:flex-none lg:border-t-0 lg:border-l"
     >
-      <div role="tablist" aria-label="Panel" className="flex shrink-0 items-center gap-1 px-3 pt-3">
-        {tabs.map((tab) => (
-          <button
-            key={tab.id}
-            type="button"
-            role="tab"
-            aria-selected={props.tab === tab.id}
-            onClick={() => props.onTab(tab.id)}
-            className={cn(
-              "rounded-md px-2.5 py-1 text-xs font-medium outline-hidden focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-work-highlight",
-              props.tab === tab.id
-                ? "bg-work-raised text-work-ink"
-                : "text-work-muted hover:text-work-ink",
-            )}
-          >
-            {tab.label}
-          </button>
-        ))}
+      <div className="flex h-10 shrink-0 items-center border-b border-border px-2">
+        <ToggleGroup
+          aria-label="Panel"
+          variant="default"
+          value={[props.tab]}
+          onValueChange={(next) => {
+            if (isNotesTab(next[0])) props.onTab(next[0]);
+          }}
+        >
+          {TABS.map((tab) => (
+            <Toggle key={tab.id} value={tab.id} variant="ghost" size="segmented">
+              {tab.label}
+              {tab.id === "notes" && props.notes.length > 0 ? (
+                <Badge size="sm" variant="secondary">
+                  {props.notes.length}
+                </Badge>
+              ) : null}
+            </Toggle>
+          ))}
+        </ToggleGroup>
       </div>
       {props.tab === "chat" ? (
-        <div role="tabpanel" className="min-h-0 flex-1">
+        <div className="min-h-0 flex-1">
           {props.thread === null ? (
-            <p className="p-4 text-sm text-work-muted">
-              The conversation starts with your first note.
-            </p>
+            <PanelEmpty title="No conversation yet">
+              It starts with your first note or message.
+            </PanelEmpty>
           ) : (
             <WorkThreadChat environmentId={props.environmentId} threadId={props.thread.id} />
           )}
         </div>
       ) : props.tab === "changes" ? (
-        <div role="tabpanel" className="min-h-0 flex-1 overflow-y-auto p-4">
-          {props.changes}
-        </div>
+        <div className="min-h-0 flex-1 overflow-y-auto p-4">{props.changes}</div>
       ) : (
-        <div role="tabpanel" className="flex min-h-0 flex-1 flex-col">
+        <div className="flex min-h-0 flex-1 flex-col">
           {summary.length > 0 ? (
             <div className="flex shrink-0 flex-col gap-2 px-4 pt-3">
-              <div aria-hidden className="flex h-1.5 overflow-hidden rounded-full bg-work-line">
+              <ul className="flex flex-wrap gap-x-3 gap-y-1">
+                {summary.map((segment) => (
+                  <li key={segment.status} className="inline-flex">
+                    <NoteStatusLabel status={segment.status}>{segment.label}</NoteStatusLabel>
+                  </li>
+                ))}
+              </ul>
+              <div aria-hidden className="flex h-1 gap-px overflow-hidden rounded-full bg-border">
                 {summary.map((segment) => (
                   <span
                     key={segment.status}
@@ -160,20 +149,9 @@ export function NotesPanel(props: {
                   />
                 ))}
               </div>
-              <ul className="flex flex-wrap gap-x-3 gap-y-1 text-2xs text-work-muted">
-                {summary.map((segment) => (
-                  <li key={segment.status} className="inline-flex items-center gap-1.5">
-                    <span
-                      aria-hidden
-                      className={cn("size-1.5 rounded-full", noteStatusDotClass(segment.status))}
-                    />
-                    {segment.label}
-                  </li>
-                ))}
-              </ul>
             </div>
           ) : null}
-          <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto px-4 py-3">
+          <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto px-3 py-3">
             {props.thread === null ? null : (
               <PendingRequestCards
                 environmentId={props.environmentId}
@@ -202,10 +180,10 @@ export function NotesPanel(props: {
               </Button>
             ) : null}
             {sorted.length === 0 && props.spendApprovals.length === 0 && props.thread === null ? (
-              <p className="py-6 text-center text-sm text-work-muted">
-                Leave a note: type below, talk, or draw on the frame. It pins to the moment you are
+              <PanelEmpty title="No notes yet">
+                Type below, talk, or draw on the frame. A note pins to the moment or slide you are
                 on.
-              </p>
+              </PanelEmpty>
             ) : null}
             {sorted.map((note) => (
               <NoteCard
@@ -232,7 +210,6 @@ export function NotesPanel(props: {
             )}
           </div>
           <NoteComposer
-            environmentId={props.environmentId}
             kind={props.deliverable?.kind ?? "other"}
             hasWork={props.deliverable !== null}
             disabled={!props.canOperate}
@@ -248,25 +225,14 @@ export function NotesPanel(props: {
   );
 }
 
-function Avatar({
-  children,
-  agent = false,
-}: {
-  readonly children: ReactNode;
-  readonly agent?: boolean;
-}) {
+function PanelEmpty(props: { readonly title: string; readonly children: ReactNode }) {
   return (
-    <span
-      aria-hidden
-      className={cn(
-        "flex size-6 shrink-0 items-center justify-center rounded-full text-2xs font-semibold",
-        agent
-          ? "bg-work-highlight text-work-highlight-ink"
-          : "bg-work-raised text-work-ink ring-1 ring-work-line",
-      )}
-    >
-      {children}
-    </span>
+    <Empty size="compact" className="min-h-0">
+      <EmptyHeader>
+        <EmptyTitle>{props.title}</EmptyTitle>
+        <EmptyDescription>{props.children}</EmptyDescription>
+      </EmptyHeader>
+    </Empty>
   );
 }
 
@@ -287,73 +253,80 @@ function NoteCard(props: {
   const setStatus = useAtomCommand(workEnvironment.setNoteStatus, "update note");
   const remove = useAtomCommand(workEnvironment.deleteNote, "delete note");
   const author = noteAuthorLabel(note.author);
-  const chip = noteAnchorChip(note.anchor, props.kind);
+  const check = display.check;
   const target = { environmentId: props.environmentId, input: { noteId: note.id } };
+  const reply =
+    note.reply === null
+      ? display.status === "fixing"
+        ? note.sentRunId === null
+          ? "Sent. Waiting for the agent…"
+          : "Working on it…"
+        : null
+      : agentPreviewText(note.reply);
   return (
     <article
       aria-label={`${author}: ${note.body}`}
       className={cn(
-        "flex flex-col gap-2 rounded-xl border border-work-line bg-work-canvas/60 p-3",
+        "flex shrink-0 flex-col gap-2.5 rounded-xl border border-border/60 bg-card p-3",
         note.status === "resolved" && "opacity-70",
       )}
     >
-      <header className="flex min-w-0 items-center gap-2">
-        <Avatar>{author.slice(0, 1).toUpperCase()}</Avatar>
-        <span className="min-w-0 truncate text-xs font-medium text-work-ink">{author}</span>
-        <span className="shrink-0 text-2xs text-work-muted">
-          <RelativeTime timestamp={DateTime.formatIso(note.createdAt)} />
-        </span>
-        <span className="flex-1" />
-        <button
-          type="button"
-          onClick={props.onFocus}
-          aria-label={`Go to ${describeAnchor(note.anchor, props.kind)}`}
-          className="shrink-0 rounded-md bg-work-raised px-1.5 py-0.5 font-mono text-2xs text-work-ink outline-hidden ring-1 ring-work-line hover:bg-work-line focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-work-highlight"
-        >
-          {chip}
-        </button>
-        <NoteStatusTag status={display.status}>{display.label}</NoteStatusTag>
-      </header>
-      <p className="text-sm whitespace-pre-wrap text-work-ink">{note.body}</p>
+      <AuthorLine
+        author={{ kind: "person", name: author }}
+        meta={<RelativeTime timestamp={DateTime.formatIso(note.createdAt)} />}
+        trailing={
+          <Badge
+            variant="outline"
+            className="font-mono"
+            render={
+              <button
+                type="button"
+                onClick={props.onFocus}
+                aria-label={`Go to ${describeAnchor(note.anchor, props.kind)}`}
+              />
+            }
+          >
+            {noteAnchorChip(note.anchor, props.kind)}
+          </Badge>
+        }
+      />
+      <p className="text-sm wrap-anywhere whitespace-pre-wrap text-foreground">{note.body}</p>
       {note.snapshotUrl !== null ? (
         <button
           type="button"
           onClick={props.onFocus}
-          className="self-start overflow-hidden rounded-md ring-1 ring-work-line outline-hidden focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-work-highlight"
+          className="cursor-pointer self-start overflow-hidden rounded-md border border-border focus-visible:outline-2 focus-visible:outline-ring"
           aria-label="Show where this note points"
         >
           <NoteSnapshot environmentId={props.environmentId} url={note.snapshotUrl} />
         </button>
       ) : null}
+      <NoteStatusLabel status={display.status}>{display.label}</NoteStatusLabel>
       {props.failure !== null ? (
-        <p className="flex min-w-0 items-start gap-1.5 text-xs text-work-ink">
-          <CircleAlertIcon className="mt-px size-3.5 shrink-0 text-work-status-open" aria-hidden />
+        <p className="flex min-w-0 items-start gap-1.5 text-xs text-warning-foreground">
+          <CircleAlertIcon className="mt-px size-3.5 shrink-0 text-warning" aria-hidden />
           <span>
             <span className="font-medium">{props.failure.title}.</span> The agent stopped before
             fixing this.
           </span>
         </p>
       ) : null}
-      {note.reply !== null || display.status === "fixing" ? (
-        <div className="flex min-w-0 gap-2 rounded-lg bg-work-raised p-2">
-          <Avatar agent>
-            <SparklesIcon className="size-3" />
-          </Avatar>
-          <div className="flex min-w-0 flex-col gap-1">
-            <p className="line-clamp-2 text-xs text-work-ink">
-              {note.reply ??
-                (note.sentRunId === null ? "Sent. Waiting for the agent…" : "Working on it…")}
-            </p>
-            {display.check !== null ? (
-              <button
-                type="button"
-                onClick={() => props.onCheck(display.check!)}
-                className="self-start text-xs font-medium text-work-ink underline underline-offset-2 outline-hidden focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-work-highlight"
-              >
-                {checkLinkLabel(display.check)}
-              </button>
-            ) : null}
-          </div>
+      {reply !== null ? (
+        <div className="flex min-w-0 flex-col gap-1.5 rounded-lg bg-muted p-2.5 text-xs">
+          <AuthorLine
+            author={AGENT_AUTHOR}
+            trailing={
+              note.reply === null ? <Spinner size="xs" tone="muted" aria-hidden /> : undefined
+            }
+          />
+          <p className="line-clamp-3 wrap-anywhere whitespace-pre-line text-muted-foreground">
+            {reply}
+          </p>
+          {check !== null ? (
+            <InlineButton className="self-start" onClick={() => props.onCheck(check)}>
+              {checkLinkLabel(check)}
+            </InlineButton>
+          ) : null}
         </div>
       ) : null}
       {props.canOperate ? (
@@ -372,7 +345,6 @@ function NoteCard(props: {
             <>
               <Button
                 size="xs"
-                variant="contrast"
                 onClick={() =>
                   void setStatus({ ...target, input: { noteId: note.id, status: "resolved" } })
                 }
@@ -381,7 +353,7 @@ function NoteCard(props: {
               </Button>
               <Button
                 size="xs"
-                variant="ghost"
+                variant="outline"
                 onClick={() =>
                   void setStatus({ ...target, input: { noteId: note.id, status: "open" } })
                 }
@@ -435,140 +407,38 @@ function WorkChatLog(props: {
   const working = isThreadBusy(props.thread);
   if (entries.length === 0 && !working) return null;
   return (
-    <div className="flex min-w-0 flex-col gap-2.5 px-1">
+    <section aria-label="Chat" className="flex min-w-0 shrink-0 flex-col gap-3 px-1 pt-1">
       {entries.map((entry) => (
-        <div key={entry.id} className="flex min-w-0 gap-2">
-          {entry.role === "user" ? (
-            <Avatar>Y</Avatar>
-          ) : (
-            <Avatar agent>
-              <SparklesIcon className="size-3" />
-            </Avatar>
-          )}
+        <div key={entry.id} className="flex min-w-0 flex-col gap-1">
+          <AuthorLine author={entry.role === "user" ? YOU_AUTHOR : AGENT_AUTHOR} />
           <p
             className={cn(
-              "min-w-0 text-xs whitespace-pre-line",
-              entry.role === "user" ? "line-clamp-3 text-work-ink" : "line-clamp-4 text-work-muted",
+              "min-w-0 ps-7 text-xs wrap-anywhere whitespace-pre-line",
+              entry.role === "user"
+                ? "line-clamp-3 text-foreground"
+                : "line-clamp-4 text-muted-foreground",
             )}
           >
-            {/* A plain preview: markdown emphasis and code marks would show as stray characters. */}
-            {entry.role === "user" ? entry.text : plainPreview(entry.text)}
+            {entry.text}
           </p>
         </div>
       ))}
       {working ? (
-        <div className="flex min-w-0 gap-2">
-          <Avatar agent>
-            <SparklesIcon className="size-3" />
-          </Avatar>
-          <p className="text-xs text-work-muted">Working…</p>
-        </div>
-      ) : null}
-      <Button variant="link" size="micro" className="self-start" onClick={props.onOpenChat}>
-        Open the full chat
-      </Button>
-    </div>
-  );
-}
-
-function NoteComposer({
-  textareaRef,
-  ...props
-}: {
-  readonly environmentId: EnvironmentId;
-  readonly kind: Deliverable["kind"];
-  readonly hasWork: boolean;
-  readonly disabled: boolean;
-  readonly pinLabel: string | null;
-  readonly composer: NoteComposerState;
-  readonly textareaRef: RefObject<HTMLTextAreaElement | null>;
-  readonly sending: boolean;
-  readonly onSend: () => void;
-}) {
-  const { composer } = props;
-  const [focused, setFocused] = useState(false);
-  const noun = props.kind === "deck" ? "deck" : props.kind === "video" ? "video" : "file";
-  const whole = `Whole ${noun}`;
-  const pinned = composer.pinned && props.pinLabel !== null;
-  const canSend =
-    !props.disabled &&
-    !props.sending &&
-    composer.text.trim().length > 0 &&
-    !composer.speech.blocksSubmission;
-  return (
-    <form
-      className="flex shrink-0 flex-col gap-2 border-t border-work-line p-3"
-      onSubmit={(event) => {
-        event.preventDefault();
-        if (canSend) props.onSend();
-      }}
-    >
-      {composer.drawing !== null ? (
-        <div className="flex items-center gap-2 text-xs text-work-ink">
-          <span className="inline-flex items-center gap-1 rounded-full bg-work-raised px-2 py-0.5 ring-1 ring-work-line">
-            Drawing attached
-          </span>
-          <Button
-            type="button"
-            size="icon-xs"
-            variant="ghost"
-            aria-label="Remove drawing"
-            onClick={composer.clearDrawing}
-          >
-            <XIcon />
-          </Button>
-        </div>
-      ) : null}
-      <Textarea
-        ref={textareaRef}
-        size="sm"
-        rows={focused || composer.text.length > 0 ? 3 : 2}
-        disabled={props.disabled}
-        placeholder={
-          !props.hasWork
-            ? "Tell the agent what to make"
-            : pinned
-              ? `Note at ${props.pinLabel}, or ask about the whole ${noun}`
-              : `Ask for a change to the whole ${noun}`
-        }
-        value={composer.text}
-        onFocus={() => setFocused(true)}
-        onBlur={() => setFocused(false)}
-        onChange={(event) => composer.setText(event.currentTarget.value)}
-        onKeyDown={(event) => {
-          if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) {
-            event.preventDefault();
-            if (canSend) props.onSend();
+        <AuthorLine
+          author={AGENT_AUTHOR}
+          meta={
+            <span className="inline-flex items-center gap-1.5">
+              <Spinner size="xs" aria-hidden />
+              Working…
+            </span>
           }
-        }}
-        aria-label="Note for the agent"
-      />
-      <div className="flex min-w-0 items-center gap-2">
-        {props.hasWork ? (
-          <ToggleGroup
-            aria-label="What the note is about"
-            variant="segmented"
-            value={[pinned ? "pinned" : "whole"]}
-            onValueChange={(next) => composer.setPinned(next[0] === "pinned")}
-          >
-            <Toggle value="pinned" disabled={props.pinLabel === null}>
-              {props.pinLabel === null ? "Here" : `At ${props.pinLabel}`}
-            </Toggle>
-            <Toggle value="whole">{whole}</Toggle>
-          </ToggleGroup>
-        ) : null}
-        <span className="flex-1" />
-        <TextFieldSpeechControls speech={composer.speech} disabled={props.disabled} />
-        <Button
-          type="submit"
-          size="icon-xs"
-          variant="contrast"
-          aria-label="Send note"
-          disabled={!canSend}
-        >
-          <SendIcon />
-        </Button>
+        />
+      ) : null}
+      <div className="ps-7 text-xs">
+        <InlineButton tone="muted" onClick={props.onOpenChat}>
+          Open the full chat
+        </InlineButton>
       </div>
-    </form>
+    </section>
   );
 }
