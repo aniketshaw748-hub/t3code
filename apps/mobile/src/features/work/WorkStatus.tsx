@@ -18,11 +18,15 @@ export function useNoteStatusColors(): Readonly<Record<DeliverableNoteStatus, st
 const SHELF_STATUS: Record<ShelfStatusKind, DeliverableNoteStatus | null> = {
   waiting: "open",
   rendering: "fixing",
-  drafting: "fixing",
+  working: "fixing",
   failed: "open",
   "notes-back": "fixed",
   "in-review": "fixed",
   final: "resolved",
+  "notes-open": "open",
+  "notes-fixing": "fixing",
+  "notes-fixed": "fixed",
+  resolved: "resolved",
   ready: null,
   empty: null,
 };

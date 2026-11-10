@@ -39,8 +39,11 @@ import { useEnvironmentScope } from "../../state/session";
 import { useAtomCommand } from "../../state/use-atom-command";
 import { workEnvironment } from "../../state/work";
 import type { SpendApprovalItem } from "../chat/SpendApprovalCard";
+import { Badge } from "../ui/badge";
 import { Button } from "../ui/button";
+import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from "../ui/empty";
 import { SidebarInset } from "../ui/sidebar";
+import { Spinner } from "../ui/spinner";
 import { toastManager } from "../ui/toast";
 import { Toggle, ToggleGroup } from "../ui/toggle-group";
 import { WorkspacePageHeader } from "../WorkspacePageHeader";
@@ -61,7 +64,6 @@ import {
   useWorkProjectSnapshot,
   useWorkThreads,
 } from "./useWorkData";
-import { useWorkAppearance } from "./useWorkAppearance";
 import { RunFailureBanner } from "./RunFailureBanner";
 import { VersionStrip } from "./VersionStrip";
 import { VideoStage, type SeekRequest } from "./VideoStage";
@@ -104,7 +106,6 @@ export function WorkProjectScreen(props: {
   readonly projectId: ProjectId;
 }) {
   const { environmentId, projectId } = props;
-  useWorkAppearance();
   const project = useProject(scopeProjectRef(environmentId, projectId));
   const snapshot = useWorkProjectSnapshot(environmentId, projectId);
   const thread = useWorkThreads(environmentId, projectId)[0] ?? null;
@@ -378,13 +379,18 @@ export function WorkProjectScreen(props: {
   const meta = renditionMeta(kind, rendition);
 
   const canvas = (() => {
-    if (snapshot === null) return <CanvasMessage>Loading…</CanvasMessage>;
+    if (snapshot === null) return <CanvasMessage busy title="Loading…" />;
     if (deliverable === null || viewed === null) {
-      return (
-        <CanvasMessage>
-          {busy
-            ? `The agent is drafting${progress.step === null ? "" : ` · ${progress.step.toLowerCase()}`}. The first version appears here when it saves one.`
-            : "Nothing here yet. Tell the agent what to make in Notes & chat."}
+      return busy ? (
+        <CanvasMessage
+          busy
+          title={`The agent is drafting${progress.step === null ? "" : ` · ${progress.step.toLowerCase()}`}`}
+        >
+          The first version appears here when it saves one.
+        </CanvasMessage>
+      ) : (
+        <CanvasMessage title="Nothing here yet">
+          Tell the agent what to make in Notes & chat.
         </CanvasMessage>
       );
     }
@@ -404,15 +410,15 @@ export function WorkProjectScreen(props: {
         />
       );
     }
-    if (rendition === null) return <CanvasMessage>Loading V{viewed.ordinal}…</CanvasMessage>;
+    if (rendition === null) return <CanvasMessage busy title={`Loading V${viewed.ordinal}…`} />;
     // A video plays from its original while its frames and proxy render, or if they failed.
     const rendered = rendition.status === "ready";
     if (!rendered && kind !== "video") {
-      return (
-        <CanvasMessage>
-          {rendition.status === "pending" || rendition.status === "rendering"
-            ? `Rendering V${viewed.ordinal}…`
-            : (rendition.detail ?? `V${viewed.ordinal} could not be rendered.`)}
+      return rendition.status === "pending" || rendition.status === "rendering" ? (
+        <CanvasMessage busy title={`Rendering V${viewed.ordinal}…`} />
+      ) : (
+        <CanvasMessage title={`V${viewed.ordinal} could not be rendered`}>
+          {rendition.detail}
         </CanvasMessage>
       );
     }
@@ -481,7 +487,7 @@ export function WorkProjectScreen(props: {
 
   return (
     <SidebarInset className="h-dvh min-h-0 overflow-hidden">
-      <div className="flex min-h-0 flex-1 flex-col bg-work-canvas text-work-ink">
+      <div className="flex min-h-0 flex-1 flex-col bg-background text-foreground">
         <WorkspacePageHeader electron={isElectron}>
           <Button
             variant="ghost"
@@ -495,7 +501,6 @@ export function WorkProjectScreen(props: {
           {deliverables.length > 1 ? (
             <ToggleGroup
               aria-label="Deliverable"
-              variant="segmented"
               value={deliverable === null ? [] : [deliverable.id]}
               onValueChange={(next) => {
                 const id = next[0];
@@ -514,13 +519,13 @@ export function WorkProjectScreen(props: {
             </ToggleGroup>
           ) : null}
           {viewed !== null ? (
-            <span className="shrink-0 rounded-md bg-work-raised px-1.5 py-0.5 font-mono text-2xs ring-1 ring-work-line">
+            <Badge variant={viewed.id === currentVersionId ? "secondary" : "warning"}>
               V{viewed.ordinal}
-              {viewed.id === currentVersionId ? " · current" : ""}
-            </span>
+              {viewed.id === currentVersionId ? " · current" : " · earlier version"}
+            </Badge>
           ) : null}
           {meta ? (
-            <span className="hidden shrink-0 text-xs text-work-muted sm:inline">{meta}</span>
+            <span className="hidden shrink-0 text-xs text-muted-foreground sm:inline">{meta}</span>
           ) : null}
           {viewed?.selfCheck ? <SelfCheckBadge result={viewed.selfCheck} /> : null}
           <span className="flex-1" />
@@ -547,8 +552,11 @@ export function WorkProjectScreen(props: {
           ) : null}
         </WorkspacePageHeader>
         <div className="flex min-h-0 flex-1 flex-col lg:flex-row">
-          <section aria-label="Work" className="flex min-h-0 min-w-0 flex-1 flex-col">
-            <div className="flex min-h-0 flex-1 flex-col gap-3 p-4">
+          <section
+            aria-label="Work"
+            className="flex min-h-0 min-w-0 flex-col max-lg:h-[46dvh] max-lg:shrink-0 lg:flex-1"
+          >
+            <div className="flex min-h-0 flex-1 flex-col gap-3 px-4 pt-1 pb-3">
               {failure !== null ? (
                 <RunFailureBanner
                   failure={failure}
@@ -621,7 +629,7 @@ export function WorkProjectScreen(props: {
             onTab={setTab}
             changes={
               deliverable === null || viewed === null ? (
-                <p className="text-sm text-work-muted">No versions yet.</p>
+                <p className="text-sm text-muted-foreground">No versions yet.</p>
               ) : (
                 <WhatChanged
                   environmentId={environmentId}
@@ -658,10 +666,21 @@ export function WorkProjectScreen(props: {
   );
 }
 
-function CanvasMessage({ children }: { readonly children: React.ReactNode }) {
+/** What the stage shows while there is no work on it: a plain line, with a spinner when waiting. */
+function CanvasMessage(props: {
+  readonly title: string;
+  readonly busy?: boolean;
+  readonly children?: React.ReactNode;
+}) {
   return (
-    <div className="flex min-h-0 flex-1 items-center justify-center rounded-xl border border-dashed border-work-line p-8 text-center">
-      <p className="max-w-md text-sm text-work-muted">{children}</p>
+    <div className="flex min-h-0 flex-1 rounded-xl border border-dashed border-border">
+      <Empty size="compact">
+        <EmptyHeader>
+          {props.busy ? <Spinner size="md" tone="muted" className="mb-3" aria-hidden /> : null}
+          <EmptyTitle>{props.title}</EmptyTitle>
+          {props.children ? <EmptyDescription>{props.children}</EmptyDescription> : null}
+        </EmptyHeader>
+      </Empty>
     </div>
   );
 }

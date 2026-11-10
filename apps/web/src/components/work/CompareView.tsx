@@ -1,6 +1,7 @@
 import { useAtomValue } from "@effect/atom-react";
 import type {
   DeliverableKind,
+  DeliverableRegion,
   DeliverableRendition,
   DeliverableVersion,
   EnvironmentId,
@@ -13,9 +14,11 @@ import {
 import { AsyncResult } from "effect/reactivity";
 import { useState } from "react";
 
-import { cn } from "../../lib/utils";
 import { workEnvironment } from "../../state/work";
+import { Badge } from "../ui/badge";
+import { InlineButton } from "../ui/button";
 import { Toggle, ToggleGroup } from "../ui/toggle-group";
+import { MediaStage } from "./MediaStage";
 import { RegionOutline } from "./RegionOutline";
 import { useRendition } from "./useWorkData";
 
@@ -58,17 +61,17 @@ export function CompareView(props: {
   };
   return (
     <div className="flex min-h-0 flex-1 flex-col gap-3">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div className="flex min-w-0 flex-col gap-1">
-          <p className="text-sm font-medium text-work-ink">
+      <div className="flex flex-wrap items-start justify-between gap-x-3 gap-y-2">
+        <div className="flex min-w-0 flex-col gap-0.5">
+          <h2 className="text-sm font-medium text-foreground">
             V{props.base.ordinal} → V{props.target.ordinal}
             {value === null ? "" : ` · ${value.headline}`}
-          </p>
+          </h2>
           {value?.summary ? (
-            <p className="max-w-2xl text-sm text-work-muted">{value.summary}</p>
+            <p className="max-w-2xl text-sm text-muted-foreground">{value.summary}</p>
           ) : null}
           {AsyncResult.isFailure(comparison) ? (
-            <p className="text-sm text-work-muted">
+            <p className="text-sm text-muted-foreground">
               These versions can't be compared until both finish rendering.
             </p>
           ) : null}
@@ -76,7 +79,6 @@ export function CompareView(props: {
         <div className="flex items-center gap-2">
           <ToggleGroup
             aria-label="Compare layout"
-            variant="segmented"
             value={[layout]}
             onValueChange={(next) => {
               if (next[0] === "side" || next[0] === "overlay") setLayout(next[0]);
@@ -87,7 +89,6 @@ export function CompareView(props: {
           </ToggleGroup>
           <ToggleGroup
             aria-label="Which parts"
-            variant="segmented"
             value={[showUnchanged ? "all" : "changed"]}
             onValueChange={(next) => setShowUnchanged(next[0] === "all")}
           >
@@ -96,9 +97,9 @@ export function CompareView(props: {
           </ToggleGroup>
         </div>
       </div>
-      <ol className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto pr-1">
+      <ol className="flex min-h-0 flex-1 flex-col gap-5 overflow-y-auto">
         {value !== null && shown.length === 0 ? (
-          <li className="rounded-xl border border-dashed border-work-line px-4 py-10 text-center text-sm text-work-muted">
+          <li className="rounded-xl border border-dashed border-border px-4 py-10 text-center text-sm text-muted-foreground">
             Nothing visible changed between these versions.
           </li>
         ) : null}
@@ -108,20 +109,13 @@ export function CompareView(props: {
           const region = changeRegion(change);
           return (
             <li key={`${change.baseIndex}:${change.targetIndex}`} className="flex flex-col gap-2">
-              <div className="flex items-center gap-2 text-xs">
-                <span className="font-medium text-work-ink">
+              <div className="flex items-center gap-2">
+                <span className="text-xs font-medium text-foreground">
                   {compareUnitLabel(props.kind, change, targetRendition ?? baseRendition)}
                 </span>
-                <span
-                  className={cn(
-                    "rounded-full px-2 py-0.5 text-2xs",
-                    change.status === "unchanged"
-                      ? "bg-work-line/60 text-work-muted"
-                      : "bg-work-status-fixed/14 text-work-status-fixed",
-                  )}
-                >
+                <Badge size="sm" variant={change.status === "unchanged" ? "secondary" : "info"}>
                   {UNIT_CHANGE_LABEL[change.status]}
-                </span>
+                </Badge>
               </div>
               {layout === "side" ? (
                 <div className="grid grid-cols-2 gap-3">
@@ -141,15 +135,9 @@ export function CompareView(props: {
         })}
       </ol>
       {props.onRestoreBase === null ? null : (
-        <p className="text-xs text-work-muted">
+        <p className="shrink-0 text-xs text-muted-foreground">
           Prefer the earlier one?{" "}
-          <button
-            type="button"
-            className="text-work-ink underline underline-offset-2"
-            onClick={props.onRestoreBase}
-          >
-            Restore V{props.base.ordinal}
-          </button>
+          <InlineButton onClick={props.onRestoreBase}>Restore V{props.base.ordinal}</InlineButton>
         </p>
       )}
     </div>
@@ -159,21 +147,21 @@ export function CompareView(props: {
 function Frame(props: {
   readonly label: string;
   readonly src: string | null;
-  readonly region: import("@t3tools/contracts").DeliverableRegion | null;
+  readonly region: DeliverableRegion | null;
 }) {
   return (
     <figure className="flex flex-col gap-1">
-      <div className="relative aspect-video overflow-hidden rounded-lg border border-work-line bg-work-panel">
+      <MediaStage className="aspect-video border border-border">
         {props.src === null ? (
-          <span className="absolute inset-0 flex items-center justify-center text-xs text-work-muted">
+          <span className="absolute inset-0 flex items-center justify-center text-xs text-white/60">
             Not in this version
           </span>
         ) : (
           <img src={props.src} alt="" loading="lazy" className="size-full object-contain" />
         )}
         {props.region === null ? null : <RegionOutline region={props.region} />}
-      </div>
-      <figcaption className="font-mono text-2xs text-work-muted">{props.label}</figcaption>
+      </MediaStage>
+      <figcaption className="font-mono text-2xs text-muted-foreground">{props.label}</figcaption>
     </figure>
   );
 }
@@ -188,7 +176,7 @@ function OverlayFrame(props: {
   const [split, setSplit] = useState(50);
   return (
     <div className="flex flex-col gap-2">
-      <div className="relative aspect-video overflow-hidden rounded-lg border border-work-line bg-work-panel">
+      <MediaStage className="aspect-video border border-border">
         {props.before === null ? null : (
           <img src={props.before} alt="" className="absolute inset-0 size-full object-contain" />
         )}
@@ -205,8 +193,8 @@ function OverlayFrame(props: {
           className="pointer-events-none absolute inset-y-0 w-px bg-white/90"
           style={{ left: `${split}%` }}
         />
-      </div>
-      <label className="flex items-center gap-2 text-2xs text-work-muted">
+      </MediaStage>
+      <label className="flex items-center gap-2 text-2xs text-muted-foreground">
         <span className="font-mono">{props.afterLabel}</span>
         <input
           type="range"
@@ -215,7 +203,7 @@ function OverlayFrame(props: {
           value={split}
           aria-label={`Reveal ${props.afterLabel} over ${props.beforeLabel}`}
           onChange={(event) => setSplit(Number(event.currentTarget.value))}
-          className="min-w-0 flex-1 accent-current"
+          className="min-w-0 flex-1 accent-primary"
         />
         <span className="font-mono">{props.beforeLabel}</span>
       </label>

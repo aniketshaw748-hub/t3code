@@ -3,20 +3,18 @@ import { MicIcon, MonitorIcon, PencilIcon } from "lucide-react";
 import { Button } from "../ui/button";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 
-/** The floating Talk, Record and Draw toolbar over the player or slide. */
-export function CaptureToolbar(props: {
+export interface CaptureToolsProps {
   readonly talking: boolean;
   readonly talkAvailable: boolean;
   readonly onTalk: () => void;
   readonly onDraw: () => void;
-}) {
+}
+
+/** Talk, Record and Draw: the ways to leave a note, in the stage's own row of controls. */
+export function CaptureTools(props: CaptureToolsProps) {
   return (
-    <div
-      role="toolbar"
-      aria-label="Leave a note"
-      className="absolute top-3 left-1/2 z-10 flex -translate-x-1/2 items-center gap-0.5 rounded-full border border-white/10 bg-black/70 p-1 shadow-lg backdrop-blur"
-    >
-      <ToolbarButton
+    <div role="toolbar" aria-label="Leave a note" className="flex shrink-0 items-center gap-0.5">
+      <ToolButton
         label={
           props.talkAvailable
             ? props.talking
@@ -29,18 +27,18 @@ export function CaptureToolbar(props: {
         onClick={props.onTalk}
       >
         <MicIcon />
-      </ToolbarButton>
-      <ToolbarButton label="Screen recording is not available yet" disabled onClick={() => {}}>
+      </ToolButton>
+      <ToolButton label="Screen recording is not available yet" disabled onClick={() => {}}>
         <MonitorIcon />
-      </ToolbarButton>
-      <ToolbarButton label="Draw on the frame" onClick={props.onDraw}>
+      </ToolButton>
+      <ToolButton label="Draw on the frame" onClick={props.onDraw}>
         <PencilIcon />
-      </ToolbarButton>
+      </ToolButton>
     </div>
   );
 }
 
-function ToolbarButton(props: {
+function ToolButton(props: {
   readonly label: string;
   readonly disabled?: boolean;
   readonly pressed?: boolean;
@@ -52,8 +50,8 @@ function ToolbarButton(props: {
       <TooltipTrigger
         render={
           <Button
-            variant="overlay"
-            size="icon-sm-pill"
+            variant="ghost"
+            size="icon-xs"
             aria-label={props.label}
             aria-pressed={props.pressed ?? undefined}
             aria-disabled={props.disabled || undefined}
@@ -64,7 +62,7 @@ function ToolbarButton(props: {
           </Button>
         }
       />
-      <TooltipPopup side="bottom">{props.label}</TooltipPopup>
+      <TooltipPopup side="top">{props.label}</TooltipPopup>
     </Tooltip>
   );
 }

@@ -12,18 +12,24 @@ import { agentProgress } from "./workNotes.ts";
 export type ShelfStatusKind =
   | "waiting"
   | "rendering"
-  | "drafting"
+  | "working"
   | "failed"
   | "notes-back"
   | "in-review"
   | "final"
+  | "notes-open"
+  | "notes-fixing"
+  | "notes-fixed"
+  | "resolved"
   | "ready"
   | "empty";
 
 export interface ShelfStatus {
   readonly kind: ShelfStatusKind;
-  /** The plain chip text: `Drafting · slide 4 of 9`, `Rendering 60%`, `Notes back · 3`. */
+  /** The status in plain words: `Agent working · slide 4 of 9`, `2 notes open`, `In review`. */
   readonly label: string;
+  /** The version the status is about, as `V2`; null before the first version. */
+  readonly version: string | null;
 }
 
 type FailureThread = Pick<
@@ -143,10 +149,34 @@ export function posterFor(
   return snapshot.posters.find((poster) => poster.versionId === versionId)?.url ?? null;
 }
 
+const plural = (count: number, one: string, many: string) => `${count} ${count === 1 ? one : many}`;
+
+/** Where the user's own notes stand, most pressing first; null when there are none. */
+function notesStatus(
+  notes: ReadonlyArray<Pick<DeliverableNote, "status">>,
+): Pick<ShelfStatus, "kind" | "label"> | null {
+  if (notes.length === 0) return null;
+  const count = (status: DeliverableNote["status"]) =>
+    notes.filter((note) => note.status === status).length;
+  const open = count("open");
+  const fixed = count("fixed");
+  const fixing = count("fixing");
+  const parts = [
+    open > 0 ? plural(open, "note open", "notes open") : null,
+    fixed > 0 ? `${fixed} fixed to check` : null,
+    fixing > 0 ? `${fixing} with the agent` : null,
+  ].filter((part) => part !== null);
+  if (parts.length === 0) return { kind: "resolved", label: "All notes resolved" };
+  return {
+    kind: open > 0 ? "notes-open" : fixed > 0 ? "notes-fixed" : "notes-fixing",
+    label: parts.join(" · "),
+  };
+}
+
 /**
- * One status per project card, most pressing first: a question or spend waiting on the user,
- * a render in progress, the agent drafting, its last run failing, review notes back, in review,
- * final, or ready.
+ * One status per project card, in words, most pressing first: a question or spend waiting on the
+ * user, a render in progress, the agent working, its last run failing, review notes back, in
+ * review, final, then where the user's own notes stand. The version rides beside it.
  */
 export function shelfStatus(input: {
   readonly snapshot: WorkProjectSnapshot | null;
@@ -155,35 +185,38 @@ export function shelfStatus(input: {
   readonly agentText: string | null;
 }): ShelfStatus {
   const { snapshot, threads } = input;
-  const waiting = threads.some(
-    (thread) => thread.status === "waiting" || thread.pendingRuntimeRequest !== null,
-  );
-  if (waiting) return { kind: "waiting", label: "Waiting for you" };
-  const running = threads.find((thread) => thread.activeRunId !== null);
-  const progress = agentProgress(running === undefined ? null : input.agentText);
   const deliverable = snapshot === null ? null : primaryDeliverable(snapshot.deliverables);
   const current =
     snapshot === null || deliverable === null
       ? undefined
       : snapshot.versions.find((version) => version.id === deliverable.currentVersionId);
+  const version = current === undefined ? null : `V${current.ordinal}`;
+  const waiting = threads.some(
+    (thread) => thread.status === "waiting" || thread.pendingRuntimeRequest !== null,
+  );
+  if (waiting) return { kind: "waiting", label: "Waiting for you", version };
+  const running = threads.find((thread) => thread.activeRunId !== null);
+  const progress = agentProgress(running === undefined ? null : input.agentText);
   const renderingNow =
     current !== undefined &&
     (current.renditionStatus === "pending" || current.renditionStatus === "rendering");
   if (running !== undefined && progress.renderPercent !== null) {
-    return { kind: "rendering", label: `Rendering ${progress.renderPercent}%` };
+    return { kind: "rendering", label: `Rendering ${progress.renderPercent}%`, version };
   }
-  if (renderingNow) return { kind: "rendering", label: "Rendering" };
+  if (renderingNow) return { kind: "rendering", label: "Rendering", version };
   if (running !== undefined) {
     return {
-      kind: "drafting",
-      label: progress.step === null ? "Drafting" : `Drafting · ${progress.step.toLowerCase()}`,
+      kind: "working",
+      label:
+        progress.step === null ? "Agent working" : `Agent working · ${progress.step.toLowerCase()}`,
+      version,
     };
   }
   // The most recently updated thread is the Work thread; its last run is the one that counts.
   const failure = workRunFailure(threads[0]);
-  if (failure !== null) return { kind: "failed", label: failure.title };
+  if (failure !== null) return { kind: "failed", label: failure.title, version };
   if (snapshot === null || deliverable === null || current === undefined) {
-    return { kind: "empty", label: "Not started" };
+    return { kind: "empty", label: "Not started", version: null };
   }
   const notesBack = snapshot.notes.filter(
     (note) =>
@@ -191,15 +224,16 @@ export function shelfStatus(input: {
       note.author.kind === "external" &&
       note.status === "open",
   ).length;
-  if (notesBack > 0) return { kind: "notes-back", label: `Notes back · ${notesBack}` };
+  if (notesBack > 0) return { kind: "notes-back", label: `Notes back · ${notesBack}`, version };
   const review = snapshot.reviews.find((candidate) => candidate.deliverableId === deliverable.id);
   if (review?.state === "in_review") {
-    const reviewed = snapshot.versions.find((version) => version.id === review.versionId);
-    return {
-      kind: "in-review",
-      label: `In review · V${(reviewed ?? current).ordinal}`,
-    };
+    const reviewed = snapshot.versions.find((candidate) => candidate.id === review.versionId);
+    return { kind: "in-review", label: "In review", version: `V${(reviewed ?? current).ordinal}` };
   }
-  if (review?.state === "final") return { kind: "final", label: "Final" };
-  return { kind: "ready", label: `V${current.ordinal}` };
+  if (review?.state === "final") return { kind: "final", label: "Final", version };
+  // The card stands for the project, so its notes count across every deliverable in it.
+  return {
+    ...(notesStatus(snapshot.notes) ?? { kind: "ready", label: "Ready to review" }),
+    version,
+  };
 }
