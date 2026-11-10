@@ -52,11 +52,10 @@ export function TailscalePhoneSetupRow({
 
   const check = async () => {
     setChecking(true);
-    try {
-      setAvailability(await bridge.getTailscaleAvailability());
-    } finally {
-      setChecking(false);
-    }
+    await bridge
+      .getTailscaleAvailability()
+      .then(setAvailability)
+      .finally(() => setChecking(false));
   };
 
   const step = availability ? tailscalePhoneStep(availability, endpoints) : null;

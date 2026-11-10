@@ -83,58 +83,56 @@ export function DirectPushSettingsRow() {
 
   const save = async (path: string | null) => {
     setPending("save");
-    try {
-      const result = await setServiceAccount({ environmentId, input: { path } });
-      if (result._tag !== "Success") throw new Error("Could not save the service-account key.");
+    const result = await setServiceAccount({ environmentId, input: { path } });
+    if (result._tag === "Success") {
       setDraft("");
       query.refresh();
-    } catch (error) {
+    } else {
       toastManager.add(
         stackedThreadToast({
           type: "error",
           title: "Could not save the key",
-          description: error instanceof Error ? error.message : "Something went wrong.",
+          description: "Could not save the service-account key.",
         }),
       );
-    } finally {
-      setPending(null);
     }
+    setPending(null);
+  };
+
+  const sendTestAndReport = async () => {
+    const result = await sendTest({ environmentId, input: {} });
+    if (result._tag !== "Success") throw new Error("The host did not answer.");
+    const { deliveries } = result.value;
+    const failed = deliveries.filter((delivery) => !delivery.ok);
+    toastManager.add(
+      stackedThreadToast(
+        deliveries.length === 0
+          ? {
+              type: "warning",
+              title: "No phone registered",
+              description: "Open the app on a phone paired with this computer, then try again.",
+            }
+          : failed.length === 0
+            ? {
+                type: "success",
+                title: "Test notification sent",
+                description: deliveries.map((delivery) => delivery.label).join(", "),
+              }
+            : {
+                type: "error",
+                title: "Test notification failed",
+                description: failed
+                  .map((delivery) => `${delivery.label}: ${delivery.error ?? "failed"}`)
+                  .join("\n"),
+              },
+      ),
+    );
+    query.refresh();
   };
 
   const test = async () => {
     setPending("test");
-    try {
-      const result = await sendTest({ environmentId, input: {} });
-      if (result._tag !== "Success") throw new Error("The host did not answer.");
-      const { deliveries } = result.value;
-      const failed = deliveries.filter((delivery) => !delivery.ok);
-      toastManager.add(
-        stackedThreadToast(
-          deliveries.length === 0
-            ? {
-                type: "warning",
-                title: "No phone registered",
-                description: "Open the app on a phone paired with this computer, then try again.",
-              }
-            : failed.length === 0
-              ? {
-                  type: "success",
-                  title: "Test notification sent",
-                  description: deliveries.map((delivery) => delivery.label).join(", "),
-                }
-              : {
-                  type: "error",
-                  title: "Test notification failed",
-                  description: failed
-                    .map((delivery) => `${delivery.label}: ${delivery.error ?? "failed"}`)
-                    .join("\n"),
-                },
-        ),
-      );
-      query.refresh();
-    } finally {
-      setPending(null);
-    }
+    await sendTestAndReport().finally(() => setPending(null));
   };
 
   return (

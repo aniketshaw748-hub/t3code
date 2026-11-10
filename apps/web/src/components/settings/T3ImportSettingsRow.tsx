@@ -220,9 +220,8 @@ export function T3ImportSettingsRow() {
           description: error instanceof Error ? error.message : "Something went wrong.",
         }),
       );
-    } finally {
-      setLoading(false);
     }
+    setLoading(false);
   };
 
   return (
