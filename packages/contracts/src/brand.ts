@@ -72,6 +72,8 @@ export interface Brand {
     readonly website: string;
     readonly download: string;
     readonly privacyPolicy: string;
+    /** One link for any phone, shown as a single QR code: it leads to wherever the app is. */
+    readonly mobileApp: string;
     /** Where to get the mobile apps; Settings shows one QR code per entry. */
     readonly mobileApps: ReadonlyArray<{
       readonly platform: "ios" | "android";
@@ -146,6 +148,7 @@ export const BRAND: Brand = {
     website: REPOSITORY_URL,
     download: `${REPOSITORY_URL}/releases`,
     privacyPolicy: `${REPOSITORY_URL}#readme`,
+    mobileApp: `${REPOSITORY_URL}/releases`,
     mobileApps: [
       { platform: "android", store: "GitHub Releases", url: `${REPOSITORY_URL}/releases` },
     ],
