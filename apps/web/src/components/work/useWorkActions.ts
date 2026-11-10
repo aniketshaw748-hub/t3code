@@ -150,7 +150,6 @@ export function useSendNotes() {
     readonly deliverable: Deliverable;
     readonly version: DeliverableVersion;
     readonly notes: ReadonlyArray<DeliverableNote>;
-    readonly snapshots?: ReadonlyArray<UploadChatAttachment>;
   }): Promise<boolean> => {
     if (input.notes.length === 0) return false;
     const threadId = input.thread?.id ?? newThreadId();
@@ -187,7 +186,6 @@ export function useSendNotes() {
           hasSnapshot: note.snapshotUrl !== null,
         })),
       }),
-      ...(input.snapshots === undefined ? {} : { attachments: input.snapshots }),
     });
     if (sent === null) {
       await Promise.all(

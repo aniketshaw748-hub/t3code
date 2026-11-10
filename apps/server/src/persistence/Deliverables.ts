@@ -80,7 +80,7 @@ export interface NewDeliverableVersion {
 
 /** What the deliverable store must keep: everything else in it is left over. */
 export interface StoreReferences {
-  /** Content hashes of stored files that a version or its snapshot still points at. */
+  /** Content hashes of stored files that a version, its snapshot or a note still points at. */
   readonly blobs: ReadonlySet<string>;
   /** `renditionKey` of every rendition some version shows. */
   readonly renditions: ReadonlySet<string>;
@@ -574,8 +574,13 @@ const make = Effect.gen(function* () {
       const snapshots = yield* sql<{ readonly path: string }>`
         SELECT snapshot_path AS "path" FROM deliverable_notes WHERE snapshot_path IS NOT NULL
       `;
+      // A note's picture is a stored file like any other; older ones sit in their own folder.
+      const pictures = snapshots.flatMap((row) => {
+        const sha = /^objects\/[0-9a-f]{2}\/[0-9a-f]{2}\/([0-9a-f]{64})$/.exec(row.path)?.[1];
+        return sha === undefined ? [] : [sha];
+      });
       return {
-        blobs: new Set(blobs.map((row) => row.sha)),
+        blobs: new Set([...blobs.map((row) => row.sha), ...pictures]),
         renditions: new Set(
           renditions.map((row) => renditionKey({ contentSha256: row.sha, kind: row.kind })),
         ),

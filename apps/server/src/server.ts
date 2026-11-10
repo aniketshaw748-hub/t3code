@@ -140,6 +140,7 @@ import * as DeliverableCheckpointReactor from "./deliverables/DeliverableCheckpo
 import * as DeliverableComparer from "./deliverables/DeliverableComparer.ts";
 import * as DeliverableContext from "./deliverables/DeliverableContext.ts";
 import * as DeliverableGit from "./deliverables/DeliverableGit.ts";
+import * as DeliverableNoteSnapshots from "./deliverables/DeliverableNoteSnapshots.ts";
 import * as DeliverableRenderers from "./deliverables/DeliverableRenderers.ts";
 import * as DeliverableRenditions from "./deliverables/DeliverableRenditions.ts";
 import * as DeliverableSelfCheck from "./deliverables/DeliverableSelfCheck.ts";
@@ -590,7 +591,14 @@ const layerScheduledTaskWebhookOrigin = Layer.effect(
 const layerOrchestrationV2Runtime = RuntimeLayer.layerProduction.pipe(
   Layer.provide(
     DeliverableTurnNotes.layer.pipe(
-      Layer.provide(Layer.merge(DeliverableRepository.layer, ProjectStore.layer)),
+      Layer.provide(
+        Layer.mergeAll(
+          DeliverableRepository.layer,
+          DeliverableNoteRepository.layer,
+          DeliverableBlobStore.layer,
+          ProjectStore.layer,
+        ),
+      ),
     ),
   ),
   Layer.provide(layerScheduledTaskWebhookOrigin),
@@ -627,7 +635,13 @@ const layerDeliverables = Layer.effectDiscard(
   Layer.provideMerge(WorkProjectFeed.layer),
   Layer.provideMerge(DeliverableService.layer),
   Layer.provideMerge(DeliverableNotes.layer),
-  Layer.provideMerge(Layer.mergeAll(DeliverableComparer.layer, DeliverableStoreCleanup.layer)),
+  Layer.provideMerge(
+    Layer.mergeAll(
+      DeliverableComparer.layer,
+      DeliverableStoreCleanup.layer,
+      DeliverableNoteSnapshots.layer,
+    ),
+  ),
   Layer.provideMerge(DeliverableRenditions.layer),
   Layer.provide(
     Layer.mergeAll(

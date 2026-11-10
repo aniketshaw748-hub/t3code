@@ -37,7 +37,10 @@ export const DeliverableNote = Schema.Struct({
   anchor: Schema.NullOr(DeliverableAnchor),
   body: Schema.String,
   author: DeliverableNoteAuthor,
-  /** The frame or slide as the user saw it, with their drawing on it. */
+  /**
+   * A picture of where the note points: the user's drawing on the frame when their client sent
+   * one, else the frame or slide the server made with the note's area outlined.
+   */
   snapshotUrl: Schema.NullOr(Schema.String),
   status: DeliverableNoteStatus,
   threadId: Schema.NullOr(ThreadId),
@@ -104,6 +107,10 @@ export const DeliverableNoteCreateInput = Schema.Struct({
       source: TrimmedNonEmptyString,
     }),
   ),
+  /**
+   * Only for what the server cannot make from the anchor, such as a freehand drawing. Left out,
+   * the server makes the note's picture from the stored version.
+   */
   snapshotDataUrl: Schema.optional(
     Schema.String.check(
       Schema.isMaxLength(DELIVERABLE_NOTE_MAX_SNAPSHOT_CHARS),

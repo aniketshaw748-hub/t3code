@@ -135,7 +135,7 @@ const notesShared = {
 const DeliverableNotesTool = Tool.make("deliverable_notes", {
   ...notesShared,
   description:
-    "The user's and reviewers' notes on deliverables: each with its anchor (time in seconds, 0-based slide, region x/y/w/h 0-1), the version it was left on, a snapshotUrl of the frame or slide with their drawing, and its status. Read open and fixing notes before you change a deliverable.",
+    "The user's and reviewers' notes on deliverables: each with its anchor (time in seconds, 0-based slide, region x/y/w/h 0-1), the version it was left on, a snapshotUrl of the frame or slide with the marked area outlined or their drawing on it, and its status. Read open and fixing notes before you change a deliverable.",
   parameters: Schema.Struct({
     projectId: ProjectTarget,
     deliverableId: Schema.optional(DeliverableId),

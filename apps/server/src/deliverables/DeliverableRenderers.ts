@@ -1,4 +1,4 @@
-import type { DeliverableKind } from "@t3tools/contracts";
+import type { DeliverableKind, DeliverableRegion } from "@t3tools/contracts";
 import * as HostProcess from "@t3tools/shared/HostProcess";
 import * as Context from "effect/Context";
 import type * as Duration from "effect/Duration";
@@ -20,6 +20,7 @@ import {
   pptxSlideTitle,
   shotsFromCuts,
 } from "./mediaParsing.ts";
+import { notePictureFilter } from "./notePicture.ts";
 import { OUTLINE_GRID, type Raster, VIDEO_GRID } from "./perceptualDiff.ts";
 
 /** The renderer cannot run here; `detail` says what to install. */
@@ -124,6 +125,17 @@ export class DeliverableRenderers extends Context.Service<
     readonly outlineImage: (input: {
       readonly imagePath: string;
       readonly outlinePath: string;
+    }) => Effect.Effect<void, DeliverableRenderUnsupportedError | DeliverableRenderError>;
+    /**
+     * A PNG of where a note points: the frame `seconds` into a video, or a still image, with the
+     * note's area outlined and shown again close up.
+     */
+    readonly notePicture: (input: {
+      readonly sourcePath: string;
+      /** Left out for a still image. */
+      readonly seconds?: number;
+      readonly region: DeliverableRegion | null;
+      readonly outPath: string;
     }) => Effect.Effect<void, DeliverableRenderUnsupportedError | DeliverableRenderError>;
     /** A rendered image's pixels, decoded by way of `scratchPath`. */
     readonly readImage: (input: {
@@ -319,6 +331,26 @@ const make = Effect.gen(function* () {
       path.join(input.outDir, file),
     ]);
     return { file, fps, grid: VIDEO_GRID };
+  });
+
+  const notePicture: DeliverableRenderers["Service"]["notePicture"] = Effect.fn(
+    "DeliverableRenderers.notePicture",
+  )(function* (input) {
+    yield* requireFfmpeg;
+    yield* ffmpeg("frames", [
+      "-v",
+      "error",
+      ...(input.seconds === undefined ? [] : ["-ss", input.seconds.toFixed(3)]),
+      "-i",
+      input.sourcePath,
+      "-filter_complex",
+      notePictureFilter(input.region),
+      "-frames:v",
+      "1",
+      "-update",
+      "1",
+      input.outPath,
+    ]);
   });
 
   const readImage: DeliverableRenderers["Service"]["readImage"] = Effect.fn(
@@ -715,6 +747,7 @@ const make = Effect.gen(function* () {
     }),
     sampleFrames,
     outlineImage,
+    notePicture,
     readImage,
   });
 });

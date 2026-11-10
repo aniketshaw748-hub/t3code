@@ -20,10 +20,8 @@ import * as KeyedLock from "@t3tools/shared/KeyedLock";
 import * as Context from "effect/Context";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
-import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
-import * as Path from "effect/Path";
 import * as Result from "effect/Result";
 import * as SecureRandom from "effect/crypto/SecureRandom";
 import * as Base64 from "effect/encoding/Base64";
@@ -32,6 +30,8 @@ import * as AssetAccess from "../assets/AssetAccess.ts";
 import * as DeliverableNoteRepository from "../persistence/DeliverableNotes.ts";
 import * as DeliverableRepository from "../persistence/Deliverables.ts";
 import * as DeliverableBlobStore from "./DeliverableBlobStore.ts";
+import * as DeliverableNoteSnapshots from "./DeliverableNoteSnapshots.ts";
+import * as DeliverableStoreCleanup from "./DeliverableStoreCleanup.ts";
 import { adoptRunNotes, settleRunNotes } from "./noteLifecycle.ts";
 import { versionSummary } from "./versionSummary.ts";
 import * as WorkProjectEvents from "./WorkProjectEvents.ts";
@@ -102,9 +102,9 @@ const make = Effect.gen(function* () {
   const notes = yield* DeliverableNoteRepository.DeliverableNoteRepository;
   const deliverables = yield* DeliverableRepository.DeliverableRepository;
   const blobs = yield* DeliverableBlobStore.DeliverableBlobStore;
+  const snapshots = yield* DeliverableNoteSnapshots.DeliverableNoteSnapshots;
+  const cleanup = yield* DeliverableStoreCleanup.DeliverableStoreCleanup;
   const events = yield* WorkProjectEvents.WorkProjectEvents;
-  const fileSystem = yield* FileSystem.FileSystem;
-  const path = yield* Path.Path;
   const random = yield* SecureRandom.SecureRandom;
   const assetContext =
     yield* Effect.context<
@@ -155,25 +155,15 @@ const make = Effect.gen(function* () {
       ),
     );
 
-  const writeSnapshot = Effect.fn("DeliverableNotes.writeSnapshot")(function* (
-    noteId: DeliverableNoteId,
-    dataUrl: string,
-  ) {
+  /** The PNG a client sent with its note, checked to be one. */
+  const clientPicture = Effect.fn("DeliverableNotes.clientPicture")(function* (dataUrl: string) {
     const decoded = Base64.decode(dataUrl.slice(DATA_URL_PREFIX.length));
     if (Result.isFailure(decoded)) return yield* fail("snapshot_invalid")();
     const bytes = decoded.success;
     if (!PNG_SIGNATURE.every((byte, index) => bytes[index] === byte)) {
       return yield* fail("snapshot_invalid")();
     }
-    const relativePath = `notes/${noteId}.png`;
-    const target = path.join(blobs.root, "notes", `${noteId}.png`);
-    yield* fileSystem
-      .makeDirectory(path.dirname(target), { recursive: true })
-      .pipe(
-        Effect.andThen(fileSystem.writeFile(target, bytes)),
-        Effect.mapError(fail("storage_failed")),
-      );
-    return relativePath;
+    return bytes;
   });
 
   const create: DeliverableNotes["Service"]["create"] = Effect.fn("DeliverableNotes.create")(
@@ -208,12 +198,19 @@ const make = Effect.gen(function* () {
         updatedAt: now,
         resolvedAt: null,
       };
-      const { snapshotDataUrl } = input;
+      const sent =
+        input.snapshotDataUrl === undefined ? null : yield* clientPicture(input.snapshotDataUrl);
       // The picture and the note that needs it are written together, with no cleanup between.
       const saved = yield* blobs.whileWriting(
         Effect.gen(function* () {
-          const snapshotPath =
-            snapshotDataUrl === undefined ? null : yield* writeSnapshot(id, snapshotDataUrl);
+          const snapshotPath = yield* snapshots
+            .capture({
+              deliverable,
+              version: version.value,
+              anchor: input.anchor,
+              clientPicture: sent,
+            })
+            .pipe(Effect.mapError(fail("storage_failed")));
           const note = { ...stored, snapshotPath };
           yield* notes.putNote(note).pipe(persistence);
           return note;
@@ -289,11 +286,8 @@ const make = Effect.gen(function* () {
     function* (noteId) {
       const note = yield* loadNote(noteId);
       yield* notes.deleteNote(noteId).pipe(persistence);
-      if (note.snapshotPath !== null) {
-        yield* fileSystem
-          .remove(path.join(blobs.root, ...note.snapshotPath.split("/")))
-          .pipe(Effect.ignore);
-      }
+      // Another note may show the same picture, so cleanup decides whether it goes.
+      if (note.snapshotPath !== null) yield* cleanup.request;
       yield* changed(note.projectId);
     },
   );

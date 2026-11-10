@@ -10,6 +10,7 @@ import {
   CheckpointScopeId,
   MessageId,
   NodeId,
+  type DeliverableRegion,
   type OrchestrationV2Checkpoint,
   ProjectId,
   RunId,
@@ -28,6 +29,7 @@ import * as SqlClient from "effect/sql/SqlClient";
 import * as AssetSigner from "../assets/AssetSigner.ts";
 import * as CheckpointStore from "../checkpointing/CheckpointStore.ts";
 import * as ServerConfig from "../config.ts";
+import { resolveAttachmentPath } from "../attachmentStore.ts";
 import * as DeliverableNoteRepository from "../persistence/DeliverableNotes.ts";
 import * as DeliverableRepository from "../persistence/Deliverables.ts";
 import * as SqlitePersistence from "../persistence/Sqlite.ts";
@@ -38,6 +40,7 @@ import * as DeliverableBlobStore from "./DeliverableBlobStore.ts";
 import * as DeliverableComparer from "./DeliverableComparer.ts";
 import * as DeliverableContext from "./DeliverableContext.ts";
 import * as DeliverableGit from "./DeliverableGit.ts";
+import * as DeliverableNoteSnapshots from "./DeliverableNoteSnapshots.ts";
 import * as DeliverableRenderers from "./DeliverableRenderers.ts";
 import * as DeliverableRenditions from "./DeliverableRenditions.ts";
 import * as DeliverableSelfCheck from "./DeliverableSelfCheck.ts";
@@ -56,7 +59,16 @@ import * as TurnContextNotes from "../orchestration-v2/TurnContextNotes.ts";
 const projectId = ProjectId.make("project-work");
 const threadId = ThreadId.make("thread-work");
 
-const rendererCalls = { sampleFrames: 0, readImage: 0, outlineImage: 0 };
+const rendererCalls = {
+  sampleFrames: 0,
+  readImage: 0,
+  outlineImage: 0,
+  notePictures: [] as Array<{
+    readonly source: string;
+    readonly seconds: number | undefined;
+    readonly region: DeliverableRegion | null;
+  }>,
+};
 /** How the stand-in renderer behaves; a test sets it and puts it back. */
 const rendering: {
   mode: "works" | "crashes" | "hangs";
@@ -70,6 +82,10 @@ const barRaster = (side: number, length: number) => {
   for (let y = 0; y < 8; y++) data.fill(255, y * side * 3, (y * side + length) * 3);
   return { width: side, height: side, data };
 };
+
+const PNG_SIGNATURE = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a];
+/** What the stand-in renderer writes as a note's picture. */
+const SERVER_PICTURE = new Uint8Array([...PNG_SIGNATURE, 1, 2, 3]);
 
 /**
  * Stands in for PowerPoint and ffmpeg, working on text files. A deck is one slide a line, compared
@@ -185,6 +201,15 @@ const layerLineRenderer = Layer.effect(
             new Uint8Array(OUTLINE_GRID * OUTLINE_GRID * 3),
           );
         }).pipe(Effect.orDie),
+      notePicture: (input) =>
+        Effect.gen(function* () {
+          rendererCalls.notePictures.push({
+            source: path.basename(input.sourcePath),
+            seconds: input.seconds,
+            region: input.region,
+          });
+          yield* fileSystem.writeFile(input.outPath, SERVER_PICTURE);
+        }).pipe(Effect.orDie),
       readImage: (input) =>
         Effect.gen(function* () {
           rendererCalls.readImage++;
@@ -253,7 +278,13 @@ const layerVcsProcess = VcsProcess.layer.pipe(Layer.provide(layerPlatform));
 const layerEngine = (root: string, deadline: Duration.Duration) =>
   DeliverableService.layer.pipe(
     Layer.provideMerge(DeliverableNotes.layer),
-    Layer.provideMerge(Layer.mergeAll(DeliverableComparer.layer, DeliverableStoreCleanup.layer)),
+    Layer.provideMerge(
+      Layer.mergeAll(
+        DeliverableComparer.layer,
+        DeliverableStoreCleanup.layer,
+        DeliverableNoteSnapshots.layer,
+      ),
+    ),
     Layer.provideMerge(DeliverableRenditions.layerWith({ deadline })),
     Layer.provideMerge(
       Layer.mergeAll(
@@ -315,6 +346,7 @@ const withEngine = <A, E>(
         Effect.sync(() => {
           rendering.mode = "works";
           rendering.hung = null;
+          rendererCalls.notePictures.length = 0;
           projects.deleted.clear();
           projects.unreadable = false;
         }),
@@ -1015,7 +1047,10 @@ it.live(
           body: "Bigger title",
           snapshotDataUrl: PNG_DATA_URL,
         });
-        const snapshot = path.join(blobs.root, "notes", `${note.id}.png`);
+        const [pictureRow] = yield* sql<{ readonly path: string }>`
+          SELECT snapshot_path AS "path" FROM deliverable_notes WHERE note_id = ${note.id}
+        `;
+        const snapshot = path.join(blobs.root, ...pictureRow!.path.split("/"));
         yield* deliverables.drain;
         const inUse = [v1, v2, v3, other].map((version) => version.contentSha256);
 
@@ -1120,6 +1155,126 @@ it.live(
           (yield* deliverables.list(otherProjectId)).map((deliverable) => deliverable.path),
           ["other.pptx"],
         );
+      }),
+    ),
+);
+
+it.live(
+  "makes a note's picture from the stored version, keeps a client's drawing, and gives both to the turn",
+  () =>
+    withEngine((repo) =>
+      Effect.gen(function* () {
+        const deliverables = yield* DeliverableService.DeliverableService;
+        const notes = yield* DeliverableNotes.DeliverableNotes;
+        const cleanup = yield* DeliverableStoreCleanup.DeliverableStoreCleanup;
+        const blobs = yield* DeliverableBlobStore.DeliverableBlobStore;
+        const config = yield* ServerConfig.ServerConfig;
+        const fileSystem = yield* FileSystem.FileSystem;
+        const path = yield* Path.Path;
+        const storedPicture = (noteId: string) =>
+          Effect.gen(function* () {
+            const sql = yield* SqlClient.SqlClient;
+            const [row] = yield* sql<{ readonly path: string | null }>`
+              SELECT snapshot_path AS "path" FROM deliverable_notes WHERE note_id = ${noteId}
+            `;
+            return row?.path == null ? null : path.join(blobs.root, ...row.path.split("/"));
+          });
+
+        yield* repo.write("cut.mp4", "a short caption");
+        const video = (yield* deliverables.registerVersion({ projectId, path: "cut.mp4" })).version;
+        yield* repo.write("cover.png", "Draft");
+        const cover = (yield* deliverables.registerVersion({ projectId, path: "cover.png" }))
+          .version;
+        yield* deliverables.drain;
+
+        // As the phone sends it: where the note points, and no picture of its own.
+        const region = { x: 0.25, y: 0.5, w: 0.2, h: 0.1 };
+        const timed = yield* notes.create({
+          deliverableId: video.deliverableId,
+          versionId: video.id,
+          anchor: { kind: "time", t: 0.4, region },
+          body: "The caption is cut off here",
+        });
+        const marked = yield* notes.create({
+          deliverableId: cover.deliverableId,
+          versionId: cover.id,
+          anchor: { kind: "region", ...region },
+          body: "Too dark",
+        });
+        assert.deepEqual(rendererCalls.notePictures, [
+          { source: video.contentSha256, seconds: 0.4, region },
+          { source: "image-0001.jpg", seconds: undefined, region },
+        ]);
+        assert.isNotNull(timed.snapshotUrl);
+        assert.isNotNull(marked.snapshotUrl);
+        // Both pictures are the same bytes, so the store holds them once.
+        const picture = yield* storedPicture(timed.id);
+        assert.isNotNull(picture);
+        assert.equal(yield* storedPicture(marked.id), picture);
+        assert.include(picture.replaceAll("\\", "/"), "/objects/");
+        assert.deepEqual(yield* fileSystem.readFile(picture), SERVER_PICTURE);
+
+        // A drawing only the client has is kept as sent; nothing is made in its place.
+        const drawn = yield* notes.create({
+          deliverableId: video.deliverableId,
+          versionId: video.id,
+          anchor: { kind: "time", t: 0.6, region },
+          body: "Move this up",
+          snapshotDataUrl: PNG_DATA_URL,
+        });
+        assert.lengthOf(rendererCalls.notePictures, 2);
+        const drawing = yield* storedPicture(drawn.id);
+        assert.isNotNull(drawing);
+        assert.notEqual(drawing, picture);
+        // A note about the whole file has nothing to show.
+        const whole = yield* notes.create({
+          deliverableId: video.deliverableId,
+          versionId: video.id,
+          anchor: null,
+          body: "Shorter overall",
+        });
+        assert.isNull(whole.snapshotUrl);
+
+        // The message that sends the notes gets their pictures, whichever client sent it.
+        const messageId = MessageId.make("message-pictures");
+        yield* notes.markSent({ noteIds: [timed.id, drawn.id, whole.id], threadId, messageId });
+        const attached = yield* Effect.gen(function* () {
+          const turnNotes = yield* TurnContextNotes.TurnContextNotes;
+          return yield* turnNotes.attachments({ threadId, messageId });
+        }).pipe(
+          Effect.provide(
+            DeliverableTurnNotes.layer.pipe(
+              Layer.provide(ProjectStore.layer.pipe(Layer.provide(SqlitePersistence.layerMemory))),
+            ),
+          ),
+        );
+        assert.deepEqual(
+          attached.map((attachment) => [attachment.type, attachment.name, attachment.mimeType]),
+          [
+            ["image", "note-1.png", "image/png"],
+            ["image", "note-2.png", "image/png"],
+          ],
+        );
+        const sentFiles = yield* Effect.forEach(attached, (attachment) =>
+          fileSystem.readFile(
+            resolveAttachmentPath({ attachmentsDir: config.attachmentsDir, attachment })!,
+          ),
+        );
+        assert.deepEqual(sentFiles[0], SERVER_PICTURE);
+        assert.deepEqual(sentFiles[1], yield* fileSystem.readFile(drawing));
+
+        // Cleanup keeps a picture while any note shows it, and takes it once none does.
+        const kept = yield* cleanup.run;
+        assert.equal(kept.blobs, 0);
+        yield* notes.remove(timed.id);
+        yield* cleanup.drain;
+        assert.isTrue(yield* fileSystem.exists(picture));
+        yield* notes.remove(marked.id);
+        yield* notes.remove(drawn.id);
+        yield* cleanup.drain;
+        assert.isFalse(yield* fileSystem.exists(picture));
+        assert.isFalse(yield* fileSystem.exists(drawing));
+        assert.isTrue(yield* blobs.has(video.contentSha256));
       }),
     ),
 );
