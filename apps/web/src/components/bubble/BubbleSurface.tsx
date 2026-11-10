@@ -21,7 +21,7 @@ import {
 } from "~/state/entities";
 import { BubbleChat } from "./BubbleChat";
 import { BubbleDisc } from "./BubbleDisc";
-import { bubbleBridge, useBubbleHostState } from "./bubbleHost";
+import { bubbleBridge, useBubbleHostState, useBubbleZoomFactor } from "./bubbleHost";
 import { BUBBLE_GAP, type BubbleMode, bubbleWindowSize } from "./bubbleLayout";
 import { BubbleThreadList } from "./BubbleThreadList";
 import { selectBubbleThreads, summarizeBubbleStack } from "./bubbleThreads.logic";
@@ -78,6 +78,7 @@ function BubbleUi({ sinceMs }: { readonly sinceMs: number }) {
   const hoverTimer = useRef<number | null>(null);
   const gesture = useRef<PointerGesture | null>(null);
   const size = bubbleWindowSize(mode, threads.length);
+  const zoom = useBubbleZoomFactor();
 
   const clearHoverTimer = () => {
     if (hoverTimer.current !== null) window.clearTimeout(hoverTimer.current);
@@ -224,10 +225,13 @@ function BubbleUi({ sinceMs }: { readonly sinceMs: number }) {
     <div
       className={cn(
         // gap-2 is BUBBLE_GAP, which the window size counts on.
-        "flex h-dvh w-dvw gap-2 select-none",
+        "flex gap-2 select-none",
         host.vertical === "end" ? "flex-col-reverse" : "flex-col",
         host.horizontal === "end" ? "items-end" : "items-start",
       )}
+      // The window is sized in screen pixels but the page is zoomed with the app, so lay out
+      // unzoomed: one CSS pixel per window pixel, whatever the zoom.
+      style={{ zoom: 1 / zoom, width: `${100 * zoom}dvw`, height: `${100 * zoom}dvh` }}
       onKeyDown={onKeyDown}
     >
       <BubbleDisc

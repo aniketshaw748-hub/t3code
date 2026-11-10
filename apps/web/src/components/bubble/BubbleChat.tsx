@@ -40,6 +40,7 @@ import ChatMarkdown from "../ChatMarkdown";
 import { PendingRequestCards } from "../chat/PendingRequestCards";
 import { AttachmentImage } from "../media/AttachmentImage";
 import { Button } from "../ui/button";
+import { InputGroup, InputGroupAddon } from "../ui/input-group";
 import { Textarea } from "../ui/textarea";
 import { deriveThreadProgressReport } from "./bubbleProgress.logic";
 import { ElapsedLabel } from "./BubbleThreadList";
@@ -276,7 +277,7 @@ export function BubbleChat(props: {
           message.type === "user_message" ? (
             <div key={message.id} className="flex flex-col items-end gap-1">
               {message.text.trim().length > 0 ? (
-                <p className="max-w-[85%] rounded-2xl rounded-br-md bg-primary/12 px-2.5 py-1.5 text-xs whitespace-pre-wrap break-words text-foreground">
+                <p className="max-w-[85%] rounded-2xl bg-message px-2.5 py-1.5 text-xs wrap-anywhere whitespace-pre-wrap text-message-foreground">
                   {message.text.length > USER_TEXT_MAX
                     ? `${message.text.slice(0, USER_TEXT_MAX).trimEnd()}…`
                     : message.text}
@@ -356,11 +357,9 @@ export function BubbleChat(props: {
       </div>
       <div className="flex shrink-0 flex-col gap-1 border-t border-border/70 p-2">
         {sendError ? <p className="px-1 text-2xs text-destructive">{sendError}</p> : null}
-        <div className="flex items-end gap-1.5">
+        <InputGroup>
           <Textarea
             size="sm"
-            rows={1}
-            className="min-w-0 flex-1"
             aria-label="Message"
             placeholder={running ? "Steer or queue a message…" : "Reply…"}
             value={draft}
@@ -370,15 +369,17 @@ export function BubbleChat(props: {
             onChange={(event) => setDraft(event.target.value)}
             onKeyDown={onKeyDown}
           />
-          <Button
-            size="icon-sm"
-            aria-label="Send"
-            disabled={draft.trim().length === 0 || sending || shell === null}
-            onClick={() => void send()}
-          >
-            <ArrowUpIcon />
-          </Button>
-        </div>
+          <InputGroupAddon align="block-end" className="justify-end">
+            <Button
+              size="icon-sm"
+              aria-label="Send"
+              disabled={draft.trim().length === 0 || sending || shell === null}
+              onClick={() => void send()}
+            >
+              <ArrowUpIcon />
+            </Button>
+          </InputGroupAddon>
+        </InputGroup>
       </div>
     </div>
   );

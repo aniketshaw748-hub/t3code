@@ -83,58 +83,54 @@ export function DirectPushSettingsRow() {
 
   const save = async (path: string | null) => {
     setPending("save");
-    try {
-      const result = await setServiceAccount({ environmentId, input: { path } });
-      if (result._tag !== "Success") throw new Error("Could not save the service-account key.");
-      setDraft("");
-      query.refresh();
-    } catch (error) {
+    const result = await setServiceAccount({ environmentId, input: { path } });
+    setPending(null);
+    if (result._tag !== "Success") {
       toastManager.add(
         stackedThreadToast({
           type: "error",
           title: "Could not save the key",
-          description: error instanceof Error ? error.message : "Something went wrong.",
+          description: "Could not save the service-account key.",
         }),
       );
-    } finally {
-      setPending(null);
+      return;
     }
+    setDraft("");
+    query.refresh();
   };
 
   const test = async () => {
     setPending("test");
-    try {
-      const result = await sendTest({ environmentId, input: {} });
-      if (result._tag !== "Success") throw new Error("The host did not answer.");
-      const { deliveries } = result.value;
-      const failed = deliveries.filter((delivery) => !delivery.ok);
-      toastManager.add(
-        stackedThreadToast(
-          deliveries.length === 0
+    const result = await sendTest({ environmentId, input: {} });
+    setPending(null);
+    // A failed call is already reported by the command itself.
+    if (result._tag !== "Success") return;
+    const { deliveries } = result.value;
+    const failed = deliveries.filter((delivery) => !delivery.ok);
+    toastManager.add(
+      stackedThreadToast(
+        deliveries.length === 0
+          ? {
+              type: "warning",
+              title: "No phone registered",
+              description: "Open the app on a phone paired with this computer, then try again.",
+            }
+          : failed.length === 0
             ? {
-                type: "warning",
-                title: "No phone registered",
-                description: "Open the app on a phone paired with this computer, then try again.",
+                type: "success",
+                title: "Test notification sent",
+                description: deliveries.map((delivery) => delivery.label).join(", "),
               }
-            : failed.length === 0
-              ? {
-                  type: "success",
-                  title: "Test notification sent",
-                  description: deliveries.map((delivery) => delivery.label).join(", "),
-                }
-              : {
-                  type: "error",
-                  title: "Test notification failed",
-                  description: failed
-                    .map((delivery) => `${delivery.label}: ${delivery.error ?? "failed"}`)
-                    .join("\n"),
-                },
-        ),
-      );
-      query.refresh();
-    } finally {
-      setPending(null);
-    }
+            : {
+                type: "error",
+                title: "Test notification failed",
+                description: failed
+                  .map((delivery) => `${delivery.label}: ${delivery.error ?? "failed"}`)
+                  .join("\n"),
+              },
+      ),
+    );
+    query.refresh();
   };
 
   return (
@@ -172,38 +168,42 @@ export function DirectPushSettingsRow() {
               </Button>
             ) : null}
           </div>
-        ) : canEdit ? (
-          <div className="flex flex-wrap items-center gap-2">
-            {pickFolder ? (
-              <Button
-                size="sm"
-                variant="outline"
-                disabled={pending !== null}
-                onClick={() =>
-                  void pickFolder().then((folder) => (folder ? save(folder) : undefined))
-                }
-              >
-                Choose folder…
-              </Button>
-            ) : null}
-            <div className="w-64">
-              <Input
-                size="sm"
-                placeholder="Path to the service-account JSON"
-                value={draft}
-                onChange={(event) => setDraft(event.currentTarget.value)}
-              />
-            </div>
-            <Button
-              size="sm"
-              disabled={pending !== null || draft.trim() === ""}
-              onClick={() => void save(draft.trim())}
-            >
-              Save
-            </Button>
-          </div>
         ) : null
       }
-    />
+    >
+      {/* Under the row, so the path field never squeezes the description into a column. */}
+      {!configured && canEdit ? (
+        <div className="mt-3 flex flex-wrap items-center gap-2">
+          {pickFolder ? (
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={pending !== null}
+              onClick={() =>
+                void pickFolder().then((folder) => (folder ? save(folder) : undefined))
+              }
+            >
+              Choose folder…
+            </Button>
+          ) : null}
+          <div className="min-w-48 flex-1 sm:max-w-80">
+            <Input
+              size="sm"
+              aria-label="Path to the service-account JSON"
+              placeholder="Path to the service-account JSON"
+              value={draft}
+              onChange={(event) => setDraft(event.currentTarget.value)}
+            />
+          </div>
+          <Button
+            size="sm"
+            disabled={pending !== null || draft.trim() === ""}
+            onClick={() => void save(draft.trim())}
+          >
+            Save
+          </Button>
+        </div>
+      ) : null}
+    </SettingsRow>
   );
 }
