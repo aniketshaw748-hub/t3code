@@ -24,7 +24,11 @@ export interface TurnContext {
 }
 
 export type ProjectState =
-  | { readonly type: "active" | "deleted"; readonly workspaceRoot: string }
+  | {
+      readonly type: "active" | "deleted";
+      readonly workspaceRoot: string;
+      readonly title: string;
+    }
   /** No project with this id was ever recorded here. */
   | { readonly type: "missing" }
   /** The project could not be read just now; nothing may be concluded from that. */
@@ -65,6 +69,7 @@ const make = Effect.gen(function* () {
             onSome: (row): ProjectState => ({
               type: row.deletedAt === null ? "active" : "deleted",
               workspaceRoot: row.workspaceRoot,
+              title: row.title,
             }),
           }),
         ),

@@ -258,6 +258,20 @@ const setup = Effect.gen(function* () {
 });
 
 const busy = { value: false };
+/** Whether the database can be synced to disk; a test turns it off to stand in for one that cannot. */
+const disk = { syncs: true };
+const layerRepository = Layer.effect(
+  DeliverableRepository.DeliverableRepository,
+  Effect.gen(function* () {
+    const repository = yield* DeliverableRepository.DeliverableRepository;
+    return DeliverableRepository.DeliverableRepository.of({
+      ...repository,
+      flushToDisk: Effect.suspend(() =>
+        disk.syncs ? repository.flushToDisk : Effect.succeed(false),
+      ),
+    });
+  }),
+).pipe(Layer.provide(DeliverableRepository.layer));
 /** Projects the engine is told were deleted, or could not be read just now. */
 const projects = { deleted: new Set<ProjectId>(), unreadable: false };
 const otherProjectId = ProjectId.make("project-other");
@@ -275,7 +289,11 @@ const layerContext = (root: string) =>
             ? { type: "unknown" }
             : id !== projectId && id !== otherProjectId
               ? { type: "missing" }
-              : { type: projects.deleted.has(id) ? "deleted" : "active", workspaceRoot: root },
+              : {
+                  type: projects.deleted.has(id) ? "deleted" : "active",
+                  workspaceRoot: root,
+                  title: "Deck",
+                },
         ),
       turn: () =>
         Effect.succeed({
@@ -317,7 +335,7 @@ const layerEngine = (root: string, deadline: Duration.Duration) =>
     Layer.provideMerge(DeliverableBlobStore.layer),
     Layer.provideMerge(WorkProjectEvents.layer),
     Layer.provideMerge(
-      Layer.mergeAll(DeliverableRepository.layer, DeliverableNoteRepository.layer).pipe(
+      Layer.mergeAll(layerRepository, DeliverableNoteRepository.layer).pipe(
         Layer.provideMerge(SqlitePersistence.layerMemory),
       ),
     ),
@@ -366,6 +384,7 @@ const withEngine = <A, E>(
           rendererCalls.notePictures.length = 0;
           projects.deleted.clear();
           projects.unreadable = false;
+          disk.syncs = true;
         }),
       ),
     );
@@ -676,7 +695,8 @@ it.live("offers a revision saved under a new name as the next version, and adopt
       const [fixed] = yield* notes.list(projectId);
       assert.equal(fixed?.status, "fixed");
       assert.equal(fixed?.fixedInVersionId, adopted.deliverable.currentVersionId);
-      // The copy's own version history is gone from Git too.
+      // The copy's own version history goes from Git too, once cleanup has run.
+      yield* (yield* DeliverableStoreCleanup.DeliverableStoreCleanup).drain;
       assert.notInclude(yield* repo.git("for-each-ref", "--format=%(refname)"), strayV1.ref);
 
       // Kept as its own file, a later copy stops asking.
@@ -1036,12 +1056,11 @@ const PNG_DATA_URL =
   "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==";
 
 it.live(
-  "cleans out what a deleted project stored and what a crash left, and nothing still in use",
+  "cleans out only what nothing points at, and nothing at all unless that is fully known",
   () =>
     withEngine((repo) =>
       Effect.gen(function* () {
         const deliverables = yield* DeliverableService.DeliverableService;
-        const notes = yield* DeliverableNotes.DeliverableNotes;
         const cleanup = yield* DeliverableStoreCleanup.DeliverableStoreCleanup;
         const repository = yield* DeliverableRepository.DeliverableRepository;
         const blobs = yield* DeliverableBlobStore.DeliverableBlobStore;
@@ -1054,48 +1073,26 @@ it.live(
             .pipe(Effect.andThen(fileSystem.writeFileString(file, "left over")));
         const counts = ({ bytes: _bytes, ...report }: DeliverableStoreCleanup.CleanupReport) =>
           report;
-        const nothing = {
-          blobs: 0,
-          renditions: 0,
-          renditionFiles: 0,
-          noteSnapshots: 0,
-          blobsSwept: true,
-        };
+        const nothing = { blobs: 0, renditions: 0, noteSnapshots: 0, refs: 0, kept: null };
 
-        // The other project's deck is in the folder first, so both projects' snapshots hold it.
-        yield* repo.write("other.pptx", "Other deck");
-        const other = (yield* deliverables.registerVersion({
-          projectId: otherProjectId,
-          path: "other.pptx",
-        })).version;
-        const record = Effect.fn("test.record")(function* (deck: string) {
-          yield* repo.write("deck.pptx", deck);
-          return (yield* deliverables.registerVersion({ projectId, path: "deck.pptx" })).version;
-        });
-        const v1 = yield* record("Title\nAgenda");
+        yield* repo.write("deck.pptx", "Title\nAgenda");
+        const v1 = (yield* deliverables.registerVersion({ projectId, path: "deck.pptx" })).version;
         yield* repo.write("logo.png", "logo");
         const logo = yield* blobs.hash(path.join(repo.root, "logo.png"));
-        const v2 = yield* record("Title\nAgenda v2");
+        yield* repo.write("deck.pptx", "Title\nAgenda v2");
+        const v2 = (yield* deliverables.registerVersion({ projectId, path: "deck.pptx" })).version;
         // Undone and forked away from: V2 and the logo only it has are no longer on the line.
         yield* deliverables.undo(v1.deliverableId);
-        const v3 = yield* record("Title\nAppendix");
-        const note = yield* notes.create({
-          deliverableId: v1.deliverableId,
-          versionId: v1.id,
-          anchor: { kind: "slide", index: 0 },
-          body: "Bigger title",
-          snapshotDataUrl: PNG_DATA_URL,
-        });
-        const [pictureRow] = yield* sql<{ readonly path: string }>`
-          SELECT snapshot_path AS "path" FROM deliverable_notes WHERE note_id = ${note.id}
-        `;
-        const snapshot = path.join(blobs.root, ...pictureRow!.path.split("/"));
+        yield* repo.write("deck.pptx", "Title\nAppendix");
+        const v3 = (yield* deliverables.registerVersion({ projectId, path: "deck.pptx" })).version;
         yield* deliverables.drain;
-        const inUse = [v1, v2, v3, other].map((version) => version.contentSha256);
+        const inUse = [v1, v2, v3].map((version) => version.contentSha256);
+        const allKept = Effect.gen(function* () {
+          for (const sha256 of [...inUse, logo.sha256]) assert.isTrue(yield* blobs.has(sha256));
+        });
 
         assert.deepEqual(counts(yield* cleanup.run), nothing);
-        for (const sha256 of [...inUse, logo.sha256]) assert.isTrue(yield* blobs.has(sha256));
-        assert.isTrue(yield* fileSystem.exists(snapshot));
+        yield* allKept;
 
         // What a crash between writing bytes and recording them leaves behind.
         const unrecorded = "ab".repeat(32);
@@ -1105,95 +1102,211 @@ it.live(
           blobs.renditionDir({ sha256: unrecorded, kind: "deck" }),
           "slide-0001.jpg",
         );
-        const staleFile = path.join(
+        const straySnapshot = path.join(blobs.root, "notes", "note_gone.png");
+        // A file beside a rendition in use is not for cleanup to judge: the whole folder is kept.
+        const beside = path.join(
           blobs.renditionDir({ sha256: v1.contentSha256, kind: "deck" }),
           "slide-0099.jpg",
         );
-        const straySnapshot = path.join(blobs.root, "notes", "note_gone.png");
-        yield* Effect.forEach(
-          [strayBlob, partial, strayRendition, staleFile, straySnapshot],
-          plant,
-          { discard: true },
-        );
-        yield* repository.recordBlob({
-          gitBlobOid: "f".repeat(40),
-          contentSha256: unrecorded,
-          sizeBytes: 9,
+        const leftovers = [strayBlob, partial, strayRendition, straySnapshot];
+        const plantLeftovers = Effect.gen(function* () {
+          yield* Effect.forEach([...leftovers, beside], plant, { discard: true });
+          yield* repository.recordBlob({
+            gitBlobOid: "f".repeat(40),
+            contentSha256: unrecorded,
+            sizeBytes: 9,
+          });
+          yield* repository.putRendition({
+            contentSha256: unrecorded,
+            kind: "deck",
+            status: "ready",
+            renderer: "test-lines@1",
+            detail: null,
+            data: null,
+            updatedAt: yield* DateTime.now,
+          });
         });
-        yield* repository.putRendition({
-          contentSha256: unrecorded,
-          kind: "deck",
-          status: "ready",
-          renderer: "test-lines@1",
-          detail: null,
-          data: null,
-          updatedAt: yield* DateTime.now,
-        });
-        assert.deepEqual(counts(yield* cleanup.run), {
-          ...nothing,
-          blobs: 1,
-          renditions: 1,
-          renditionFiles: 1,
-          noteSnapshots: 1,
-        });
-        for (const file of [strayBlob, partial, strayRendition, staleFile, straySnapshot]) {
-          assert.isFalse(yield* fileSystem.exists(file), file);
-        }
-        assert.equal((yield* repository.lookupBlobs(["f".repeat(40)])).size, 0);
-        for (const sha256 of [...inUse, logo.sha256]) assert.isTrue(yield* blobs.has(sha256));
-        assert.isTrue(yield* fileSystem.exists(snapshot));
+        const leftoversThere = Effect.forEach(leftovers, (file) => fileSystem.exists(file));
+        const swept = { ...nothing, blobs: 1, renditions: 1, noteSnapshots: 1 };
 
-        // A version from before snapshots listed their files keeps every stored file until its
-        // commit has been read; once it has, the logo only its snapshot holds is still kept.
+        // The database could not be synced to disk: the rows are gone, the files all stay, because
+        // a power cut could still bring those rows back.
+        yield* plantLeftovers;
+        disk.syncs = false;
+        assert.deepEqual(counts(yield* cleanup.run), { ...nothing, kept: "not-on-disk" });
+        assert.deepEqual(yield* leftoversThere, [true, true, true, true]);
+        assert.equal((yield* repository.lookupBlobs(["f".repeat(40)])).size, 0);
+        disk.syncs = true;
+        assert.deepEqual(counts(yield* cleanup.run), swept);
+        assert.deepEqual(yield* leftoversThere, [false, false, false, false]);
+        assert.isTrue(yield* fileSystem.exists(beside));
+        yield* allKept;
+
+        // A version from before snapshots listed their files, in a project that cannot be read
+        // now: what is still needed is not fully known, so no file of any kind goes.
         yield* sql`DELETE FROM deliverable_version_blobs WHERE version_id = ${v2.id}`;
-        yield* plant(strayBlob);
+        yield* plantLeftovers;
         projects.unreadable = true;
-        assert.deepEqual(counts(yield* cleanup.run), { ...nothing, blobsSwept: false });
-        assert.isTrue(yield* fileSystem.exists(strayBlob));
+        assert.deepEqual(counts(yield* cleanup.run), { ...nothing, kept: "unlisted-versions" });
+        assert.deepEqual(yield* leftoversThere, [true, true, true, true]);
+        assert.equal((yield* repository.lookupBlobs(["f".repeat(40)])).size, 1);
         projects.unreadable = false;
-        assert.deepEqual(counts(yield* cleanup.run), { ...nothing, blobs: 1 });
+
+        // Its commit can be read again, but Git has lost the pointer to the logo and says so
+        // without failing. A list with a hole in it is not recorded, and the logo is not collected.
+        const pointer = yield* repo.git("rev-parse", `${v2.commitOid}:logo.png`);
+        const loose = path.join(
+          repo.root,
+          ".git",
+          "objects",
+          pointer.slice(0, 2),
+          pointer.slice(2),
+        );
+        const pointerBytes = yield* fileSystem.readFile(loose);
+        yield* fileSystem.remove(loose, { force: true });
+        assert.deepEqual(counts(yield* cleanup.run), { ...nothing, kept: "unlisted-versions" });
+        assert.deepEqual(
+          (yield* repository.listVersionsWithoutBlobs).map((version) => version.versionId),
+          [v2.id],
+        );
         assert.isTrue(yield* blobs.has(logo.sha256));
 
+        // Read in full, the list is recorded, the leftovers go and the logo stays.
+        yield* fileSystem.writeFile(loose, pointerBytes);
+        assert.deepEqual(counts(yield* cleanup.run), swept);
+        assert.deepEqual(yield* repository.listVersionsWithoutBlobs, []);
+        yield* allKept;
         // The undone version restores with its logo: nothing it needs was taken.
         yield* deliverables.restore({ deliverableId: v1.deliverableId, versionId: v2.id });
         assert.equal(yield* repo.read("logo.png"), "logo");
+      }),
+    ),
+);
 
-        // A project that is still there loses nothing when asked.
-        assert.equal(yield* deliverables.removeProject(projectId), 0);
+it.live(
+  "keeps a removed project's history until a person asks for it to go, then deletes exactly that",
+  () =>
+    withEngine((repo) =>
+      Effect.gen(function* () {
+        const deliverables = yield* DeliverableService.DeliverableService;
+        const notes = yield* DeliverableNotes.DeliverableNotes;
+        const cleanup = yield* DeliverableStoreCleanup.DeliverableStoreCleanup;
+        const repository = yield* DeliverableRepository.DeliverableRepository;
+        const blobs = yield* DeliverableBlobStore.DeliverableBlobStore;
+        const fileSystem = yield* FileSystem.FileSystem;
+        const path = yield* Path.Path;
+        const refs = repo.git("for-each-ref", "--format=%(refname)");
+
+        // The other project's deck is in the folder first, so both projects' snapshots hold it.
+        yield* repo.write("other.pptx", "Other deck");
+        const other = (yield* deliverables.registerVersion({
+          projectId: otherProjectId,
+          path: "other.pptx",
+        })).version;
+        yield* repo.write("deck.pptx", "Title\nAgenda");
+        const v1 = (yield* deliverables.registerVersion({ projectId, path: "deck.pptx" })).version;
+        yield* repo.write("deck.pptx", "Title\nAgenda v2");
+        const v2 = (yield* deliverables.registerVersion({ projectId, path: "deck.pptx" })).version;
+        const note = yield* notes.create({
+          deliverableId: v1.deliverableId,
+          versionId: v1.id,
+          anchor: { kind: "slide", index: 0 },
+          body: "Bigger title",
+          snapshotDataUrl: PNG_DATA_URL,
+        });
+        yield* deliverables.drain;
+        const history = Effect.gen(function* () {
+          const stored = yield* Effect.forEach([v1, v2], (version) =>
+            blobs.has(version.contentSha256),
+          );
+          const listed = yield* refs;
+          return {
+            versions: (yield* deliverables.versions(v1.deliverableId)).versions.length,
+            notes: (yield* notes.list(projectId)).map((entry) => entry.id),
+            stored,
+            refs: [v1, v2].map((version) => listed.includes(version.ref)),
+          };
+        });
+        const whole = { versions: 2, notes: [note.id], stored: [true, true], refs: [true, true] };
+
+        // The project is removed, and the server starts again: nothing of its history goes, and
+        // nothing can be asked to go for a project that is in use or was never here.
         projects.deleted.add(projectId);
-        assert.equal(yield* deliverables.removeProject(projectId), 1);
-        yield* cleanup.drain;
+        yield* deliverables.resumeHistoryPurges;
+        assert.deepEqual(yield* cleanup.run, {
+          blobs: 0,
+          renditions: 0,
+          noteSnapshots: 0,
+          bytes: 0,
+          refs: 0,
+          kept: null,
+        });
+        assert.deepEqual(yield* history, whole);
+        for (const refused of [otherProjectId, ProjectId.make("project-never-here")]) {
+          const error = yield* deliverables
+            .purgeHistory({ projectIds: [refused] })
+            .pipe(Effect.flip);
+          assert.equal(error.reason, "project_not_removed");
+        }
+        // Without a recorded decision the deleting step itself does nothing.
+        assert.isNull(
+          yield* repository.purgeProjectHistory({
+            projectId,
+            workspaceRoot: repo.root,
+            completedAt: yield* DateTime.now,
+          }),
+        );
+        assert.deepEqual(yield* history, whole);
 
-        for (const version of [v1, v2, v3]) {
+        const retained = yield* deliverables.retainedHistory;
+        assert.deepEqual(retained.projects, [
+          { projectId, title: "Deck", deliverableCount: 1, versionCount: 2, noteCount: 1 },
+        ]);
+        assert.isAbove(retained.bytes, 0);
+
+        // A decision a crash left recorded and not carried out is finished at the next start,
+        // while the project's folder cannot be reached: the refs stay owed, not forgotten.
+        yield* repository.requestHistoryPurge({ projectId, requestedAt: yield* DateTime.now });
+        assert.deepEqual(yield* history, whole);
+        const dotGit = path.join(repo.root, ".git");
+        yield* fileSystem.rename(dotGit, `${dotGit}-away`);
+        yield* deliverables.resumeHistoryPurges;
+        const unreachable = yield* cleanup.run;
+        assert.deepEqual(yield* repository.listPendingHistoryPurges, []);
+        assert.equal(unreachable.refs, 0);
+        assert.sameMembers(
+          (yield* repository.listPendingRefDeletions).map((owed) => owed.ref),
+          [v1.ref, v2.ref],
+        );
+        yield* fileSystem.rename(`${dotGit}-away`, dotGit);
+        assert.include(yield* refs, v1.ref);
+        assert.equal((yield* cleanup.run).refs, 2);
+        assert.deepEqual(yield* repository.listPendingRefDeletions, []);
+
+        // Exactly that project's history is gone.
+        assert.equal(
+          (yield* Effect.flip(deliverables.versions(v1.deliverableId))).reason,
+          "deliverable_not_found",
+        );
+        assert.deepEqual(yield* notes.list(projectId), []);
+        for (const version of [v1, v2]) {
           assert.isFalse(yield* blobs.has(version.contentSha256));
           assert.isFalse(
             yield* fileSystem.exists(
               blobs.renditionDir({ sha256: version.contentSha256, kind: "deck" }),
             ),
           );
-          assert.isTrue(
-            Option.isNone(
-              yield* repository.getRendition({
-                contentSha256: version.contentSha256,
-                kind: "deck",
-              }),
-            ),
-          );
         }
-        assert.isFalse(yield* blobs.has(logo.sha256));
-        assert.isFalse(yield* fileSystem.exists(snapshot));
-        assert.deepEqual(yield* notes.list(projectId), []);
-        const refs = yield* repo.git("for-each-ref", "--format=%(refname)");
-        assert.notInclude(refs, v1.deliverableId);
-        assert.include(refs, other.ref);
+        const listed = yield* refs;
+        assert.notInclude(listed, v1.deliverableId);
+        assert.deepEqual(yield* deliverables.retainedHistory, { projects: [], bytes: 0 });
 
-        // The other project's deck, which the deleted project's snapshots also held, is intact.
+        // The other project's deck, which the deleted history's snapshots also held, is intact,
+        // and so are the files in the project's folder.
+        assert.include(listed, other.ref);
         assert.isTrue(yield* blobs.has(other.contentSha256));
         assert.equal((yield* deliverables.rendition(other.id)).status, "ready");
-        assert.deepEqual(
-          (yield* deliverables.list(otherProjectId)).map((deliverable) => deliverable.path),
-          ["other.pptx"],
-        );
+        assert.equal(yield* repo.read("deck.pptx"), "Title\nAgenda v2");
       }),
     ),
 );

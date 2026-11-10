@@ -7,12 +7,15 @@ import {
   type DeliverableFailureReason,
   DeliverableId,
   type DeliverableKind,
+  type DeliverablePurgeHistoryInput,
+  type DeliverablePurgeHistoryResult,
   type DeliverableRegisterVersionInput,
   type DeliverableRegisterVersionResult,
   type DeliverableRendition,
   type DeliverableResolveStrayInput,
   type DeliverableResolveStrayResult,
   type DeliverableRestoreResult,
+  type DeliverableRetainedHistory,
   type DeliverableVersion,
   type DeliverableVersionGraph,
   DeliverableVersionId,
@@ -121,14 +124,18 @@ export class DeliverableService extends Context.Service<
     readonly retryRendition: (
       versionId: DeliverableVersionId,
     ) => Effect.Effect<DeliverableRendition, DeliverableError>;
+    /** The Work history that removed projects still hold, and the store space only it needs. */
+    readonly retainedHistory: Effect.Effect<DeliverableRetainedHistory, DeliverableError>;
     /**
-     * Removes the deliverables of a project that was deleted: versions, notes and the Git refs
-     * that kept their commits, then asks for the store to be cleaned. A project that is still
-     * there is left alone. Returns how many deliverables went.
+     * Deletes removed projects' versions, notes and stored media for good, on a person's say-so.
+     * Each decision is recorded before anything is deleted, so one a crash interrupts is finished
+     * at the next start. Removing a project never does this, and a project in use is refused.
      */
-    readonly removeProject: (projectId: ProjectId) => Effect.Effect<number, DeliverableError>;
-    /** `removeProject` for every project that was deleted while the server was not looking. */
-    readonly removeDeletedProjects: Effect.Effect<void, DeliverableError>;
+    readonly purgeHistory: (
+      input: DeliverablePurgeHistoryInput,
+    ) => Effect.Effect<DeliverablePurgeHistoryResult, DeliverableError>;
+    /** Finishes the recorded decisions that are still owed. */
+    readonly resumeHistoryPurges: Effect.Effect<void, DeliverableError>;
     /** Resolves once queued renditions and self-checks have finished. */
     readonly drain: Effect.Effect<void>;
   }
@@ -701,7 +708,10 @@ const make = Effect.gen(function* () {
             version: publicVersion(version),
           })
           .pipe(Effect.mapError(fail("persistence_failed")));
-        yield* removeDeliverable(stray, root);
+        // Its content is now the original's newest version; only the copy's own rows go.
+        yield* repository
+          .deleteDeliverable({ deliverableId: stray.id, workspaceRoot: root })
+          .pipe(persistence);
         yield* cleanup.request;
         yield* events.publish({ type: "changed", projectId: original.projectId });
         return { deliverable: yield* loadDeliverable(original.id) };
@@ -709,48 +719,108 @@ const make = Effect.gen(function* () {
     );
   });
 
-  /** Removes a deliverable's records and the refs that kept its version commits in Git. */
-  const removeDeliverable = Effect.fn("DeliverableService.removeDeliverable")(function* (
-    deliverable: Deliverable,
-    workspaceRoot: string | null,
-  ) {
-    const refs = yield* repository.deleteDeliverable(deliverable.id).pipe(persistence);
-    if (workspaceRoot === null) return;
-    // The folder may be gone with the project; the refs then went with it.
-    yield* git.deleteRefs({ cwd: workspaceRoot, refs }).pipe(
-      Effect.catch((error) =>
-        Effect.logWarning("Could not delete a removed deliverable's version refs", {
-          deliverableId: deliverable.id,
-          cause: error.cause,
-        }),
+  /** Projects that were removed and still have deliverables. Missing ones are not among them. */
+  const removedProjects = Effect.fn("DeliverableService.removedProjects")(function* () {
+    const projectIds = yield* repository.listProjects.pipe(persistence);
+    const states = yield* Effect.forEach(projectIds, (projectId) =>
+      Effect.map(context.projectState(projectId), (project) =>
+        project.type === "deleted" ? [{ projectId, title: project.title }] : [],
       ),
     );
+    return states.flat();
   });
 
-  const removeProject: DeliverableService["Service"]["removeProject"] = Effect.fn(
-    "DeliverableService.removeProject",
-  )(function* (projectId) {
+  const retainedHistory: DeliverableService["Service"]["retainedHistory"] = Effect.gen(
+    function* () {
+      const removed = yield* removedProjects();
+      if (removed.length === 0) return { projects: [], bytes: 0 };
+      const projects = yield* Effect.forEach(removed, (project) =>
+        Effect.map(repository.countHistory(project.projectId).pipe(persistence), (counts) => ({
+          ...project,
+          ...counts,
+        })),
+      );
+      const { held, elsewhere } = yield* repository
+        .storeReferencesSplit(removed.map((project) => project.projectId))
+        .pipe(persistence);
+      const sizeOf = (
+        folder: "objects" | "renditions" | "notes",
+        only: (path: string) => boolean,
+      ) =>
+        Effect.map(blobs.listFiles(folder).pipe(Effect.mapError(fail("storage_failed"))), (files) =>
+          files.filter((file) => only(file.path)).reduce((sum, file) => sum + file.sizeBytes, 0),
+        );
+      const bytes =
+        (yield* sizeOf("objects", (file) => {
+          const sha256 = DeliverableBlobStore.blobShaOfPath(file);
+          return sha256 !== null && held.blobs.has(sha256) && !elsewhere.blobs.has(sha256);
+        })) +
+        (yield* sizeOf("renditions", (file) => {
+          const [, sha256, kind] = file.split("/");
+          const key = `${sha256}:${kind}`;
+          return held.renditions.has(key) && !elsewhere.renditions.has(key);
+        })) +
+        (yield* sizeOf("notes", (file) => held.noteSnapshots.has(file)));
+      return { projects, bytes } satisfies DeliverableRetainedHistory;
+    },
+  ).pipe(Effect.withSpan("DeliverableService.retainedHistory"));
+
+  /**
+   * Carries out one recorded decision. Only a project that is known to be removed loses its
+   * history: one that is missing or cannot be read keeps the decision waiting, and one that is
+   * in use again has the decision withdrawn.
+   */
+  const carryOutPurge = Effect.fn("DeliverableService.carryOutPurge")(function* (
+    projectId: ProjectId,
+  ) {
     return yield* projectLock.withLock(
       projectId,
       Effect.gen(function* () {
         const project = yield* context.projectState(projectId);
-        if (project.type === "active" || project.type === "unknown") return 0;
-        const list = yield* repository.listDeliverables(projectId).pipe(persistence);
-        const workspaceRoot = project.type === "deleted" ? project.workspaceRoot : null;
-        yield* Effect.forEach(
-          list,
-          (deliverable) => removeDeliverable(deliverable, workspaceRoot),
-          {
-            discard: true,
-          },
-        );
-        if (list.length === 0) return 0;
-        yield* cleanup.request;
-        yield* events.publish({ type: "changed", projectId });
-        return list.length;
+        if (project.type === "active") {
+          yield* repository.cancelHistoryPurge(projectId).pipe(persistence);
+          return false;
+        }
+        if (project.type !== "deleted") return false;
+        const purged = yield* repository
+          .purgeProjectHistory({
+            projectId,
+            workspaceRoot: project.workspaceRoot,
+            completedAt: yield* DateTime.now,
+          })
+          .pipe(persistence);
+        return purged !== null;
       }),
     );
   });
+
+  const purgeHistory: DeliverableService["Service"]["purgeHistory"] = Effect.fn(
+    "DeliverableService.purgeHistory",
+  )(function* (input) {
+    const projectIds = [...new Set(input.projectIds)];
+    for (const projectId of projectIds) {
+      if ((yield* context.projectState(projectId)).type !== "deleted") {
+        return yield* fail("project_not_removed")();
+      }
+    }
+    const requestedAt = yield* DateTime.now;
+    yield* Effect.forEach(
+      projectIds,
+      (projectId) => repository.requestHistoryPurge({ projectId, requestedAt }),
+      { discard: true },
+    ).pipe(persistence);
+    const purged = yield* Effect.forEach(projectIds, carryOutPurge);
+    // The stored files and the Git refs go in the background, once nothing points at them.
+    yield* cleanup.request;
+    return { projects: purged.filter(Boolean).length } satisfies DeliverablePurgeHistoryResult;
+  });
+
+  const resumeHistoryPurges: DeliverableService["Service"]["resumeHistoryPurges"] =
+    repository.listPendingHistoryPurges.pipe(
+      persistence,
+      Effect.flatMap((projectIds) => Effect.forEach(projectIds, carryOutPurge, { discard: true })),
+      Effect.withSpan("DeliverableService.resumeHistoryPurges"),
+    );
 
   /** Renders a version's content once; identical bytes in later versions reuse it. */
   const ensureRendered = (
@@ -853,12 +923,9 @@ const make = Effect.gen(function* () {
     }),
     resolveStray,
     retryRendition,
-    removeProject,
-    removeDeletedProjects: repository.listProjects.pipe(
-      persistence,
-      Effect.flatMap((projects) => Effect.forEach(projects, removeProject, { discard: true })),
-      Effect.withSpan("DeliverableService.removeDeletedProjects"),
-    ),
+    retainedHistory,
+    purgeHistory,
+    resumeHistoryPurges,
     restore: Effect.fn("DeliverableService.restore")(function* (input) {
       return yield* moveTo(input.deliverableId, "restore", (versions) =>
         versions.some((version) => version.id === input.versionId)

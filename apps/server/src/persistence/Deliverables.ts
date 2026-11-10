@@ -12,7 +12,7 @@ import {
 } from "@t3tools/contracts";
 import * as NodeSqliteClient from "@t3tools/shared/nodeSqliteClient";
 import * as Context from "effect/Context";
-import type * as DateTime from "effect/DateTime";
+import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
@@ -124,14 +124,69 @@ export class DeliverableRepository extends Context.Service<
       readonly strayVersionOf: DeliverableId | null;
     }) => Effect.Effect<void, DeliverableRepositoryError>;
     /**
-     * Removes a deliverable with its versions, notes, restores and review status in one step, and
-     * returns the Git refs its versions were kept under. What it stored is left for cleanup.
+     * Removes a deliverable with its versions, notes, restores and review status in one step. The
+     * same step records its version refs as owed to Git under `workspaceRoot`. What it stored is
+     * left for cleanup.
      */
-    readonly deleteDeliverable: (
-      deliverableId: DeliverableId,
-    ) => Effect.Effect<ReadonlyArray<string>, DeliverableRepositoryError>;
+    readonly deleteDeliverable: (input: {
+      readonly deliverableId: DeliverableId;
+      readonly workspaceRoot: string;
+    }) => Effect.Effect<void, DeliverableRepositoryError>;
     /** Every project that has deliverables, whether or not the project still exists. */
     readonly listProjects: Effect.Effect<ReadonlyArray<ProjectId>, DeliverableRepositoryError>;
+    /** How much Work history one project holds. */
+    readonly countHistory: (projectId: ProjectId) => Effect.Effect<
+      {
+        readonly deliverableCount: number;
+        readonly versionCount: number;
+        readonly noteCount: number;
+      },
+      DeliverableRepositoryError
+    >;
+    /** Records a person's decision to delete a project's Work history, to be carried out. */
+    readonly requestHistoryPurge: (input: {
+      readonly projectId: ProjectId;
+      readonly requestedAt: DateTime.Utc;
+    }) => Effect.Effect<void, DeliverableRepositoryError>;
+    /** Decisions recorded and not yet carried out, oldest first. */
+    readonly listPendingHistoryPurges: Effect.Effect<
+      ReadonlyArray<ProjectId>,
+      DeliverableRepositoryError
+    >;
+    /** Withdraws a decision that was not carried out, because the project is in use again. */
+    readonly cancelHistoryPurge: (
+      projectId: ProjectId,
+    ) => Effect.Effect<void, DeliverableRepositoryError>;
+    /**
+     * Deletes every deliverable of the project as `deleteDeliverable` does and marks the decision
+     * carried out, all in one step. Does nothing and returns null without a pending decision.
+     */
+    readonly purgeProjectHistory: (input: {
+      readonly projectId: ProjectId;
+      readonly workspaceRoot: string;
+      readonly completedAt: DateTime.Utc;
+    }) => Effect.Effect<number | null, DeliverableRepositoryError>;
+    /** Version refs of deleted history that Git has not confirmed gone. */
+    readonly listPendingRefDeletions: Effect.Effect<
+      ReadonlyArray<{ readonly workspaceRoot: string; readonly ref: string }>,
+      DeliverableRepositoryError
+    >;
+    readonly completeRefDeletions: (input: {
+      readonly workspaceRoot: string;
+      readonly refs: ReadonlyArray<string>;
+    }) => Effect.Effect<void, DeliverableRepositoryError>;
+    /**
+     * Makes every change committed so far survive a power cut, and says whether it did. Commits
+     * here are not synced one by one, so this comes before any file a deleted row named is removed.
+     */
+    readonly flushToDisk: Effect.Effect<boolean, DeliverableRepositoryError>;
+    /** What these projects' history keeps in the store, and what everything else keeps. */
+    readonly storeReferencesSplit: (
+      projectIds: ReadonlyArray<ProjectId>,
+    ) => Effect.Effect<
+      { readonly held: StoreReferences; readonly elsewhere: StoreReferences },
+      DeliverableRepositoryError
+    >;
     readonly listVersions: (
       deliverableId: DeliverableId,
     ) => Effect.Effect<ReadonlyArray<StoredDeliverableVersion>, DeliverableRepositoryError>;
@@ -319,6 +374,97 @@ const make = Effect.gen(function* () {
     `,
   });
 
+  /** The rows of one deliverable, with its version refs handed to Git's to-do list. */
+  const removeDeliverableRows = Effect.fn("DeliverableRepository.removeDeliverableRows")(function* (
+    deliverableId: DeliverableId,
+    workspaceRoot: string,
+    at: string,
+  ) {
+    yield* sql`
+        INSERT INTO deliverable_ref_deletions (workspace_root, version_ref, requested_at)
+        SELECT ${workspaceRoot}, version_ref, ${at} FROM deliverable_versions
+        WHERE deliverable_id = ${deliverableId}
+        ON CONFLICT (workspace_root, version_ref) DO NOTHING
+      `;
+    yield* sql`DELETE FROM deliverable_notes WHERE deliverable_id = ${deliverableId}`;
+    yield* sql`DELETE FROM deliverable_review_status WHERE deliverable_id = ${deliverableId}`;
+    yield* sql`DELETE FROM deliverable_restores WHERE deliverable_id = ${deliverableId}`;
+    yield* sql`
+        DELETE FROM deliverable_version_blobs WHERE version_id IN (
+          SELECT version_id FROM deliverable_versions WHERE deliverable_id = ${deliverableId}
+        )
+      `;
+    yield* sql`DELETE FROM deliverable_versions WHERE deliverable_id = ${deliverableId}`;
+    yield* sql`
+        UPDATE deliverables SET stray_version_of = NULL
+        WHERE stray_version_of = ${deliverableId}
+      `;
+    yield* sql`DELETE FROM deliverables WHERE deliverable_id = ${deliverableId}`;
+  });
+
+  const NOTE_PICTURE_OBJECT = /^objects\/[0-9a-f]{2}\/[0-9a-f]{2}\/([0-9a-f]{64})$/;
+  interface ReferenceRows {
+    readonly blobs: ReadonlyArray<{ readonly projectId: string | null; readonly sha: string }>;
+    readonly renditions: ReadonlyArray<{
+      readonly projectId: string;
+      readonly sha: string;
+      readonly kind: DeliverableKind;
+    }>;
+    readonly snapshots: ReadonlyArray<{ readonly projectId: string; readonly path: string }>;
+  }
+  /** Every reference into the store with the project that holds it, read in one transaction. */
+  const referenceRows = Effect.gen(function* () {
+    const blobs = yield* sql<{ readonly projectId: string | null; readonly sha: string }>`
+      SELECT d.project_id AS "projectId", v.content_sha256 AS "sha"
+      FROM deliverable_versions v
+      LEFT JOIN deliverables d ON d.deliverable_id = v.deliverable_id
+      UNION
+      SELECT d.project_id AS "projectId", b.content_sha256 AS "sha"
+      FROM deliverable_version_blobs b
+      LEFT JOIN deliverable_versions v ON v.version_id = b.version_id
+      LEFT JOIN deliverables d ON d.deliverable_id = v.deliverable_id
+    `;
+    const renditions = yield* sql<{
+      readonly projectId: string;
+      readonly sha: string;
+      readonly kind: DeliverableKind;
+    }>`
+      SELECT DISTINCT d.project_id AS "projectId", v.content_sha256 AS "sha", d.kind AS "kind"
+      FROM deliverable_versions v
+      JOIN deliverables d ON d.deliverable_id = v.deliverable_id
+    `;
+    const snapshots = yield* sql<{ readonly projectId: string; readonly path: string }>`
+      SELECT project_id AS "projectId", snapshot_path AS "path"
+      FROM deliverable_notes WHERE snapshot_path IS NOT NULL
+    `;
+    return { blobs, renditions, snapshots } satisfies ReferenceRows;
+  }).pipe(sql.withTransaction);
+
+  /** The references among `rows` that `keep` lets through. */
+  const referencesOf = (
+    rows: ReferenceRows,
+    keep: (projectId: string | null) => boolean,
+  ): StoreReferences => {
+    const snapshots = rows.snapshots.filter((row) => keep(row.projectId));
+    // A note's picture is a stored file like any other; older ones sit in their own folder.
+    const pictures = snapshots.flatMap((row) => {
+      const sha = NOTE_PICTURE_OBJECT.exec(row.path)?.[1];
+      return sha === undefined ? [] : [sha];
+    });
+    return {
+      blobs: new Set([
+        ...rows.blobs.filter((row) => keep(row.projectId)).map((row) => row.sha),
+        ...pictures,
+      ]),
+      renditions: new Set(
+        rows.renditions
+          .filter((row) => keep(row.projectId))
+          .map((row) => renditionKey({ contentSha256: row.sha, kind: row.kind })),
+      ),
+      noteSnapshots: new Set(snapshots.map((row) => row.path)),
+    };
+  };
+
   const insertVersionBlobs = (versionId: DeliverableVersionId, blobs: ReadonlyArray<string>) =>
     Effect.forEach(
       new Set(blobs),
@@ -411,30 +557,143 @@ const make = Effect.gen(function* () {
       Effect.mapError(sqlError("setStrayVersionOf")),
     ),
     deleteDeliverable: Effect.fn("DeliverableRepository.deleteDeliverable")(
-      function* (deliverableId) {
-        return yield* Effect.gen(function* () {
-          const refs = yield* sql<{ readonly ref: string }>`
-            SELECT version_ref AS "ref" FROM deliverable_versions
-            WHERE deliverable_id = ${deliverableId}
-          `;
-          yield* sql`DELETE FROM deliverable_notes WHERE deliverable_id = ${deliverableId}`;
-          yield* sql`DELETE FROM deliverable_review_status WHERE deliverable_id = ${deliverableId}`;
-          yield* sql`DELETE FROM deliverable_restores WHERE deliverable_id = ${deliverableId}`;
-          yield* sql`
-            DELETE FROM deliverable_version_blobs WHERE version_id IN (
-              SELECT version_id FROM deliverable_versions WHERE deliverable_id = ${deliverableId}
-            )
-          `;
-          yield* sql`DELETE FROM deliverable_versions WHERE deliverable_id = ${deliverableId}`;
-          yield* sql`
-            UPDATE deliverables SET stray_version_of = NULL
-            WHERE stray_version_of = ${deliverableId}
-          `;
-          yield* sql`DELETE FROM deliverables WHERE deliverable_id = ${deliverableId}`;
-          return refs.map((row) => row.ref);
-        }).pipe(sql.withTransaction);
+      function* (input) {
+        const at = yield* encodeUtc(yield* DateTime.now);
+        yield* removeDeliverableRows(input.deliverableId, input.workspaceRoot, at).pipe(
+          sql.withTransaction,
+        );
       },
       Effect.mapError(sqlError("deleteDeliverable")),
+    ),
+    countHistory: Effect.fn("DeliverableRepository.countHistory")(
+      function* (projectId) {
+        const [row] = yield* sql<{
+          readonly deliverableCount: number;
+          readonly versionCount: number;
+          readonly noteCount: number;
+        }>`
+          SELECT
+            (SELECT COUNT(*) FROM deliverables WHERE project_id = ${projectId})
+              AS "deliverableCount",
+            (SELECT COUNT(*) FROM deliverable_versions v
+              JOIN deliverables d ON d.deliverable_id = v.deliverable_id
+              WHERE d.project_id = ${projectId}) AS "versionCount",
+            (SELECT COUNT(*) FROM deliverable_notes WHERE project_id = ${projectId})
+              AS "noteCount"
+        `.pipe(NodeSqliteClient.readOnly);
+        return row ?? { deliverableCount: 0, versionCount: 0, noteCount: 0 };
+      },
+      Effect.mapError(sqlError("countHistory")),
+    ),
+    requestHistoryPurge: Effect.fn("DeliverableRepository.requestHistoryPurge")(
+      function* (input) {
+        const requestedAt = yield* encodeUtc(input.requestedAt);
+        yield* sql`
+          INSERT INTO deliverable_history_purges (project_id, requested_at, completed_at)
+          VALUES (${input.projectId}, ${requestedAt}, NULL)
+          ON CONFLICT (project_id) DO UPDATE SET
+            requested_at = excluded.requested_at,
+            completed_at = NULL
+        `;
+      },
+      Effect.mapError(sqlError("requestHistoryPurge")),
+    ),
+    listPendingHistoryPurges: sql<{ readonly projectId: ProjectId }>`
+      SELECT project_id AS "projectId" FROM deliverable_history_purges
+      WHERE completed_at IS NULL
+      ORDER BY requested_at ASC, project_id ASC
+    `.pipe(
+      NodeSqliteClient.readOnly,
+      Effect.map((rows) => rows.map((row) => row.projectId)),
+      Effect.mapError(sqlError("listPendingHistoryPurges")),
+      Effect.withSpan("DeliverableRepository.listPendingHistoryPurges"),
+    ),
+    cancelHistoryPurge: Effect.fn("DeliverableRepository.cancelHistoryPurge")(
+      function* (projectId) {
+        yield* sql`
+          DELETE FROM deliverable_history_purges
+          WHERE project_id = ${projectId} AND completed_at IS NULL
+        `;
+      },
+      Effect.mapError(sqlError("cancelHistoryPurge")),
+    ),
+    purgeProjectHistory: Effect.fn("DeliverableRepository.purgeProjectHistory")(
+      function* (input) {
+        const completedAt = yield* encodeUtc(input.completedAt);
+        return yield* Effect.gen(function* () {
+          // The decision is read inside the transaction that acts on it.
+          const decided = yield* sql`
+            SELECT 1 FROM deliverable_history_purges
+            WHERE project_id = ${input.projectId} AND completed_at IS NULL
+          `;
+          if (decided.length === 0) return null;
+          const deliverables = yield* sql<{ readonly id: DeliverableId }>`
+            SELECT deliverable_id AS "id" FROM deliverables WHERE project_id = ${input.projectId}
+          `;
+          for (const deliverable of deliverables) {
+            yield* removeDeliverableRows(deliverable.id, input.workspaceRoot, completedAt);
+          }
+          yield* sql`
+            UPDATE deliverable_history_purges SET completed_at = ${completedAt}
+            WHERE project_id = ${input.projectId}
+          `;
+          return deliverables.length;
+        }).pipe(sql.withTransaction);
+      },
+      Effect.mapError(sqlError("purgeProjectHistory")),
+    ),
+    listPendingRefDeletions: sql<{ readonly workspaceRoot: string; readonly ref: string }>`
+      SELECT workspace_root AS "workspaceRoot", version_ref AS "ref"
+      FROM deliverable_ref_deletions
+      ORDER BY workspace_root ASC, version_ref ASC
+    `.pipe(
+      NodeSqliteClient.readOnly,
+      Effect.mapError(sqlError("listPendingRefDeletions")),
+      Effect.withSpan("DeliverableRepository.listPendingRefDeletions"),
+    ),
+    completeRefDeletions: Effect.fn("DeliverableRepository.completeRefDeletions")(
+      function* (input) {
+        yield* Effect.forEach(
+          input.refs,
+          (ref) => sql`
+            DELETE FROM deliverable_ref_deletions
+            WHERE workspace_root = ${input.workspaceRoot} AND version_ref = ${ref}
+          `,
+          { discard: true },
+        ).pipe(sql.withTransaction);
+      },
+      Effect.mapError(sqlError("completeRefDeletions")),
+    ),
+    // WAL with synchronous=NORMAL syncs nothing at commit, so a power cut can undo a committed
+    // delete. A checkpoint syncs the log and then the database; one that took in the whole log
+    // (not busy, nothing left behind) puts every commit so far beyond a power cut.
+    flushToDisk: sql<{
+      readonly busy: number;
+      readonly log: number;
+      readonly checkpointed: number;
+    }>`PRAGMA wal_checkpoint(FULL)`.pipe(
+      // A database with no write-ahead log, as in tests, reports -1 and has nothing to sync.
+      Effect.map(([state]) =>
+        state === undefined
+          ? false
+          : state.busy === 0 && (state.log === -1 || state.checkpointed === state.log),
+      ),
+      Effect.mapError(sqlError("flushToDisk")),
+      Effect.withSpan("DeliverableRepository.flushToDisk"),
+    ),
+    storeReferencesSplit: Effect.fn("DeliverableRepository.storeReferencesSplit")(
+      function* (projectIds) {
+        const rows = yield* referenceRows;
+        const chosen = new Set<string>(projectIds);
+        return {
+          held: referencesOf(rows, (projectId) => projectId !== null && chosen.has(projectId)),
+          elsewhere: referencesOf(
+            rows,
+            (projectId) => projectId === null || !chosen.has(projectId),
+          ),
+        };
+      },
+      Effect.mapError(sqlError("storeReferencesSplit")),
     ),
     listProjects: sql<{ readonly projectId: ProjectId }>`
       SELECT DISTINCT project_id AS "projectId" FROM deliverables ORDER BY project_id ASC
@@ -560,35 +819,8 @@ const make = Effect.gen(function* () {
       Effect.mapError(sqlError("requeueInterruptedRenditions")),
       Effect.withSpan("DeliverableRepository.requeueInterruptedRenditions"),
     ),
-    storeReferences: Effect.gen(function* () {
-      const blobs = yield* sql<{ readonly sha: string }>`
-        SELECT content_sha256 AS "sha" FROM deliverable_versions
-        UNION
-        SELECT content_sha256 AS "sha" FROM deliverable_version_blobs
-      `;
-      const renditions = yield* sql<{ readonly sha: string; readonly kind: DeliverableKind }>`
-        SELECT DISTINCT v.content_sha256 AS "sha", d.kind AS "kind"
-        FROM deliverable_versions v
-        JOIN deliverables d ON d.deliverable_id = v.deliverable_id
-      `;
-      const snapshots = yield* sql<{ readonly path: string }>`
-        SELECT snapshot_path AS "path" FROM deliverable_notes WHERE snapshot_path IS NOT NULL
-      `;
-      // A note's picture is a stored file like any other; older ones sit in their own folder.
-      const pictures = snapshots.flatMap((row) => {
-        const sha = /^objects\/[0-9a-f]{2}\/[0-9a-f]{2}\/([0-9a-f]{64})$/.exec(row.path)?.[1];
-        return sha === undefined ? [] : [sha];
-      });
-      return {
-        blobs: new Set([...blobs.map((row) => row.sha), ...pictures]),
-        renditions: new Set(
-          renditions.map((row) => renditionKey({ contentSha256: row.sha, kind: row.kind })),
-        ),
-        noteSnapshots: new Set(snapshots.map((row) => row.path)),
-      } satisfies StoreReferences;
-    }).pipe(
-      // One read of all three, so a note or version added meanwhile is in none or in all.
-      sql.withTransaction,
+    storeReferences: referenceRows.pipe(
+      Effect.map((rows) => referencesOf(rows, () => true)),
       Effect.mapError(sqlError("storeReferences")),
       Effect.withSpan("DeliverableRepository.storeReferences"),
     ),

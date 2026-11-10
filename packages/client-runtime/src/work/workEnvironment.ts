@@ -57,6 +57,14 @@ export function createWorkEnvironmentAtoms<R, E>(
       label: "environment-data:work:retry-rendition",
       tag: WS_METHODS.deliverablesRetryRendition,
     }),
+    retainedHistory: createEnvironmentRpcQueryAtomFamily(runtime, {
+      label: "environment-data:work:retained-history",
+      tag: WS_METHODS.deliverablesRetainedHistory,
+    }),
+    purgeHistory: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:work:purge-history",
+      tag: WS_METHODS.deliverablesPurgeHistory,
+    }),
     createNote: createEnvironmentRpcCommand(runtime, {
       label: "environment-data:work:create-note",
       tag: WS_METHODS.deliverableNotesCreate,

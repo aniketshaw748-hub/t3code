@@ -103,12 +103,18 @@ export class DeliverableGit extends Context.Service<
       readonly message: string;
       readonly ref: string;
     }) => Effect.Effect<SnapshotResult, DeliverableGitError>;
-    /** Content hashes of every stored file a version commit points at. */
+    /**
+     * Content hashes of every stored file a version commit points at. Fails unless every file in
+     * the commit could be inspected, so a result is always the whole list.
+     */
     readonly storedBlobs: (input: {
       readonly cwd: string;
       readonly commit: string;
     }) => Effect.Effect<ReadonlyArray<string>, DeliverableGitError>;
-    /** Deletes version refs, so Git can drop the commits of versions that no longer exist. */
+    /**
+     * Deletes version refs, so Git can drop the commits of versions that no longer exist. Succeeds
+     * only once Git no longer lists them; a folder that is not a reachable repository fails.
+     */
     readonly deleteRefs: (input: {
       readonly cwd: string;
       readonly refs: ReadonlyArray<string>;
@@ -406,7 +412,11 @@ const make = Effect.gen(function* () {
     ),
   );
 
-  /** Pointer contents of the small blobs among `oids`; other blobs are absent from the map. */
+  /**
+   * Pointer contents of the small blobs among `oids`; other blobs are absent from the map. Git
+   * answers "missing" for an object it has lost without failing, so every oid must come back as
+   * a blob with a size: an object that could not be looked at is not one without a pointer.
+   */
   const readPointers = Effect.fn("DeliverableGit.readPointers")(function* (
     cwd: string,
     oids: ReadonlyArray<string>,
@@ -416,11 +426,21 @@ const make = Effect.gen(function* () {
     const checked = yield* git("batchCheck", cwd, ["cat-file", "--batch-check"], {
       stdin: `${oids.join("\n")}\n`,
     });
-    const small = checked.stdout
-      .split("\n")
-      .map((line) => line.split(" "))
-      .filter(([, type, size]) => type === "blob" && Number(size) <= MAX_POINTER_BYTES)
-      .map(([oid]) => oid!);
+    const sizes = new Map<string, number>();
+    for (const line of checked.stdout.split("\n")) {
+      const [oid, type, size] = line.split(" ");
+      if (oid !== undefined && type === "blob" && /^\d+$/.test(size ?? "")) {
+        sizes.set(oid, Number(size));
+      }
+    }
+    const unread = oids.filter((oid) => !sizes.has(oid));
+    if (unread.length > 0) {
+      return yield* new DeliverableGitError({
+        operation: "read",
+        cause: `Git could not read ${unread.length} of ${oids.length} files, such as ${unread[0]}.`,
+      });
+    }
+    const small = oids.filter((oid) => sizes.get(oid)! <= MAX_POINTER_BYTES);
     for (const oid of small) {
       const text = (yield* git("readPointer", cwd, ["cat-file", "blob", oid])).stdout;
       const pointer = parseBlobPointer(text);
@@ -433,32 +453,62 @@ const make = Effect.gen(function* () {
     "DeliverableGit.storedBlobs",
   )(
     function* (input) {
-      const tree = parseTree(
+      const files = parseTree(
         (yield* git("lsTree", input.cwd, ["ls-tree", "-r", "-l", "-z", input.commit])).stdout,
-      );
+      ).filter((entry) => entry.type === "blob");
+      // Git prints a size it could not get as "BAD" and still exits 0.
+      const unsized = files.filter((entry) => !Number.isInteger(entry.size));
+      if (unsized.length > 0) {
+        return yield* new DeliverableGitError({
+          operation: "read",
+          cause: `Git could not size ${unsized.length} files of the commit, such as ${unsized[0]!.path}.`,
+        });
+      }
       const pointers = yield* readPointers(input.cwd, [
         ...new Set(
-          tree
-            .filter((entry) => entry.type === "blob" && entry.size <= MAX_POINTER_BYTES)
-            .map((entry) => entry.oid),
+          files.filter((entry) => entry.size <= MAX_POINTER_BYTES).map((entry) => entry.oid),
         ),
       ]);
       return [...new Set([...pointers.values()].map((pointer) => pointer.oid))];
     },
-    Effect.mapError((cause) => new DeliverableGitError({ operation: "read", cause })),
+    Effect.mapError((cause) =>
+      isDeliverableGitError(cause) ? cause : new DeliverableGitError({ operation: "read", cause }),
+    ),
   );
 
   const deleteRefs: DeliverableGit["Service"]["deleteRefs"] = Effect.fn(
     "DeliverableGit.deleteRefs",
   )(
     function* (input) {
-      if (input.refs.length === 0 || !(yield* checkpoints.isGitRepository(input.cwd))) return;
+      if (input.refs.length === 0) return;
+      if (!(yield* checkpoints.isGitRepository(input.cwd))) {
+        return yield* new DeliverableGitError({
+          operation: "refs",
+          cause: "The project folder is not a reachable Git repository.",
+        });
+      }
       yield* checkpoints.deleteCheckpointRefs({
         cwd: input.cwd,
         checkpointRefs: input.refs.map((ref) => CheckpointRef.make(ref)),
       });
+      const listed = new Set(
+        (yield* git("listRefs", input.cwd, [
+          "for-each-ref",
+          "--format=%(refname)",
+          DELIVERABLE_REFS_ROOT,
+        ])).stdout.split("\n"),
+      );
+      const left = input.refs.filter((ref) => listed.has(ref));
+      if (left.length > 0) {
+        return yield* new DeliverableGitError({
+          operation: "refs",
+          cause: `Git still lists ${left.length} of the refs, such as ${left[0]}.`,
+        });
+      }
     },
-    Effect.mapError((cause) => new DeliverableGitError({ operation: "refs", cause })),
+    Effect.mapError((cause) =>
+      isDeliverableGitError(cause) ? cause : new DeliverableGitError({ operation: "refs", cause }),
+    ),
   );
 
   const restore: DeliverableGit["Service"]["restore"] = Effect.fn("DeliverableGit.restore")(

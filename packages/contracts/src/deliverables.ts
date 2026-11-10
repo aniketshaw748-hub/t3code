@@ -345,6 +345,37 @@ export const DeliverableRestoreResult = Schema.Struct({
 });
 export type DeliverableRestoreResult = typeof DeliverableRestoreResult.Type;
 
+/** Work history that removed projects still hold: removing a project never deletes it. */
+export const DeliverableRetainedHistory = Schema.Struct({
+  projects: Schema.Array(
+    Schema.Struct({
+      projectId: ProjectId,
+      title: Schema.String,
+      deliverableCount: NonNegativeInt,
+      versionCount: NonNegativeInt,
+      noteCount: NonNegativeInt,
+    }),
+  ),
+  /** Bytes in the store that nothing but this history needs. */
+  bytes: NonNegativeInt,
+});
+export type DeliverableRetainedHistory = typeof DeliverableRetainedHistory.Type;
+
+/**
+ * A person's decision to delete the versions, notes and stored media of removed projects for
+ * good. The files in the projects' folders are not part of it.
+ */
+export const DeliverablePurgeHistoryInput = Schema.Struct({
+  projectIds: Schema.Array(ProjectId).check(Schema.isMinLength(1), Schema.isMaxLength(500)),
+});
+export type DeliverablePurgeHistoryInput = typeof DeliverablePurgeHistoryInput.Type;
+
+export const DeliverablePurgeHistoryResult = Schema.Struct({
+  /** Projects whose history was deleted now; the rest stay decided and are finished later. */
+  projects: NonNegativeInt,
+});
+export type DeliverablePurgeHistoryResult = typeof DeliverablePurgeHistoryResult.Type;
+
 const DELIVERABLE_FAILURE_MESSAGES = {
   project_not_found: "That project does not exist here.",
   deliverable_not_found: "That deliverable does not exist.",
@@ -359,6 +390,8 @@ const DELIVERABLE_FAILURE_MESSAGES = {
   turn_running:
     "An agent turn is running in this project. Wait for it to finish, then undo or restore.",
   not_stray: "That file is no longer offered as a version of another deliverable.",
+  project_not_removed:
+    "Work history can only be deleted for a project that was removed. Remove the project first.",
   workspace_changed:
     "Files this restore would overwrite changed since the current version. Register or discard those changes first.",
   storage_failed: "Could not read or write deliverable storage.",

@@ -398,6 +398,8 @@ import {
   DeliverableCompareInput,
   DeliverableComparison,
   DeliverableError,
+  DeliverablePurgeHistoryInput,
+  DeliverablePurgeHistoryResult,
   DeliverableRef,
   DeliverableRegisterVersionInput,
   DeliverableRegisterVersionResult,
@@ -406,6 +408,7 @@ import {
   DeliverableResolveStrayResult,
   DeliverableRestoreInput,
   DeliverableRestoreResult,
+  DeliverableRetainedHistory,
   DeliverableVersionGraph,
   DeliverableVersionRef,
   DeliverableVersionsResult,
@@ -607,6 +610,8 @@ export const WS_METHODS = {
   deliverablesRestore: "deliverables.restore",
   deliverablesResolveStray: "deliverables.resolveStray",
   deliverablesRetryRendition: "deliverables.retryRendition",
+  deliverablesRetainedHistory: "deliverables.retainedHistory",
+  deliverablesPurgeHistory: "deliverables.purgeHistory",
   deliverableNotesCreate: "deliverableNotes.create",
   deliverableNotesMarkSent: "deliverableNotes.markSent",
   deliverableNotesSetStatus: "deliverableNotes.setStatus",
@@ -2194,6 +2199,18 @@ const WsDeliverablesRetryRenditionRpc = Rpc.make(WS_METHODS.deliverablesRetryRen
   error: DeliverableRpcError,
 });
 
+const WsDeliverablesRetainedHistoryRpc = Rpc.make(WS_METHODS.deliverablesRetainedHistory, {
+  payload: Schema.Struct({}),
+  success: DeliverableRetainedHistory,
+  error: DeliverableRpcError,
+});
+
+const WsDeliverablesPurgeHistoryRpc = Rpc.make(WS_METHODS.deliverablesPurgeHistory, {
+  payload: DeliverablePurgeHistoryInput,
+  success: DeliverablePurgeHistoryResult,
+  error: DeliverableRpcError,
+});
+
 const DeliverableNoteRpcError = Schema.Union([DeliverableNoteError, EnvironmentAuthorizationError]);
 
 const WsDeliverableNotesCreateRpc = Rpc.make(WS_METHODS.deliverableNotesCreate, {
@@ -2347,6 +2364,8 @@ export const WsRpcGroup = RpcGroup.make(
   WsDeliverablesRestoreRpc,
   WsDeliverablesResolveStrayRpc,
   WsDeliverablesRetryRenditionRpc,
+  WsDeliverablesRetainedHistoryRpc,
+  WsDeliverablesPurgeHistoryRpc,
   WsDeliverableNotesCreateRpc,
   WsDeliverableNotesMarkSentRpc,
   WsDeliverableNotesSetStatusRpc,

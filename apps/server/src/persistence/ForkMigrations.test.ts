@@ -26,7 +26,9 @@ const forkIds = forkMigrationManifest.map(([id, name]) => [id, name] as const);
 // rebuild that table later, so keep the list short. See docs/internals/fork-migrations.md.
 const forkTables = [
   "deliverable_blob_index",
+  "deliverable_history_purges",
   "deliverable_notes",
+  "deliverable_ref_deletions",
   "deliverable_renditions",
   "deliverable_restores",
   "deliverable_review_status",

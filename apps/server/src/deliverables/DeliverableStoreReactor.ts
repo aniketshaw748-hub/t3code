@@ -1,76 +1,42 @@
-import type { ApplicationStoredEvent, ProjectId } from "@t3tools/contracts";
-import { makeDrainableWorker } from "@t3tools/shared/DrainableWorker";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import type * as Scope from "effect/Scope";
-import * as Stream from "effect/Stream";
 
-import * as OrchestrationEventStore from "../persistence/OrchestrationEventStore.ts";
 import { forkParked } from "../serverActivation.ts";
 import * as DeliverableService from "./DeliverableService.ts";
 import * as DeliverableStoreCleanup from "./DeliverableStoreCleanup.ts";
 
 /**
- * Keeps Work mode's records in step with projects: when a project is deleted its deliverables go
- * with it, and what they kept in the store is cleaned out. Starting it also catches up on
- * deletions made while the server was stopped and on anything a crash left in the store.
+ * Finishes, at startup, what the store was asked to do and a stopped server left undone: recorded
+ * decisions to delete a removed project's Work history, then a cleanup of what nothing points at.
+ * A project being removed or missing is never a reason to delete anything here.
  */
 export class DeliverableStoreReactor extends Context.Service<
   DeliverableStoreReactor,
-  {
-    readonly start: () => Effect.Effect<void, never, Scope.Scope>;
-    readonly drain: Effect.Effect<void>;
-  }
+  { readonly start: () => Effect.Effect<void, never, Scope.Scope> }
 >()("t3/deliverables/DeliverableStoreReactor") {}
 
-const deletedProject = (event: ApplicationStoredEvent): ProjectId | null =>
-  "type" in event && event.type === "project.deleted" ? event.payload.projectId : null;
-
 const make = Effect.gen(function* () {
-  const events = yield* OrchestrationEventStore.OrchestrationEventStore;
   const deliverables = yield* DeliverableService.DeliverableService;
   const cleanup = yield* DeliverableStoreCleanup.DeliverableStoreCleanup;
-
-  const worker = yield* makeDrainableWorker((projectId: ProjectId | "catch-up") =>
-    (projectId === "catch-up"
-      ? Effect.andThen(deliverables.removeDeletedProjects, cleanup.request)
-      : deliverables.removeProject(projectId)
-    ).pipe(
-      Effect.catch((error) =>
-        Effect.logWarning("Could not remove a deleted project's deliverables", {
-          projectId,
-          reason: error.reason,
-        }),
-      ),
-    ),
-  );
 
   const start: DeliverableStoreReactor["Service"]["start"] = Effect.fn(
     "DeliverableStoreReactor.start",
   )(function* () {
     yield* forkParked(
-      Effect.gen(function* () {
-        // Deletions before this point are found by the catch-up, which reads the projects.
-        const afterSequence = yield* events.latestApplicationSequence;
-        yield* worker.enqueue("catch-up");
-        yield* Stream.runForEach(
-          events.streamProjectedApplicationEvents({
-            afterSequence,
-            filter: (event) => deletedProject(event) !== null,
-            project: (event) => ({ sequence: event.sequence, projectId: deletedProject(event) }),
-          }),
-          (event) => (event.projectId === null ? Effect.void : worker.enqueue(event.projectId)),
-        );
-      }).pipe(
+      deliverables.resumeHistoryPurges.pipe(
         Effect.catch((error) =>
-          Effect.logWarning("Stopped watching for deleted projects", { error: error.message }),
+          Effect.logWarning("Could not finish deleting Work history that was asked for", {
+            reason: error.reason,
+          }),
         ),
+        Effect.andThen(cleanup.request),
       ),
     );
   });
 
-  return DeliverableStoreReactor.of({ start, drain: worker.drain });
+  return DeliverableStoreReactor.of({ start });
 });
 
 export const layer = Layer.effect(DeliverableStoreReactor, make);
