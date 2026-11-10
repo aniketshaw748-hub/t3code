@@ -20,6 +20,8 @@ const CORNER_RATIO = 0.225;
 const ANDROID_ADAPTIVE_CANVAS = 432;
 const ANDROID_SPLASH_CANVAS = 1152;
 const ANDROID_NOTIFICATION_CANVAS = 96;
+// A status bar icon is drawn 24dp square; its glyph fills that but for a 2dp margin each side.
+const ANDROID_NOTIFICATION_GLYPH_FRACTION = 20 / 24;
 // Android masks the central 72dp of a 108dp layer; keep the glyph well inside it.
 const ANDROID_GLYPH_FRACTION = 1;
 
@@ -147,12 +149,27 @@ const centredMark = async (canvas: number, fraction: number) =>
     ])
     .png()
     .toBuffer();
+/** The glyph without the empty canvas around it, as large as fits `fraction` of `canvas`. */
+const tightMark = async (canvas: number, fraction: number) => {
+  const size = Math.round(canvas * fraction);
+  const transparent = { r: 0, g: 0, b: 0, alpha: 0 };
+  const glyph = await sharp(await renderSquare(mark, CANVAS))
+    .trim()
+    .resize(size, size, { fit: "contain", background: transparent })
+    .png()
+    .toBuffer();
+  return sharp({ create: { width: canvas, height: canvas, channels: 4, background: transparent } })
+    .composite([{ input: glyph, gravity: "center" }])
+    .png()
+    .toBuffer();
+};
 const androidGlyph = await centredMark(ANDROID_ADAPTIVE_CANVAS, ANDROID_GLYPH_FRACTION);
 await writeAsset(BRAND_ASSET_PATHS.androidForegroundPng, androidGlyph);
 await writeAsset(BRAND_ASSET_PATHS.androidMonochromePng, androidGlyph);
+// Other apps' status bar icons fill their box, so this one drops the mark's own canvas margin.
 await writeAsset(
   BRAND_ASSET_PATHS.androidNotificationPng,
-  await centredMark(ANDROID_NOTIFICATION_CANVAS, 1),
+  await tightMark(ANDROID_NOTIFICATION_CANVAS, ANDROID_NOTIFICATION_GLYPH_FRACTION),
 );
 
 for (const override of DEVELOPMENT_PUBLIC_ICON_OVERRIDES) {

@@ -98,7 +98,7 @@ internal object AgentBubbles {
         setAllowBubbles(true)
       }
     )
-    val icon = IconCompat.createWithResource(context, R.drawable.agent_activity_mark)
+    val icon = IconCompat.createWithResource(context, AgentNotifications.smallIcon(context))
     val you = Person.Builder().setName("You").build()
     for (thread in threads) {
       val shortcutId = SHORTCUT_PREFIX + thread.path
@@ -144,7 +144,7 @@ internal object AgentBubbles {
       )
       val text = listOf(thread.status, thread.project).filter { it.isNotBlank() }.joinToString(": ")
       val notification = NotificationCompat.Builder(context, CHANNEL)
-        .setSmallIcon(R.drawable.agent_activity_mark)
+        .setSmallIcon(AgentNotifications.smallIcon(context))
         .setContentTitle(thread.title)
         .setContentText(text)
         .setStyle(

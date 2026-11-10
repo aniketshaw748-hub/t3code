@@ -42,6 +42,15 @@ class AgentActivityExpiryReceiver : BroadcastReceiver() {
 
 /** Handles data pushes natively so delivery does not depend on a running JS bridge. */
 object AgentNotifications {
+  /**
+   * The status-bar mark: the `notification_icon` drawable the expo-notifications plugin renders
+   * from the brand's notification asset, or the app icon in a build without it.
+   */
+  fun smallIcon(context: Context): Int {
+    val id = context.resources.getIdentifier("notification_icon", "drawable", context.packageName)
+    return if (id != 0) id else context.applicationInfo.icon
+  }
+
   private const val STORE = "t3-agent-notifications"
   private const val ACTIVITY_CHANNEL = "agent-activity"
   private const val ALERT_CHANNEL = "agent-alerts"
@@ -394,7 +403,7 @@ object AgentNotifications {
         }
       )
       .setDefaults(if (channel == ALERT_CHANNEL) Notification.DEFAULT_ALL else 0)
-      .setSmallIcon(R.drawable.agent_activity_mark)
+      .setSmallIcon(smallIcon(context))
       .setVisibility(NotificationCompat.VISIBILITY_PRIVATE)
       .setShowWhen(false)
 
