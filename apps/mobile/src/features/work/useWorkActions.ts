@@ -167,7 +167,8 @@ export function useSendNotes() {
           id: note.id,
           anchor: note.anchor,
           body: note.body,
-          hasSnapshot: note.snapshotUrl !== null,
+          // The phone sends no image with a note; its area goes to the agent in words.
+          hasSnapshot: false,
         })),
       }),
     });

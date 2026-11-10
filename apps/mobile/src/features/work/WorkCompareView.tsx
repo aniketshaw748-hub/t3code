@@ -18,9 +18,12 @@ import { View } from "react-native";
 
 import { AppText as Text } from "../../components/ui/AppText";
 import { SegmentedControl } from "../../components/ui/SegmentedControl";
+import { cn } from "../../lib/cn";
 import { workEnvironment } from "../../state/work";
 import { useRendition } from "./useWorkData";
-import { useNoteStatusColors } from "./WorkStatus";
+import { renditionAspect } from "./WorkDeckStage";
+import { WorkLink } from "./WorkLink";
+import { MediaStage, MediaStageMessage, RegionOutline } from "./WorkMediaStage";
 
 /**
  * Two versions, one above the other on a phone, for every slide or shot the comparison
@@ -32,9 +35,10 @@ export function WorkCompareView(props: {
   readonly base: DeliverableVersion;
   readonly target: DeliverableVersion;
   readonly assetUrl: (url: string | null | undefined) => string | null;
+  /** Null when the earlier version can't be restored right now. */
+  readonly onRestoreBase: (() => void) | null;
 }) {
   const [which, setWhich] = useState<"changed" | "all">("changed");
-  const colors = useNoteStatusColors();
   const comparison = useAtomValue(
     workEnvironment.compare({
       environmentId: props.environmentId,
@@ -59,12 +63,12 @@ export function WorkCompareView(props: {
     const unit = rendition.units.find((candidate) => candidate.index === index);
     return props.assetUrl(unit?.imageUrl ?? unit?.thumbUrl ?? rendition.posterUrl);
   };
-  const aspect =
-    targetRendition?.width && targetRendition.height
-      ? targetRendition.width / targetRendition.height
-      : 16 / 9;
+  const aspect = renditionAspect(
+    targetRendition ?? baseRendition ?? { width: null, height: null },
+    16 / 9,
+  );
   return (
-    <View className="gap-3">
+    <View className="gap-4">
       <View className="gap-1">
         <Text className="text-base font-t3-medium">
           V{props.base.ordinal} → V{props.target.ordinal}
@@ -89,52 +93,47 @@ export function WorkCompareView(props: {
         onSelect={setWhich}
       />
       {value !== null && shown.length === 0 ? (
-        <View className="rounded-xl border border-dashed border-border px-4 py-8">
-          <Text className="text-center text-sm text-foreground-muted">
-            Nothing visible changed between these versions.
-          </Text>
-        </View>
+        <Text className="py-8 text-center text-sm text-foreground-muted">
+          Nothing visible changed between these versions.
+        </Text>
       ) : null}
-      {shown.map((change) => {
-        const region = changeRegion(change);
-        return (
-          <View key={`${change.baseIndex}:${change.targetIndex}`} className="gap-2">
-            <View className="flex-row items-center gap-2">
-              <Text className="text-sm font-t3-medium">
-                {compareUnitLabel(props.kind, change, targetRendition ?? baseRendition)}
-              </Text>
-              <View
-                className="rounded-full px-2 py-0.5"
-                style={{
-                  backgroundColor:
-                    change.status === "unchanged" ? "transparent" : `${colors.fixed}26`,
-                }}
-              >
-                <Text
-                  className="text-2xs font-t3-medium"
-                  style={change.status === "unchanged" ? undefined : { color: colors.fixed }}
-                >
-                  {UNIT_CHANGE_LABEL[change.status]}
-                </Text>
-              </View>
-            </View>
-            <CompareFrame
-              label={`V${props.base.ordinal}`}
-              src={image(baseRendition, change.baseIndex)}
-              aspect={aspect}
-              region={null}
-              regionColor={colors.fixed}
-            />
-            <CompareFrame
-              label={`V${props.target.ordinal}`}
-              src={image(targetRendition, change.targetIndex)}
-              aspect={aspect}
-              region={region}
-              regionColor={colors.fixed}
-            />
+      {shown.map((change) => (
+        <View key={`${change.baseIndex}:${change.targetIndex}`} className="gap-2">
+          <View className="flex-row items-center gap-2">
+            <Text className="text-sm font-t3-medium">
+              {compareUnitLabel(props.kind, change, targetRendition ?? baseRendition)}
+            </Text>
+            <Text
+              className={cn(
+                "text-xs font-t3-bold",
+                change.status === "unchanged"
+                  ? "text-foreground-muted"
+                  : "text-adaptive-violet-600-400",
+              )}
+            >
+              {UNIT_CHANGE_LABEL[change.status]}
+            </Text>
           </View>
-        );
-      })}
+          <CompareFrame
+            label={`V${props.base.ordinal}`}
+            src={image(baseRendition, change.baseIndex)}
+            aspect={aspect}
+            region={null}
+          />
+          <CompareFrame
+            label={`V${props.target.ordinal}`}
+            src={image(targetRendition, change.targetIndex)}
+            aspect={aspect}
+            region={changeRegion(change)}
+          />
+        </View>
+      ))}
+      {props.onRestoreBase === null ? null : (
+        <View className="flex-row flex-wrap items-center gap-x-1.5">
+          <Text className="text-xs text-foreground-muted">Prefer the earlier one?</Text>
+          <WorkLink label={`Restore V${props.base.ordinal}`} onPress={props.onRestoreBase} />
+        </View>
+      )}
     </View>
   );
 }
@@ -144,20 +143,12 @@ function CompareFrame(props: {
   readonly src: string | null;
   readonly aspect: number;
   readonly region: DeliverableRegion | null;
-  readonly regionColor: string;
 }) {
   return (
     <View className="gap-1">
-      <View
-        className="overflow-hidden rounded-lg border border-border"
-        style={{ aspectRatio: props.aspect, backgroundColor: "#0b0b0b" }}
-      >
+      <MediaStage className="rounded-lg border border-border" style={{ aspectRatio: props.aspect }}>
         {props.src === null ? (
-          <View className="flex-1 items-center justify-center">
-            <Text className="text-xs" style={{ color: "#8a8a8a" }}>
-              Not in this version
-            </Text>
-          </View>
+          <MediaStageMessage>Not in this version</MediaStageMessage>
         ) : (
           <Image
             source={{ uri: props.src }}
@@ -166,20 +157,8 @@ function CompareFrame(props: {
             accessibilityLabel={`${props.label} frame`}
           />
         )}
-        {props.region === null ? null : (
-          <View
-            pointerEvents="none"
-            className="absolute rounded-sm border-2"
-            style={{
-              left: `${props.region.x * 100}%`,
-              top: `${props.region.y * 100}%`,
-              width: `${props.region.w * 100}%`,
-              height: `${props.region.h * 100}%`,
-              borderColor: props.regionColor,
-            }}
-          />
-        )}
-      </View>
+        {props.region === null ? null : <RegionOutline region={props.region} />}
+      </MediaStage>
       <Text className="font-mono text-3xs text-foreground-muted">{props.label}</Text>
     </View>
   );

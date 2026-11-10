@@ -72,9 +72,6 @@ interface AppearancePreferencesContextValue {
   readonly setCodeWordBreak: (value: boolean) => void;
   readonly mathRenderingEnabled: boolean;
   readonly setMathRenderingEnabled: (value: boolean) => void;
-  /** Work mode's look: dark by default, whatever the app theme. */
-  readonly workAppearance: MobileThemeAppearance;
-  readonly setWorkAppearance: (value: MobileThemeAppearance) => void;
 }
 
 const AppearancePreferencesContext = createContext<AppearancePreferencesContextValue | null>(null);
@@ -296,10 +293,6 @@ export function AppearancePreferencesProvider(props: { readonly children: ReactN
   const setMathRenderingEnabled = (value: boolean) =>
     updatePreferences({ mathRenderingEnabled: value });
 
-  const workAppearance = storedPreferences?.workAppearance ?? "dark";
-  const setWorkAppearance = (value: MobileThemeAppearance) =>
-    updatePreferences({ workAppearance: value });
-
   const value = useMemo(
     (): AppearancePreferencesContextValue => ({
       appearance,
@@ -324,8 +317,6 @@ export function AppearancePreferencesProvider(props: { readonly children: ReactN
       setCodeWordBreak,
       mathRenderingEnabled,
       setMathRenderingEnabled,
-      workAppearance,
-      setWorkAppearance,
     }),
     [
       appearance,
@@ -349,8 +340,6 @@ export function AppearancePreferencesProvider(props: { readonly children: ReactN
       setCodeWordBreak,
       mathRenderingEnabled,
       setMathRenderingEnabled,
-      workAppearance,
-      setWorkAppearance,
     ],
   );
 
