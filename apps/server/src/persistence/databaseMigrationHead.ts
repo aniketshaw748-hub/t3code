@@ -2,6 +2,7 @@
 import * as NodeFS from "node:fs";
 import * as NodeSqlite from "node:sqlite";
 
+import { isLegacyForkMigration } from "./ForkMigrations.ts";
 import { migrationManifest } from "./Migrations.ts";
 
 export const BUILD_MIGRATION_HEAD = Math.max(...migrationManifest.map(([id]) => id));
@@ -24,10 +25,12 @@ export function recordedMigrations(
       )
       .get();
     if (hasTable === undefined) return [];
+    // Startup moves legacy fork rows to the fork's ledger; they are not upstream migrations.
     return db
       .prepare("SELECT migration_id, name FROM effect_sql_migrations ORDER BY migration_id")
       .all()
-      .map((row) => ({ id: Number(row.migration_id), name: String(row.name) }));
+      .map((row) => ({ id: Number(row.migration_id), name: String(row.name) }))
+      .filter((row) => !isLegacyForkMigration(row));
   } catch {
     return null;
   } finally {
