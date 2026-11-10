@@ -578,6 +578,10 @@
     "./work/anchors": {
       "types": "./src/work/workAnchors.ts",
       "default": "./src/work/workAnchors.ts"
+    },
+    "./work/scope": {
+      "types": "./src/work/workScope.ts",
+      "default": "./src/work/workScope.ts"
     }
   },
   "scripts": {
