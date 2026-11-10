@@ -1,3 +1,4 @@
+import { BRAND } from "@t3tools/contracts/brand";
 import type { RelayAgentActivityAggregateState } from "@t3tools/contracts/relay";
 
 import type { AgentActivityProps } from "./AgentActivity";
@@ -16,7 +17,8 @@ export function agentActivityWidgetTimeline(source: AgentActivityWidgetSource, n
   const updatedAt = new Date(now).toISOString();
   if (source.kind !== "snapshot" || !source.aggregate) {
     const props: AgentActivityProps = {
-      title: "T3 Code",
+      appName: BRAND.displayName,
+      title: BRAND.displayName,
       subtitle:
         source.kind === "signed-out"
           ? "Sign in to T3 Connect to see agents"
@@ -34,6 +36,7 @@ export function agentActivityWidgetTimeline(source: AgentActivityWidgetSource, n
 
   const { aggregate } = source;
   const props: AgentActivityProps = {
+    appName: BRAND.displayName,
     title: aggregate.title,
     subtitle: aggregate.subtitle,
     activeCount: aggregate.activeCount,

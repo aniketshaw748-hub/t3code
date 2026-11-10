@@ -158,6 +158,25 @@ export function welcomeOffersPhone(input: {
 }
 
 /**
+ * A build without T3 Connect pairs the phone straight to the primary computer instead, which
+ * needs access management here and a policy that lets other clients in.
+ */
+export function welcomeOffersDirectPairing(input: {
+  readonly isPrimary: boolean;
+  readonly cloud: boolean;
+  // Access write, which creating a pairing link needs.
+  readonly canPair: boolean;
+  readonly policy: ManagedPolicySummary | undefined;
+}) {
+  return (
+    input.isPrimary &&
+    !input.cloud &&
+    input.canPair &&
+    managedCapabilityDenial(input.policy, "remoteClients") === undefined
+  );
+}
+
+/**
  * The Codex instance the setup card shows, or null when the card is closed. A rebuild briefly
  * drops an instance from the list, so the card keeps its last status meanwhile instead of
  * unmounting and losing a sign-in in progress.

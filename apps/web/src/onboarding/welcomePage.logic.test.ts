@@ -15,6 +15,7 @@ import {
   codexNeedsSetup,
   groupWelcomeAgents,
   turnedOnInstance,
+  welcomeOffersDirectPairing,
   welcomeOffersPhone,
 } from "./welcomePage.logic";
 
@@ -261,5 +262,27 @@ describe("welcomeOffersPhone", () => {
     expect(offers({ policy: policy({ connect: false }) })).toBe(false);
     expect(offers({ policy: policy({ clients: ["desktop"] }) })).toBe(false);
     expect(offers({ isPrimary: false })).toBe(false);
+  });
+
+  it("offers direct pairing in its place where T3 Connect is not configured", () => {
+    const direct = (input: Partial<Parameters<typeof welcomeOffersDirectPairing>[0]>) =>
+      welcomeOffersDirectPairing({
+        isPrimary: true,
+        cloud: false,
+        canPair: true,
+        policy: undefined,
+        ...input,
+      });
+
+    expect(direct({})).toBe(true);
+    // With T3 Connect configured the phone joins through it, as before.
+    expect(direct({ cloud: true })).toBe(false);
+    expect(direct({ canPair: false })).toBe(false);
+    expect(direct({ isPrimary: false })).toBe(false);
+    expect(
+      direct({
+        policy: { organization: "Acme", lockedSettings: [], limits: { clients: ["desktop"] } },
+      }),
+    ).toBe(false);
   });
 });

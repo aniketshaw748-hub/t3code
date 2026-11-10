@@ -605,7 +605,12 @@ export function WorkProjectScreen(props: {
                   version={viewed}
                   parent={versions.find((version) => version.id === viewed.parentVersionId) ?? null}
                   rendition={rendition}
-                  onUnit={(anchor) => focusAnchor(anchor)}
+                  onUnit={(place) => {
+                    setViewedVersionId(
+                      place.versionId === currentVersionId ? null : place.versionId,
+                    );
+                    focusAnchor(place.anchor);
+                  }}
                   onCompare={() =>
                     setCompare(
                       viewed.parentVersionId === null

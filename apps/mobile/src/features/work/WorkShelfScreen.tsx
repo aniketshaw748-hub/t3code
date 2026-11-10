@@ -9,11 +9,13 @@ import { useState } from "react";
 import { Pressable, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-import { AppBar } from "../../components/ui/AppBar";
 import { SymbolView, type AppSymbolName } from "../../components/ui/AppSymbol";
 import { AppText as Text } from "../../components/ui/AppText";
+import { Chip } from "../../components/ui/Chip";
+import { EmptyState } from "../../components/ui/EmptyState";
 import { ScreenScrollView } from "../../components/ui/ScreenScrollView";
 import { useEnvironments } from "../../state/environments";
+import { SettingsScreen } from "../settings/components/SettingsScreen";
 import { useStartWorkProject } from "./useWorkActions";
 import {
   isThreadBusy,
@@ -23,10 +25,10 @@ import {
   useWorkProjectSnapshot,
   useWorkThreads,
 } from "./useWorkData";
-import { ShelfStatusChip } from "./WorkStatus";
-import { WorkTheme } from "./WorkTheme";
+import { MEDIA_STAGE, MediaStage } from "./WorkMediaStage";
+import { ShelfStatusLabel } from "./WorkStatus";
 
-export const WORK_KIND_ICON: Record<DeliverableKind, AppSymbolName> = {
+const WORK_KIND_ICON: Record<DeliverableKind, AppSymbolName> = {
   deck: "square.grid.2x2",
   video: "play",
   image: "photo",
@@ -34,16 +36,14 @@ export const WORK_KIND_ICON: Record<DeliverableKind, AppSymbolName> = {
   other: "sparkles",
 };
 
-/** Work mode's home: a card per project with its latest frame and one plain status. */
-export function WorkShelfScreen() {
-  return (
-    <WorkTheme>
-      <WorkShelf />
-    </WorkTheme>
-  );
-}
+// The page keeps to a readable width on a tablet, like the other workspace pages.
+const MAX_CONTENT_WIDTH = 1080;
+const CARD_GAP = 16;
+// Two cards across on a phone; a wider page fits as many of about this width as it has room for.
+const CARD_WIDTH = 220;
 
-function WorkShelf() {
+/** Work mode's home: a card per project with its latest frame, its status in words and its version. */
+export function WorkShelfScreen() {
   const projects = useWorkProjects();
   const navigation = useNavigation();
   const insets = useSafeAreaInsets();
@@ -53,6 +53,10 @@ function WorkShelf() {
       ?.environmentId ?? null;
   const start = useStartWorkProject();
   const [starting, setStarting] = useState<string | null>(null);
+  const [gridWidth, setGridWidth] = useState(0);
+  const columns = Math.max(2, Math.floor((gridWidth + CARD_GAP) / (CARD_WIDTH + CARD_GAP)));
+  // Every card is one column wide, so a last card on its own does not stretch across the page.
+  const cardWidth = gridWidth > 0 ? (gridWidth - CARD_GAP * (columns - 1)) / columns : "47%";
   const open = (target: { environmentId: EnvironmentId; projectId: ProjectId }) =>
     navigation.dispatch(StackActions.push("WorkProject", target));
   const onStart = async (starter: WorkStarter) => {
@@ -62,65 +66,66 @@ function WorkShelf() {
     setStarting(null);
     if (projectId !== null) open({ environmentId, projectId });
   };
+  const starters = WORK_STARTERS.map((starter) => (
+    <Chip
+      key={starter.id}
+      icon={WORK_KIND_ICON[starter.kind]}
+      label={starting === starter.id ? "Starting…" : starter.label}
+      disabled={environmentId === null || starting !== null}
+      onPress={() => void onStart(starter)}
+    />
+  ));
   return (
-    <View className="flex-1 bg-screen">
-      <AppBar
-        title="Work"
-        subtitle={projects.length === 1 ? "1 project" : `${projects.length} projects`}
-      />
+    <SettingsScreen
+      workspaceRoot
+      title="Work"
+      subtitle={projects.length === 1 ? "1 project" : `${projects.length} projects`}
+    >
       <ScreenScrollView
         contentInsetAdjustmentBehavior="automatic"
-        contentContainerStyle={{ padding: 16, paddingBottom: insets.bottom + 32, gap: 20 }}
+        showsVerticalScrollIndicator={false}
+        className="flex-1"
+        contentContainerClassName="px-5 pt-4"
+        contentContainerStyle={{ paddingBottom: Math.max(insets.bottom, 18) + 18 }}
       >
-        <View accessibilityLabel="Start a project" className="flex-row flex-wrap gap-2">
-          {WORK_STARTERS.map((starter) => (
-            <Pressable
-              key={starter.id}
-              accessibilityRole="button"
-              accessibilityState={{ disabled: environmentId === null || starting !== null }}
-              disabled={environmentId === null || starting !== null}
-              onPress={() => void onStart(starter)}
-              className="h-9 flex-row items-center gap-2 rounded-full border border-border bg-card px-3.5 active:opacity-70"
-            >
-              <SymbolView
-                name={WORK_KIND_ICON[starter.kind]}
-                size={16}
-                tintColorClassName="accent-icon-muted"
-              />
-              <Text className="text-sm font-t3-medium">
-                {starting === starter.id ? "Starting…" : starter.label}
-              </Text>
-            </Pressable>
-          ))}
-        </View>
         {projects.length === 0 ? (
-          <View className="items-center gap-2 rounded-2xl border border-dashed border-border px-6 py-14">
-            <Text className="text-base font-t3-medium">No Work projects yet</Text>
-            <Text className="text-center text-sm text-foreground-muted">
-              Start a deck, a video or an image set above. The agent drafts it, and you review it
-              here with notes pinned to the moment or slide.
-            </Text>
-          </View>
+          <EmptyState
+            variant="plain"
+            title="No Work projects yet"
+            detail="Start a deck, a video or an image set. The agent drafts it, and you review it here with notes pinned to the moment or slide."
+            action={<View className="flex-row flex-wrap justify-center gap-2">{starters}</View>}
+          />
         ) : (
-          <View className="flex-row flex-wrap gap-4">
-            {projects.map((project) => (
-              <WorkProjectCard
-                key={`${project.environmentId}:${project.id}`}
-                project={project}
-                onPress={() =>
-                  open({ environmentId: project.environmentId, projectId: project.id })
-                }
-              />
-            ))}
+          <View className="w-full gap-6 self-center" style={{ maxWidth: MAX_CONTENT_WIDTH }}>
+            <View accessibilityLabel="Start a project" className="flex-row flex-wrap gap-2">
+              {starters}
+            </View>
+            <View
+              onLayout={({ nativeEvent }) => setGridWidth(nativeEvent.layout.width)}
+              className="flex-row flex-wrap gap-y-6"
+              style={{ columnGap: CARD_GAP }}
+            >
+              {projects.map((project) => (
+                <WorkProjectCard
+                  key={`${project.environmentId}:${project.id}`}
+                  project={project}
+                  width={cardWidth}
+                  onPress={() =>
+                    open({ environmentId: project.environmentId, projectId: project.id })
+                  }
+                />
+              ))}
+            </View>
           </View>
         )}
       </ScreenScrollView>
-    </View>
+    </SettingsScreen>
   );
 }
 
 function WorkProjectCard(props: {
   readonly project: EnvironmentProject;
+  readonly width: number | `${number}%`;
   readonly onPress: () => void;
 }) {
   const { project } = props;
@@ -145,16 +150,19 @@ function WorkProjectCard(props: {
   return (
     <Pressable
       accessibilityRole="button"
-      accessibilityLabel={`${project.title}, ${status.label}`}
+      accessibilityLabel={[project.title, status.label, status.version]
+        .filter((part) => part !== null)
+        .join(", ")}
       onPress={props.onPress}
-      className="min-w-[150px] flex-1 basis-[42%] gap-2 active:opacity-80"
+      className="gap-2 active:opacity-80"
+      style={{ width: props.width }}
     >
-      <View className="aspect-video items-center justify-center overflow-hidden rounded-xl border border-border bg-[#0b0b0b]">
+      <MediaStage className="aspect-video items-center justify-center border border-border">
         {poster === null ? (
           <SymbolView
             name={WORK_KIND_ICON[deliverable?.kind ?? "other"]}
             size={28}
-            tintColor="#8a8a8a"
+            tintColor={MEDIA_STAGE.muted}
           />
         ) : (
           <Image
@@ -165,11 +173,19 @@ function WorkProjectCard(props: {
             accessibilityIgnoresInvertColors
           />
         )}
+      </MediaStage>
+      <View className="gap-0.5 px-0.5">
+        <View className="flex-row items-baseline gap-2">
+          <Text numberOfLines={1} className="shrink text-base font-t3-medium">
+            {project.title}
+          </Text>
+          <View className="flex-1" />
+          {status.version === null ? null : (
+            <Text className="font-mono text-2xs text-foreground-muted">{status.version}</Text>
+          )}
+        </View>
+        <ShelfStatusLabel kind={status.kind} label={status.label} lines={2} />
       </View>
-      <Text numberOfLines={1} className="text-sm font-t3-medium">
-        {project.title}
-      </Text>
-      <ShelfStatusChip kind={status.kind} label={status.label} />
     </Pressable>
   );
 }

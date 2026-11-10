@@ -167,6 +167,7 @@ export function useSendNotes() {
           id: note.id,
           anchor: note.anchor,
           body: note.body,
+          // The server makes each note's picture and attaches it to the message itself.
           hasSnapshot: note.snapshotUrl !== null,
         })),
       }),

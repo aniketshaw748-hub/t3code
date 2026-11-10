@@ -5,6 +5,7 @@ import type {
   DeliverableRegion,
   DeliverableRendition,
   DeliverableUnitChange,
+  DeliverableVersionId,
   OrchestrationV2TurnItem,
 } from "@t3tools/contracts";
 import { formatTimecode } from "@t3tools/shared/deliverableNotes";
@@ -42,13 +43,13 @@ export interface NotePinTarget {
   readonly region: DeliverableRegion | null;
 }
 
-/** `0:42`, `Slide 3`, `the drawing`, or null when a note can only be about the whole file. */
+/** `0:42`, `Slide 3`, `the marked area`, or null when a note can only be about the whole file. */
 export function notePinLabel(target: NotePinTarget): string | null {
   if (target.kind === "video") return formatTimecode(target.playheadSeconds);
   if ((target.kind === "deck" || target.kind === "pdf") && target.selectedSlide !== null) {
     return `${target.kind === "pdf" ? "Page" : "Slide"} ${target.selectedSlide + 1}`;
   }
-  return target.region === null ? null : "the drawing";
+  return target.region === null ? null : "the marked area";
 }
 
 /** The anchor a new note gets: the playhead or selected slide, or the whole file when unpinned. */
@@ -76,19 +77,56 @@ const UNIT_NOUN: Record<DeliverableKind, string> = {
   other: "Part",
 };
 
-/** `Slide 3` or `Shot 2 · 0:04-0:09` for one row of a comparison. */
+/** One of the two versions a comparison is between, and its rendition once loaded. */
+export interface CompareSide {
+  readonly versionId: DeliverableVersionId;
+  readonly rendition: Pick<DeliverableRendition, "units"> | null;
+}
+
+export interface CompareSides {
+  readonly base: CompareSide;
+  readonly target: CompareSide;
+}
+
+type ComparedUnit = Pick<DeliverableUnitChange, "baseIndex" | "targetIndex" | "status">;
+
+/**
+ * Where a comparison row's slide or shot is found: in the newer version, or in the older one
+ * once the newer no longer has it. Its number, start time and the place to open all come from
+ * that version, since a removed one exists nowhere else.
+ */
+export function compareUnitPlace(kind: DeliverableKind, change: ComparedUnit, sides: CompareSides) {
+  const side = change.targetIndex === null ? sides.base : sides.target;
+  const index = change.targetIndex ?? change.baseIndex ?? 0;
+  const unit = side.rendition?.units.find((candidate) => candidate.index === index);
+  const moved =
+    change.status === "moved" &&
+    change.baseIndex !== null &&
+    change.targetIndex !== null &&
+    change.baseIndex !== change.targetIndex;
+  const anchor: DeliverableAnchor =
+    kind === "video" ? { kind: "time", t: unit?.start ?? 0 } : { kind: "slide", index };
+  return {
+    versionId: side.versionId,
+    unit,
+    /** `3`, or `3 → 5` for one that moved: where it was, then where it is. */
+    position: moved ? `${change.baseIndex + 1} → ${change.targetIndex + 1}` : `${index + 1}`,
+    anchor,
+  };
+}
+
+/** `Slide 3`, `Slide 3 → 5` or `Shot 2 · 0:04-0:09` for one row of a comparison. */
 export function compareUnitLabel(
   kind: DeliverableKind,
-  change: Pick<DeliverableUnitChange, "baseIndex" | "targetIndex">,
-  rendition: Pick<DeliverableRendition, "units"> | null,
+  change: ComparedUnit,
+  sides: CompareSides,
 ): string {
-  const index = change.targetIndex ?? change.baseIndex ?? 0;
-  const unit = rendition?.units.find((candidate) => candidate.index === index);
+  const { unit, position } = compareUnitPlace(kind, change, sides);
   const time =
     kind === "video" && unit?.start !== undefined && unit.end !== undefined
       ? ` · ${formatTimecode(unit.start)}-${formatTimecode(unit.end)}`
       : "";
-  return `${UNIT_NOUN[kind]} ${index + 1}${time}`;
+  return `${UNIT_NOUN[kind]} ${position}${time}`;
 }
 
 export const UNIT_CHANGE_LABEL: Record<DeliverableUnitChange["status"], string> = {
@@ -99,14 +137,44 @@ export const UNIT_CHANGE_LABEL: Record<DeliverableUnitChange["status"], string> 
   unchanged: "Unchanged",
 };
 
+/** The area an anchor boxes on its frame or slide, if it boxes one. */
+export function anchorRegion(anchor: DeliverableAnchor | null): DeliverableRegion | null {
+  if (anchor === null) return null;
+  if (anchor.kind === "region") return { x: anchor.x, y: anchor.y, w: anchor.w, h: anchor.h };
+  return anchor.region ?? null;
+}
+
 /** The highlighted region a comparison row points at, if it localized one. */
 export function changeRegion(
   change: Pick<DeliverableUnitChange, "anchor">,
 ): DeliverableRegion | null {
-  const anchor = change.anchor;
-  if (anchor === null) return null;
-  if (anchor.kind === "region") return { x: anchor.x, y: anchor.y, w: anchor.w, h: anchor.h };
-  return anchor.region ?? null;
+  return anchorRegion(change.anchor);
+}
+
+/**
+ * The rendered frame an anchor sits on: its slide, the shot playing at its time, or the only
+ * frame of a still. Null for a whole-file anchor or when the rendition has no image for it.
+ */
+export function anchorFrameUrl(
+  anchor: DeliverableAnchor | null,
+  rendition: Pick<DeliverableRendition, "units" | "posterUrl"> | null,
+): string | null {
+  if (anchor === null || rendition === null) return null;
+  const unit =
+    anchor.kind === "slide"
+      ? rendition.units.find((candidate) => candidate.index === anchor.index)
+      : anchor.kind === "time"
+        ? rendition.units.find(
+            (candidate) =>
+              candidate.start !== undefined &&
+              candidate.end !== undefined &&
+              anchor.t >= candidate.start &&
+              anchor.t < candidate.end,
+          )
+        : rendition.units[0];
+  // A poster is some other moment of a video, so only a still falls back to it.
+  const still = anchor.kind === "region" ? rendition.posterUrl : null;
+  return unit?.imageUrl ?? unit?.thumbUrl ?? still ?? null;
 }
 
 export type SpendApprovalTurnItem = Extract<

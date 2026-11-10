@@ -1,9 +1,9 @@
+import { strokesRegion, type StrokePoint } from "@t3tools/client-runtime/work/geometry";
 import type { DeliverableRegion } from "@t3tools/contracts";
 import { CheckIcon, Undo2Icon, XIcon } from "lucide-react";
 import { useRef, useState } from "react";
 
 import { Button } from "../ui/button";
-import { strokesRegion, type StrokePoint } from "./workGeometry";
 
 export interface Drawing {
   readonly region: DeliverableRegion;

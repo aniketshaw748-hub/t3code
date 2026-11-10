@@ -15,8 +15,10 @@ status: drafting, rendering, waiting for you, notes back, in review, final, or t
 
 Type in **Notes & chat** to leave a note on the moment the video is paused at or the slide you
 selected. Use the toolbar over the player or slide to dictate a note or to draw on the frame; the
-drawing is attached to the note. Switch to **Whole video** or **Whole deck** to talk about all of
-it: that is a chat message, not a note, so there is nothing to resolve afterwards.
+drawing is attached to the note. On the phone, tap the pencil under the video or the open slide and
+drag a box over the area; drag the box or a corner to adjust it, then write the note. Switch to
+**Whole video** or **Whole deck** to talk about all of it: that is a chat message, not a note, so
+there is nothing to resolve afterwards.
 
 When the agent asks you something, the question shows in **Notes & chat**: pick an option or type
 an answer. Writing a note or message instead also answers a question the agent is not waiting on.

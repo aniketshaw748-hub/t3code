@@ -1,3 +1,4 @@
+import { BRAND } from "@t3tools/contracts/brand";
 import {
   collectLimitAccounts,
   collectLimitPools,
@@ -8,6 +9,8 @@ import {
 import type { WidgetTheme } from "./widgetTheme";
 
 export interface SubscriptionUsageSnapshot {
+  /** The app's name, for the widget: its extension can't read the brand module. */
+  appName?: string;
   theme?: WidgetTheme;
   url?: string;
   checkedAt: number;
@@ -19,6 +22,8 @@ export interface SubscriptionUsageSnapshot {
     totalWindows: number;
   }>;
 }
+
+const OPEN_TO_REFRESH = `Open ${BRAND.displayName} to refresh`;
 
 // Snapshots expire after 15 minutes; suspended refresh requires a separate authenticated transport.
 const SNAPSHOT_MAX_AGE = 15 * 60_000;
@@ -94,7 +99,7 @@ function subscriptionUsageProps(
         return {
           name,
           detail: !fresh
-            ? "Open T3 to refresh"
+            ? OPEN_TO_REFRESH
             : pool.accounts.length > 1
               ? `${pool.accounts.length} accounts · pooled`
               : "Subscription remaining",
@@ -145,6 +150,7 @@ export function buildSubscriptionUsageSnapshot(
       configuredDrivers,
       maxWindowsPerProvider,
     ),
+    appName: BRAND.displayName,
     url,
   };
 }
@@ -159,7 +165,7 @@ export function subscriptionUsageTimeline(snapshot: SubscriptionUsageSnapshot, n
       ...snapshot,
       providers: snapshot.providers.map((provider) =>
         provider.windows.length > 0 && provider.expiresAt <= date
-          ? { ...provider, detail: "Open T3 to refresh", windows: [], totalWindows: 0 }
+          ? { ...provider, detail: OPEN_TO_REFRESH, windows: [], totalWindows: 0 }
           : provider,
       ),
     },

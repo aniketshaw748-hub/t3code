@@ -1,5 +1,4 @@
 import { memo, useId } from "react";
-import { SegmentedControl } from "../../../../components/ui/SegmentedControl";
 import { Pressable, View } from "react-native";
 import Svg, { Circle, Defs, RadialGradient, Stop } from "react-native-svg";
 import { ScopedTheme, ScopedVariables } from "uniwind";
@@ -294,8 +293,6 @@ export function ThemeAppearanceSection() {
     themeIds,
     themeMode,
     systemColorsAvailable,
-    workAppearance,
-    setWorkAppearance,
   } = useAppearancePreferences();
 
   return (
@@ -315,21 +312,6 @@ export function ThemeAppearanceSection() {
             />
           ))}
         </View>
-      </View>
-
-      <View className="gap-2">
-        <SectionLabel>Work mode</SectionLabel>
-        <SegmentedControl
-          options={[
-            { value: "dark", label: "Dark" },
-            { value: "light", label: "Light" },
-          ]}
-          selected={workAppearance}
-          onSelect={setWorkAppearance}
-        />
-        <Text className="px-2 text-xs text-foreground-muted">
-          Work mode stays dark for reviewing films and decks, whatever the color scheme.
-        </Text>
       </View>
 
       <View className="gap-3">

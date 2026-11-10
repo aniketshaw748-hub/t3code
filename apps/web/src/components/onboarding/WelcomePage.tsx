@@ -1,6 +1,7 @@
 import { useAuth } from "@clerk/react";
 import { useAtomValue } from "@effect/atom-react";
 import type {
+  AdvertisedEndpoint,
   AgentSessionProjectCandidate,
   EnvironmentId,
   ProjectId,
@@ -18,6 +19,7 @@ import {
 import {
   AgentSessionSource,
   AuthProvidersManageScope,
+  AuthAccessWriteScope,
   AuthRelayReadScope,
   AuthRelayWriteScope,
   AuthTerminalOperateScope,
@@ -73,6 +75,7 @@ import {
   isBrokenVersion,
   turnedOnInstance,
   welcomeAgentState,
+  welcomeOffersDirectPairing,
   welcomeOffersPhone,
 } from "../../onboarding/welcomePage.logic";
 import {
@@ -82,11 +85,13 @@ import {
 } from "../../onboarding/welcomeState";
 import { newProjectId, randomUUID } from "../../lib/utils";
 import { agentSessionImport } from "../../state/agentSessions";
+import { desktopNetworkAccessStateAtom } from "../../state/desktopNetworkAccess";
 import { readProjects, useProjects, waitForProject } from "../../state/entities";
 import { useEnvironments, usePrimaryEnvironmentId } from "../../state/environments";
 import { telemetryOffMessage, useManagedPolicy } from "../../state/managedPolicy";
 import { useProjectScans } from "../../onboarding/useProjectScans";
 import { projectEnvironment } from "../../state/projects";
+import { useEnvironmentQuery } from "../../state/query";
 import { serverEnvironment } from "../../state/server";
 import {
   readEnvironmentScope,
@@ -98,6 +103,7 @@ import { useAtomCommand } from "../../state/use-atom-command";
 import { getProviderSummary } from "../settings/providerStatus";
 import { AddProviderInstanceDialog } from "../settings/AddProviderInstanceDialog";
 import { useDesktopCliCommand } from "../settings/CliCommandSettingsRow";
+import { TailscalePairingQr, useTailscalePhonePairing } from "../settings/TailscalePhoneSetupRow";
 import { CodexSetupSection } from "../settings/CodexSetupSection";
 import { readCodexSetupMode } from "../settings/CodexSetupSection.logic";
 import { TerminalViewport } from "../ThreadTerminalDrawer";
@@ -139,11 +145,19 @@ export function WelcomePage({
   // The same access Settings → Sharing & access checks.
   const canReadRelay = useEnvironmentScope(environmentId, AuthRelayReadScope);
   const canWriteRelay = useEnvironmentScope(environmentId, AuthRelayWriteScope);
+  const policy = useManagedPolicy(environmentId);
+  const cloud = hasCloudPublicConfig();
   const showPhone = welcomeOffersPhone({
     isPrimary,
-    cloud: hasCloudPublicConfig(),
+    cloud,
     canShare: canReadRelay && canWriteRelay,
-    policy: useManagedPolicy(environmentId),
+    policy,
+  });
+  const showDirectPairing = welcomeOffersDirectPairing({
+    isPrimary,
+    cloud,
+    canPair: useEnvironmentScope(environmentId, AuthAccessWriteScope),
+    policy,
   });
   const scans = useProjectScans([environmentId]);
   const [storedSelection, storeSelection] = useLocalStorage(
@@ -289,7 +303,9 @@ export function WelcomePage({
                 projectImport={projectImport}
                 isImporting={isImporting}
               />
-              {showPhone ? <PhoneSection environmentId={environmentId} /> : null}
+              {showPhone || showDirectPairing ? (
+                <PhoneSection environmentId={environmentId} direct={!showPhone} />
+              ) : null}
             </div>
             <div className="mt-6 flex flex-wrap items-center justify-between gap-3">
               {agentReady ? (
@@ -907,7 +923,14 @@ function ProjectsSection({
   );
 }
 
-function PhoneSection({ environmentId }: { readonly environmentId: EnvironmentId }) {
+function PhoneSection({
+  environmentId,
+  direct,
+}: {
+  readonly environmentId: EnvironmentId;
+  // Pairs the app straight to this computer, for a build without T3 Connect.
+  readonly direct: boolean;
+}) {
   const [open, setOpen] = useState(false);
   return (
     <WelcomeSection title="Phone">
@@ -931,7 +954,11 @@ function PhoneSection({ environmentId }: { readonly environmentId: EnvironmentId
                 <p className="text-sm text-foreground">Scan with your phone to get the app.</p>
               </PhoneStep>
               <PhoneStep step={2}>
-                <PhoneConnectLink environmentId={environmentId} />
+                {direct ? (
+                  <PhoneDirectPairing environmentId={environmentId} />
+                ) : (
+                  <PhoneConnectLink environmentId={environmentId} />
+                )}
               </PhoneStep>
             </ol>
             <div className="shrink-0 rounded-lg bg-white p-1.5">
@@ -956,6 +983,53 @@ function PhoneStep({ step, children }: { readonly step: number; readonly childre
       <span className="w-3 shrink-0 text-sm text-muted-foreground tabular-nums">{step}</span>
       <div className="flex min-w-0 flex-col items-start gap-2">{children}</div>
     </li>
+  );
+}
+
+const NO_ENDPOINTS: ReadonlyArray<AdvertisedEndpoint> = [];
+
+/** Pairing over Tailscale, the same guide as Settings → Access, which also exposes the server. */
+function PhoneDirectPairing({ environmentId }: { readonly environmentId: EnvironmentId }) {
+  const network = useEnvironmentQuery(isElectron ? desktopNetworkAccessStateAtom : null);
+  const pairing = useTailscalePhonePairing(
+    environmentId,
+    network.data?.advertisedEndpoints ?? NO_ENDPOINTS,
+  );
+  const { step } = pairing;
+  const accessSettings = (label: string) => (
+    <Button variant="outline" size="xs" render={<Link to="/settings/access" />}>
+      {label}
+    </Button>
+  );
+  if (!pairing.supported) {
+    return (
+      <>
+        <p className="text-sm text-foreground">Pair the app with this computer.</p>
+        {accessSettings("Open Access settings")}
+      </>
+    );
+  }
+  return (
+    <>
+      <p className="text-sm text-foreground">{pairing.description}</p>
+      <div className="flex flex-wrap items-center gap-2">
+        {step?.kind === "expose" ? accessSettings("Set up in Access settings") : null}
+        {step?.kind === "ready" ? (
+          <Button variant="outline" size="xs" onClick={() => void pairing.showQr(step.endpoint)}>
+            {pairing.qr ? "New pairing QR" : "Show pairing QR"}
+          </Button>
+        ) : null}
+        <Button
+          variant={pairing.checked ? "ghost-muted" : "outline"}
+          size="xs"
+          disabled={pairing.checking}
+          onClick={() => void pairing.check()}
+        >
+          {pairing.checking ? "Checking…" : pairing.checked ? "Check again" : "Check Tailscale"}
+        </Button>
+      </div>
+      {pairing.qr ? <TailscalePairingQr qr={pairing.qr} /> : null}
+    </>
   );
 }
 

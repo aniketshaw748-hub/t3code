@@ -122,7 +122,7 @@ export function useComparison(
   useEffect(() => {
     if (outdated) refresh();
   }, [outdated, refresh]);
-  return { result, comparison };
+  return { result, comparison, retry: refresh };
 }
 
 const NO_THREAD_ATOM = Atom.make<EnvironmentThread | null>(null);

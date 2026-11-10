@@ -586,6 +586,10 @@
     "./work/scope": {
       "types": "./src/work/workScope.ts",
       "default": "./src/work/workScope.ts"
+    },
+    "./work/geometry": {
+      "types": "./src/work/workGeometry.ts",
+      "default": "./src/work/workGeometry.ts"
     }
   },
   "scripts": {

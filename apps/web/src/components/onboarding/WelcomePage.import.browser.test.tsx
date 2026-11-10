@@ -1,5 +1,6 @@
 import { RegistryContext } from "@effect/atom-react";
 import {
+  AuthAccessWriteScope,
   AuthOrchestrationOperateScope,
   AuthOrchestrationReadScope,
   AuthRelayReadScope,
@@ -738,4 +739,28 @@ it("says the phone is set up only once this computer is shared with the signed-i
   await share({ status: "reachable", checkedAt, readyConnections: 4, protocol: "quic" });
   await vi.waitFor(() => expect(pageText()).toContain("Your phone can reach this computer."));
   expect(pageText()).not.toContain("Check T3 Connect");
+});
+
+it("pairs the phone straight to this computer where T3 Connect is not configured", async () => {
+  using _now = setup();
+  state.cloud = false;
+  await using _screen = await mountWelcome();
+  // Pairing makes a link, which needs access management here.
+  expect(pageText()).not.toContain("on your phone");
+
+  await act(async () =>
+    appAtomRegistry.set(
+      sessionAtom(primaryId),
+      AsyncResult.success(session([AuthOrchestrationOperateScope, AuthAccessWriteScope])),
+    ),
+  );
+  await click("Set up");
+  expect(pageText()).toContain("Scan with your phone to get the app.");
+  // A browser can't look for Tailscale; Settings pairs over any address this computer has.
+  expect(pageText()).toContain("Pair the app with this computer.");
+  expect(pageText()).not.toContain("T3 Connect");
+  const settings = [...document.querySelectorAll("a")].find(
+    (link) => link.textContent === "Open Access settings",
+  );
+  expect(settings?.getAttribute("href")).toBe("/settings/access");
 });

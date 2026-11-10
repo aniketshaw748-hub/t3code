@@ -124,10 +124,12 @@ class T3NativeControlsModule : Module() {
 @RequiresApi(Build.VERSION_CODES.Q)
 private fun saveImageToPictures(context: Context, source: Uri, mimeType: String, name: String) {
   val resolver = context.contentResolver
+  // The album carries the app's own name, whatever the build is called.
+  val album = context.applicationInfo.loadLabel(context.packageManager)
   val values = ContentValues().apply {
     put(MediaStore.Images.Media.DISPLAY_NAME, name)
     put(MediaStore.Images.Media.MIME_TYPE, mimeType)
-    put(MediaStore.Images.Media.RELATIVE_PATH, "${Environment.DIRECTORY_PICTURES}/T3 Code")
+    put(MediaStore.Images.Media.RELATIVE_PATH, "${Environment.DIRECTORY_PICTURES}/$album")
     put(MediaStore.Images.Media.IS_PENDING, 1)
   }
   val target = resolver.insert(

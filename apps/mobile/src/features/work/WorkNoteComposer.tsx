@@ -1,15 +1,19 @@
 import { useAtom } from "@effect/atom-react";
 import type { DeliverableKind } from "@t3tools/contracts";
 import { Atom } from "effect/reactivity";
-import { useState } from "react";
-import { Pressable, TextInput, View } from "react-native";
+import { useState, type Ref } from "react";
+import { Pressable, View, type TextInputInstance } from "react-native";
 import { useKeyboardState } from "react-native-keyboard-controller";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import type { ComposerEditorSelection } from "../../components/ComposerEditor";
+import {
+  ComposerActionButton,
+  ComposerInlineControl,
+  ComposerToolbarRow,
+} from "../../components/ComposerToolbar";
 import { SymbolView } from "../../components/ui/AppSymbol";
-import { AppText as Text } from "../../components/ui/AppText";
-import { cn } from "../../lib/cn";
+import { AppText as Text, AppTextInput } from "../../components/ui/AppText";
 import { appAtomRegistry } from "../../state/atom-registry";
 import {
   ComposerDictationCancelAction,
@@ -35,8 +39,15 @@ const NOUN: Record<DeliverableKind, string> = {
   other: "file",
 };
 
-/** Type or talk a note; it pins to the playhead or picked slide unless set to the whole file. */
-export function WorkNoteComposer(props: {
+/**
+ * Where notes and messages to the agent are written. It is the chat composer's card, toolbar
+ * controls and send button around a plain text field, with one choice the chat does not have:
+ * whether the words pin to a place in the work or are about all of it.
+ */
+export function WorkNoteComposer({
+  inputRef,
+  ...props
+}: {
   readonly draftKey: string;
   readonly kind: DeliverableKind;
   readonly hasWork: boolean;
@@ -45,7 +56,11 @@ export function WorkNoteComposer(props: {
   readonly pinLabel: string | null;
   readonly pinned: boolean;
   readonly onPinnedChange: (pinned: boolean) => void;
+  /** An area is marked on the frame for this note; a marked area always pins. */
+  readonly hasArea: boolean;
+  readonly onClearArea: () => void;
   readonly sending: boolean;
+  readonly inputRef?: Ref<TextInputInstance>;
   readonly onSend: (text: string) => Promise<boolean>;
 }) {
   const atom = noteDraftAtom(props.draftKey);
@@ -66,7 +81,7 @@ export function WorkNoteComposer(props: {
   const presentation = resolveVoiceComposerPresentation(voice.state, voice.elapsedSeconds);
   const dictating = presentation.statusKind === "active";
   const noun = NOUN[props.kind];
-  const pinned = props.pinned && props.pinLabel !== null;
+  const pinned = props.pinLabel !== null && (props.pinned || props.hasArea);
   const canSend =
     !props.disabled && !props.sending && text.trim().length > 0 && !voice.blocksSubmission;
   const send = async () => {
@@ -75,26 +90,40 @@ export function WorkNoteComposer(props: {
   };
   return (
     <View
-      className="gap-2 border-t border-border bg-screen px-3 pt-2.5"
+      className="px-3 pt-1"
       style={{ paddingBottom: keyboardVisible ? 8 : Math.max(insets.bottom, 12) }}
     >
-      {props.hasWork ? (
-        <View className="flex-row gap-1.5" accessibilityLabel="What the note is about">
-          <PinChip
-            label={props.pinLabel === null ? "Here" : `At ${props.pinLabel}`}
-            selected={pinned}
-            disabled={props.pinLabel === null}
-            onPress={() => props.onPinnedChange(true)}
-          />
-          <PinChip
-            label={`Whole ${noun}`}
-            selected={!pinned}
-            onPress={() => props.onPinnedChange(false)}
-          />
-        </View>
-      ) : null}
-      <View className="flex-row items-end gap-2">
-        <TextInput
+      <View className="overflow-hidden rounded-[22px] border border-composer-border border-continuous bg-composer-surface">
+        {props.hasArea ? (
+          <View className="flex-row items-center gap-1 px-3 pt-2.5">
+            <View className="h-7 flex-row items-center gap-1.5 rounded-full bg-subtle pl-2.5 pr-1">
+              <SymbolView
+                name="pencil"
+                size={13}
+                tintColorClassName="accent-icon"
+                type="monochrome"
+              />
+              <Text className="text-xs font-t3-medium">Area marked</Text>
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel="Remove the marked area"
+                onPress={props.onClearArea}
+                hitSlop={10}
+                className="size-6 items-center justify-center active:opacity-60"
+              >
+                <SymbolView
+                  name="xmark"
+                  size={11}
+                  tintColorClassName="accent-icon-muted"
+                  type="monochrome"
+                  weight="semibold"
+                />
+              </Pressable>
+            </View>
+          </View>
+        ) : null}
+        <AppTextInput
+          ref={inputRef}
           accessibilityLabel="Note for the agent"
           value={text}
           onChangeText={setText}
@@ -107,91 +136,88 @@ export function WorkNoteComposer(props: {
             !props.hasWork
               ? "Tell the agent what to make"
               : pinned
-                ? `Note at ${props.pinLabel}`
+                ? `Leave a note at ${props.pinLabel}`
                 : `Ask for a change to the whole ${noun}`
           }
-          placeholderTextColorClassName="accent-foreground-muted"
-          className="max-h-32 min-h-11 min-w-0 flex-1 rounded-2xl border border-input-border bg-input px-3.5 py-2.5 font-sans text-base text-foreground"
+          className="max-h-32 min-h-11 rounded-none border-0 bg-transparent px-4 pt-3 pb-1"
         />
-        {voice.isAvailable && !dictating ? (
-          <ComposerDictationStartAction
-            state={voice.state}
-            isAvailable={voice.isAvailable}
-            disabled={props.disabled}
-            onStart={voice.start}
-            onCancel={voice.cancel}
-          />
-        ) : null}
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel="Send note"
-          accessibilityState={{ disabled: !canSend, busy: props.sending }}
-          disabled={!canSend}
-          onPress={() => void send()}
-          className={cn(
-            "size-11 items-center justify-center rounded-full bg-foreground",
-            canSend ? "active:opacity-70" : "opacity-30",
-          )}
-        >
-          <SymbolView name="arrow.up" size={18} tintColorClassName="accent-screen" />
-        </Pressable>
-      </View>
-      <ComposerDictationError
-        error={voice.state.phase === "error" ? voice.state.error : null}
-        onDismiss={voice.cancel}
-      />
-      {dictating ? (
-        <ComposerDictationToolbar showsDictation>
-          <View className="h-11 flex-row items-center">
-            <ComposerDictationCancelAction presentation={presentation} onCancel={voice.cancel} />
-            <ComposerDictationStatus
-              audioLevels={voice.audioLevels}
-              elapsedSeconds={voice.elapsedSeconds}
-              phase={voice.state.phase}
-              presentation={presentation}
+        <ComposerDictationError
+          error={voice.state.phase === "error" ? voice.state.error : null}
+          onDismiss={voice.cancel}
+        />
+        {dictating ? (
+          <ComposerDictationToolbar showsDictation>
+            <ComposerToolbarRow paddingTop={0} paddingBottom={0} style={{ gap: 0 }}>
+              <ComposerDictationCancelAction presentation={presentation} onCancel={voice.cancel} />
+              <ComposerDictationStatus
+                audioLevels={voice.audioLevels}
+                elapsedSeconds={voice.elapsedSeconds}
+                phase={voice.state.phase}
+                presentation={presentation}
+              />
+              <ComposerDictationPrimaryAction
+                state={voice.state}
+                presentation={presentation}
+                isAvailable={voice.isAvailable}
+                disabled={props.disabled}
+                onStart={voice.start}
+                onConfirm={voice.stop}
+                onCancel={voice.cancel}
+              />
+            </ComposerToolbarRow>
+          </ComposerDictationToolbar>
+        ) : (
+          <ComposerToolbarRow paddingTop={0} paddingBottom={4} style={{ gap: 0 }}>
+            {props.hasWork ? (
+              <View
+                accessibilityRole="radiogroup"
+                accessibilityLabel="What the note is about"
+                className="min-w-0 shrink flex-row items-center"
+              >
+                <ComposerInlineControl
+                  icon="pin"
+                  label={props.pinLabel === null ? "Pin here" : `At ${props.pinLabel}`}
+                  accessibilityHint={
+                    props.pinLabel === null
+                      ? "Pick a slide or mark an area to pin a note"
+                      : "A note pinned to this place, tracked until it is fixed"
+                  }
+                  selected={pinned}
+                  disabled={props.pinLabel === null}
+                  showChevron={false}
+                  onPress={() => props.onPinnedChange(true)}
+                />
+                <ComposerInlineControl
+                  icon="doc"
+                  label={`Whole ${noun}`}
+                  accessibilityHint={`A message about the whole ${noun}, not pinned anywhere`}
+                  selected={!pinned}
+                  disabled={props.hasArea}
+                  showChevron={false}
+                  onPress={() => props.onPinnedChange(false)}
+                />
+              </View>
+            ) : null}
+            <View className="flex-1" />
+            {voice.isAvailable ? (
+              <ComposerDictationStartAction
+                state={voice.state}
+                isAvailable={voice.isAvailable}
+                disabled={props.disabled}
+                onStart={voice.start}
+                onCancel={voice.cancel}
+              />
+            ) : null}
+            <ComposerActionButton
+              variant="primary"
+              icon="arrow.up"
+              accessibilityLabel={pinned || !props.hasWork ? "Send note" : "Send message"}
+              disabled={!canSend}
+              onPress={() => void send()}
             />
-            <ComposerDictationPrimaryAction
-              state={voice.state}
-              presentation={presentation}
-              isAvailable={voice.isAvailable}
-              disabled={props.disabled}
-              onStart={voice.start}
-              onConfirm={voice.stop}
-              onCancel={voice.cancel}
-            />
-          </View>
-        </ComposerDictationToolbar>
-      ) : null}
-    </View>
-  );
-}
-
-function PinChip(props: {
-  readonly label: string;
-  readonly selected: boolean;
-  readonly disabled?: boolean;
-  readonly onPress: () => void;
-}) {
-  return (
-    <Pressable
-      accessibilityRole="radio"
-      accessibilityState={{ selected: props.selected, disabled: Boolean(props.disabled) }}
-      disabled={props.disabled}
-      onPress={props.onPress}
-      className={cn(
-        "h-7 justify-center rounded-full px-3",
-        props.selected ? "bg-foreground" : "bg-subtle",
-        props.disabled && "opacity-40",
-      )}
-    >
-      <Text
-        className={cn(
-          "font-mono text-2xs font-t3-medium",
-          props.selected ? "text-screen" : "text-foreground",
+          </ComposerToolbarRow>
         )}
-      >
-        {props.label}
-      </Text>
-    </Pressable>
+      </View>
+    </View>
   );
 }

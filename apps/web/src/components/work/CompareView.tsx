@@ -103,7 +103,10 @@ export function CompareView(props: {
             <li key={`${change.baseIndex}:${change.targetIndex}`} className="flex flex-col gap-2">
               <div className="flex items-center gap-2">
                 <span className="text-xs font-medium text-foreground">
-                  {compareUnitLabel(props.kind, change, targetRendition ?? baseRendition)}
+                  {compareUnitLabel(props.kind, change, {
+                    base: { versionId: props.base.id, rendition: baseRendition },
+                    target: { versionId: props.target.id, rendition: targetRendition },
+                  })}
                 </span>
                 <Badge size="sm" variant={change.status === "unchanged" ? "secondary" : "info"}>
                   {UNIT_CHANGE_LABEL[change.status]}

@@ -3,9 +3,10 @@ import type {
   DeliverableKind,
   DeliverableRendition,
   DeliverableVersion,
+  DeliverableVersionId,
   EnvironmentId,
 } from "@t3tools/contracts";
-import { UNIT_CHANGE_LABEL } from "@t3tools/client-runtime/work/anchors";
+import { compareUnitPlace, UNIT_CHANGE_LABEL } from "@t3tools/client-runtime/work/anchors";
 import { agentPreviewText } from "@t3tools/shared/agentPreviewText";
 import { formatTimecode } from "@t3tools/shared/deliverableNotes";
 import { ChevronRightIcon, SplitIcon } from "lucide-react";
@@ -14,7 +15,7 @@ import { Badge } from "../ui/badge";
 import { Button } from "../ui/button";
 import { Collapsible, CollapsiblePanel, CollapsibleTrigger } from "../ui/collapsible";
 import { ComparisonNotice } from "./ComparisonNotice";
-import { useComparison } from "./useWorkData";
+import { useComparison, useRendition } from "./useWorkData";
 
 interface WhatChangedProps {
   readonly environmentId: EnvironmentId;
@@ -22,7 +23,11 @@ interface WhatChangedProps {
   readonly version: DeliverableVersion;
   readonly parent: DeliverableVersion | null;
   readonly rendition: DeliverableRendition | null;
-  readonly onUnit: (anchor: DeliverableAnchor) => void;
+  /** Opens a changed slide or shot in the version that has it: the older one once removed. */
+  readonly onUnit: (place: {
+    readonly versionId: DeliverableVersionId;
+    readonly anchor: DeliverableAnchor;
+  }) => void;
   readonly onCompare: () => void;
 }
 
@@ -72,6 +77,15 @@ function Comparison(props: WhatChangedProps & { readonly parent: DeliverableVers
     props.parent,
     props.version,
   );
+  const parentRendition = useRendition(
+    props.environmentId,
+    props.parent.id,
+    props.parent.renditionStatus,
+  );
+  const sides = {
+    base: { versionId: props.parent.id, rendition: parentRendition },
+    target: { versionId: props.version.id, rendition: props.rendition },
+  };
   const changed = (comparison?.units ?? []).filter((unit) => unit.status !== "unchanged");
   const noun = props.kind === "video" ? "Shot" : props.kind === "pdf" ? "Page" : "Slide";
   return (
@@ -87,15 +101,10 @@ function Comparison(props: WhatChangedProps & { readonly parent: DeliverableVers
       {changed.length > 0 ? (
         <ul className="-mx-2 flex flex-col gap-0.5">
           {changed.map((unit) => {
-            const index = unit.targetIndex ?? unit.baseIndex ?? 0;
-            const shot = props.rendition?.units.find((candidate) => candidate.index === index);
-            const anchor: DeliverableAnchor =
-              props.kind === "video"
-                ? { kind: "time", t: shot?.start ?? 0 }
-                : { kind: "slide", index };
+            const place = compareUnitPlace(props.kind, unit, sides);
             const at =
-              props.kind === "video" && shot?.start !== undefined
-                ? ` at ${formatTimecode(shot.start)}`
+              props.kind === "video" && place.unit?.start !== undefined
+                ? ` at ${formatTimecode(place.unit.start)}`
                 : "";
             return (
               <li key={`${unit.baseIndex}:${unit.targetIndex}`}>
@@ -103,9 +112,9 @@ function Comparison(props: WhatChangedProps & { readonly parent: DeliverableVers
                   variant="ghost"
                   size="sm"
                   className="w-full justify-between"
-                  onClick={() => props.onUnit(anchor)}
+                  onClick={() => props.onUnit(place)}
                 >
-                  <span className="min-w-0 truncate font-normal">{`${noun} ${index + 1}${at}`}</span>
+                  <span className="min-w-0 truncate font-normal">{`${noun} ${place.position}${at}`}</span>
                   <Badge size="sm" variant="info">
                     {UNIT_CHANGE_LABEL[unit.status]}
                   </Badge>
