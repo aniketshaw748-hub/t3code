@@ -497,26 +497,30 @@ export function WorkProjectScreen(props: {
           >
             <ChevronLeftIcon />
           </Button>
-          <h1 className="min-w-0 truncate text-sm font-medium">{project?.title ?? "Project"}</h1>
+          <h1 className="min-w-[6ch] truncate text-sm font-medium">
+            {project?.title ?? "Project"}
+          </h1>
           {deliverables.length > 1 ? (
-            <ToggleGroup
-              aria-label="Deliverable"
-              value={deliverable === null ? [] : [deliverable.id]}
-              onValueChange={(next) => {
-                const id = next[0];
-                if (id === undefined) return;
-                setChosenDeliverable(id as DeliverableId);
-                setViewedVersionId(null);
-                setCompare(null);
-                setSelectedSlide(null);
-              }}
-            >
-              {deliverables.map((candidate) => (
-                <Toggle key={candidate.id} value={candidate.id}>
-                  {candidate.title}
-                </Toggle>
-              ))}
-            </ToggleGroup>
+            <div className="min-w-0 shrink overflow-x-auto">
+              <ToggleGroup
+                aria-label="Deliverable"
+                value={deliverable === null ? [] : [deliverable.id]}
+                onValueChange={(next) => {
+                  const id = next[0];
+                  if (id === undefined) return;
+                  setChosenDeliverable(id as DeliverableId);
+                  setViewedVersionId(null);
+                  setCompare(null);
+                  setSelectedSlide(null);
+                }}
+              >
+                {deliverables.map((candidate) => (
+                  <Toggle key={candidate.id} value={candidate.id}>
+                    {candidate.title}
+                  </Toggle>
+                ))}
+              </ToggleGroup>
+            </div>
           ) : null}
           {viewed !== null ? (
             <Badge variant={viewed.id === currentVersionId ? "secondary" : "warning"}>

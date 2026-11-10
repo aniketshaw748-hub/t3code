@@ -40,7 +40,6 @@ import ChatMarkdown from "../ChatMarkdown";
 import { PendingRequestCards } from "../chat/PendingRequestCards";
 import { AttachmentImage } from "../media/AttachmentImage";
 import { Button } from "../ui/button";
-import { InputGroup, InputGroupAddon } from "../ui/input-group";
 import { Textarea } from "../ui/textarea";
 import { deriveThreadProgressReport } from "./bubbleProgress.logic";
 import { ElapsedLabel } from "./BubbleThreadList";
@@ -357,9 +356,11 @@ export function BubbleChat(props: {
       </div>
       <div className="flex shrink-0 flex-col gap-1 border-t border-border/70 p-2">
         {sendError ? <p className="px-1 text-2xs text-destructive">{sendError}</p> : null}
-        <InputGroup>
+        <div className="flex items-end gap-1.5">
           <Textarea
             size="sm"
+            rows={1}
+            className="min-w-0 flex-1"
             aria-label="Message"
             placeholder={running ? "Steer or queue a message…" : "Reply…"}
             value={draft}
@@ -369,17 +370,15 @@ export function BubbleChat(props: {
             onChange={(event) => setDraft(event.target.value)}
             onKeyDown={onKeyDown}
           />
-          <InputGroupAddon align="block-end" className="justify-end">
-            <Button
-              size="icon-sm"
-              aria-label="Send"
-              disabled={draft.trim().length === 0 || sending || shell === null}
-              onClick={() => void send()}
-            >
-              <ArrowUpIcon />
-            </Button>
-          </InputGroupAddon>
-        </InputGroup>
+          <Button
+            size="icon-sm"
+            aria-label="Send"
+            disabled={draft.trim().length === 0 || sending || shell === null}
+            onClick={() => void send()}
+          >
+            <ArrowUpIcon />
+          </Button>
+        </div>
       </div>
     </div>
   );

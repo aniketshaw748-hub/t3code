@@ -4,6 +4,7 @@ import { GitBranchIcon, Redo2Icon, SplitIcon, Undo2Icon } from "lucide-react";
 
 import { Badge } from "../ui/badge";
 import { Button } from "../ui/button";
+import { Toggle } from "../ui/toggle";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 
 /**
@@ -53,13 +54,12 @@ export function VersionStrip(props: {
           const viewed = !comparing && id === props.viewedVersionId;
           return (
             <li key={id} className="flex shrink-0">
-              <Button
+              <Toggle
                 variant="outline"
-                size="xs"
+                size="segmented"
                 aria-current={item.isCurrent ? "true" : undefined}
-                aria-pressed={comparing ? picked : viewed}
-                data-pressed={picked || viewed ? "" : undefined}
-                onClick={() => props.onView(id)}
+                pressed={picked || viewed}
+                onPressedChange={() => props.onView(id)}
                 className="max-w-60 min-w-0 justify-start"
               >
                 <Badge
@@ -79,7 +79,7 @@ export function VersionStrip(props: {
                   </span>
                 ) : null}
                 {item.alternate ? <span className="sr-only">(alternate branch)</span> : null}
-              </Button>
+              </Toggle>
             </li>
           );
         })}
