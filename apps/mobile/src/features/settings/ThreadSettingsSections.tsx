@@ -4,6 +4,7 @@ import {
   isManagedSettingPath,
   type ServerSettingsPatch,
 } from "@t3tools/contracts";
+import { BRAND } from "@t3tools/contracts/brand";
 import { useEnvironmentsWithScope } from "../../state/session";
 import { AutoSettleDaysField } from "./components/AutoSettleDaysField";
 import { ScreenScrollView as ScrollView } from "../../components/ui/ScreenScrollView";
@@ -55,7 +56,7 @@ export function SettingsLabsRouteScreen() {
           icon="bolt.circle"
           capability="fastWorktreeCheckout"
           setting="fastWorktreeCheckout"
-          description="On a Mac, clone new worktrees from a checkout cached in the T3 home folder instead of writing every file. Uses Git’s normal checkout when it can’t. Turning it off deletes the cache."
+          description={`On a Mac, clone new worktrees from a checkout cached in the ${BRAND.displayName} home folder instead of writing every file. Uses Git’s normal checkout when it can’t. Turning it off deletes the cache.`}
         />
       </ScrollView>
     </SettingsScreen>

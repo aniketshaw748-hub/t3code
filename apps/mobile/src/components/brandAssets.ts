@@ -2,9 +2,10 @@ import Constants from "expo-constants";
 
 const appVariant = Constants.expoConfig?.extra?.appVariant;
 
-export const T3_CODE_BRAND_MARK_SOURCE =
+// Metro resolves only literal paths, so these spell out `BRAND.assets.directory`; a test checks it.
+export const BRAND_MARK_SOURCE =
   appVariant === "development"
-    ? require("../../../../assets/dev/blueprint-ios-1024.png")
+    ? require("../../../../assets/kavyaan/dev/ios-1024.png")
     : appVariant === "preview"
-      ? require("../../../../assets/nightly/nightly-ios-1024.png")
-      : require("../../../../assets/prod/black-ios-1024.png");
+      ? require("../../../../assets/kavyaan/nightly/ios-1024.png")
+      : require("../../../../assets/kavyaan/prod/ios-1024.png");

@@ -317,10 +317,13 @@ public final class T3NativeControlsModule: Module {
   private static func saveImageToLibrary(url: URL, mimeType: String, name: String, promise: Promise) {
     PHPhotoLibrary.requestAuthorization(for: .addOnly) { status in
       guard status == .authorized || status == .limited else {
+        let appName = Bundle.main.object(forInfoDictionaryKey: "CFBundleDisplayName") as? String
+          ?? Bundle.main.object(forInfoDictionaryKey: "CFBundleName") as? String
+          ?? "this app"
         promise.reject(NSError(
           domain: "T3NativePhotos",
           code: 1,
-          userInfo: [NSLocalizedDescriptionKey: "Allow T3 Code to add photos in Settings."]
+          userInfo: [NSLocalizedDescriptionKey: "Allow \(appName) to add photos in Settings."]
         ))
         return
       }

@@ -44,6 +44,8 @@ export interface AgentActivityRowProps {
 }
 
 export interface AgentActivityProps {
+  /** The app's name, for the widget: its extension can't read the brand module. */
+  readonly appName?: string;
   readonly title: string;
   readonly subtitle: string;
   readonly activeCount: number;
